@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
@@ -57,7 +58,7 @@ class _ProfilePhotoWidgetState extends State<ProfilePhotoWidget> {
         _cropImage(file);
       }
     } catch (e) {
-      debugPrint('Error picking image: $e');
+      if (kDebugMode) debugPrint('Error picking image: $e');
     }
   }
 
@@ -91,7 +92,7 @@ class _ProfilePhotoWidgetState extends State<ProfilePhotoWidget> {
         widget.onPhotoSelected(_selectedImage!);
       }
     } catch (e) {
-      debugPrint('Error cropping image: $e');
+      if (kDebugMode) debugPrint('Error cropping image: $e');
     }
   }
 

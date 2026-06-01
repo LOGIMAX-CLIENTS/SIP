@@ -74,10 +74,12 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
     //  • auto-disables storage flag if device biometrics were removed
     final canBio = await BiometricService.canUseBiometric();
 
-    debugPrint('── MPIN Screen Status ──');
-    debugPrint('  mpinEnabled: $enabled');
-    debugPrint('  canUseBiometric: $canBio');
-    debugPrint('── End ──');
+    if (kDebugMode) {
+      debugPrint('── MPIN Screen Status ──');
+      debugPrint('  mpinEnabled: $enabled');
+      debugPrint('  canUseBiometric: $canBio');
+      debugPrint('── End ──');
+    }
 
     if (mounted) {
       setState(() {
@@ -130,7 +132,7 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
         }
       }
     } on Exception catch (e) {
-      debugPrint('Biometric Auth Error: $e');
+      if (kDebugMode) debugPrint('Biometric Auth Error: $e');
       // Fallback: user can use MPIN keypad naturally.
     }
   }
@@ -168,7 +170,7 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
         _shuffledNumbers = List.from(digits);
       });
     }
-    debugPrint('MPIN Numpad Randomized: $_shuffledNumbers');
+    if (kDebugMode) debugPrint('MPIN Numpad Randomized');
   }
 
   Future<void> _secureScreen() async {
@@ -762,7 +764,7 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
         }
       } catch (e) {
         // Non-fatal — Firebase may not be set up yet.
-        debugPrint('[FCM] Token registration skipped: $e');
+        if (kDebugMode) debugPrint('[FCM] Token registration skipped: $e');
       }
     });
   }

@@ -106,17 +106,7 @@ class ProfileService {
         'id_customer': customerId,
       });
 
-      final fileSize = await photo.length();
-      final ext = fileName.split('.').last.toLowerCase();
-      print('── Photo Upload ──');
-      print('  path: ${photo.path}');
-      print('  filename: $fileName');
-      print('  format/ext: $ext');
-      print('  file size: ${(fileSize / 1024).toStringAsFixed(1)} KB');
-      print('  fields: ${formData.fields}');
-      print(
-          '  files: ${formData.files.map((f) => '${f.key}: ${f.value.filename} (contentType: ${f.value.contentType})').toList()}');
-      print('── End ──');
+
 
       final response = await _apiClient.post(
         'customer/update-profile-photo',

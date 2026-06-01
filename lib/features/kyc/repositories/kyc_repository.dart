@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/kyc_document.dart';
 import '../../../../core/security/encryption_service.dart';
+import '../../../../core/security/secure_logger.dart';
 
 final kycRepositoryProvider = Provider((ref) => KycRepository());
 
@@ -59,16 +60,14 @@ class KycRepository {
     });
     displayData['fields'] = displayFields;
 
-    print('--- KYC Upload API CALL ---');
-    print('URL: kyc/upload');
-    print('POST DATA (Logical Structure): $displayData');
-    print('ENCRYPTED FIELDS : $encryptedFieldsMap');
+    SecureLogger.d('--- KYC Upload API CALL ---');
+    SecureLogger.d('URL: kyc/upload');
+    SecureLogger.d('POST DATA (Logical Structure): $displayData');
 
     // 4. Send as JSON (Interceptor will also handle recursive encryption if needed)
     final response = await _apiClient.post('kyc/upload', data: postData);
 
-    print('RESPONSE: ${response.data}');
-    print('---------------------------');
+    SecureLogger.d('KYC Upload completed — success: ${response.data['success']}');
 
     if (response.data['success'] == true) {
       return true;

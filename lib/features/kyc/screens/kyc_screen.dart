@@ -84,7 +84,6 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               documentId: doc.id,
               fields: fields,
             );
-        print('fields: $fields');
 
         final result = ref.read(kycSubmitProvider);
         if (result.hasError) {

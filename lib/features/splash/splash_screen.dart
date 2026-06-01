@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -57,7 +58,7 @@ class _SplashScreenState extends State<SplashScreen>
       loggedIn = await SessionManager.isAuthenticated();
       mpinEnabled = await SecureStorageService.isMpinEnabled();
     } catch (e) {
-      debugPrint('Splash init error: $e');
+      if (kDebugMode) debugPrint('Splash init error: $e');
     }
 
     // Determine normal route
@@ -76,7 +77,7 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       final controlService = AppControlService();
       final raw = await controlService.fetchAppControl();
-      debugPrint('[Splash] app/control raw response: $raw');
+      if (kDebugMode) debugPrint('[Splash] app/control raw response received');
       if (raw != null) {
         final controlData = AppControlData.fromJson(raw);
 
@@ -89,12 +90,12 @@ class _SplashScreenState extends State<SplashScreen>
         // Version update gate — stay on splash so the update dialog
         // appears on top of the splash background (not login/mpin)
         final versionInfo = controlData.versionInfo;
-        debugPrint('[Splash] versionInfo parsed: ${versionInfo != null}');
+        if (kDebugMode) debugPrint('[Splash] versionInfo parsed: ${versionInfo != null}');
         if (versionInfo != null && !controlData.maintenance.isEnabled) {
           final packageInfo = await PackageInfo.fromPlatform();
           final currentVersion = packageInfo.version;
           final platform = versionInfo.current;
-          debugPrint('[Splash] currentVersion=$currentVersion, latestVersion=${platform.latestVersion}');
+          if (kDebugMode) debugPrint('[Splash] currentVersion=$currentVersion, latestVersion=${platform.latestVersion}');
           if (_isLower(currentVersion, platform.latestVersion)) {
             updateNeeded = true;
             _versionInfo = versionInfo;
@@ -107,11 +108,11 @@ class _SplashScreenState extends State<SplashScreen>
           }
         }
       } else {
-        debugPrint('[Splash] app/control returned NULL — trying cache');
+        if (kDebugMode) debugPrint('[Splash] app/control returned NULL — trying cache');
         updateNeeded = await _tryLoadCachedVersionInfo();
       }
     } catch (e) {
-      debugPrint('[Splash] App control fetch failed: $e — trying cache');
+      if (kDebugMode) debugPrint('[Splash] App control fetch failed — trying cache');
       updateNeeded = await _tryLoadCachedVersionInfo();
     }
 
@@ -159,7 +160,7 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kVersionCacheKey, jsonEncode(raw));
-      debugPrint('[Splash] Version info cached for offline use.');
+      if (kDebugMode) debugPrint('[Splash] Version info cached for offline use.');
     } catch (_) {}
   }
 
@@ -187,11 +188,11 @@ class _SplashScreenState extends State<SplashScreen>
       final currentVersion = packageInfo.version;
       final platform = versionInfo.current;
 
-      debugPrint('[Splash] CACHE: currentVersion=$currentVersion, latestVersion=${platform.latestVersion}');
+      if (kDebugMode) debugPrint('[Splash] CACHE: checking versions');
 
       if (_isLower(currentVersion, platform.latestVersion)) {
         _versionInfo = versionInfo;
-        debugPrint('[Splash] CACHE: Update still needed — showing dialog.');
+        if (kDebugMode) debugPrint('[Splash] CACHE: Update still needed — showing dialog.');
         return true;
       } else {
         // User updated — clear stale cache
@@ -199,7 +200,7 @@ class _SplashScreenState extends State<SplashScreen>
         return false;
       }
     } catch (e) {
-      debugPrint('[Splash] CACHE: Failed to load: $e');
+      if (kDebugMode) debugPrint('[Splash] CACHE: Failed to load');
       return false;
     }
   }

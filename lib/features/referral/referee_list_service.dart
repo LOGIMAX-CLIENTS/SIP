@@ -53,7 +53,7 @@ class RefereeListService {
       final response = await _apiClient.post('referrals/referee-list', data: {});
       final body = response.data;
 
-      debugPrint('═══ REFEREE-LIST STATUS: ${response.statusCode} ═══');
+      if (kDebugMode) debugPrint('═══ REFEREE-LIST STATUS: ${response.statusCode} ═══');
 
       if (body == null) return RefereeListData.empty;
       if (body is! Map<String, dynamic>) return RefereeListData.empty;
@@ -73,7 +73,7 @@ class RefereeListService {
 
       return RefereeListData(count: count, results: results);
     } catch (e, st) {
-      debugPrint('REFEREE-LIST ERROR: $e\n$st');
+      if (kDebugMode) debugPrint('REFEREE-LIST ERROR: $e');
       return RefereeListData.empty;
     }
   }

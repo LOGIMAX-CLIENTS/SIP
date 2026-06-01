@@ -705,7 +705,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             fit: BoxFit.fitWidth,
             gaplessPlayback: true,
             errorBuilder: (context, error, stackTrace) {
-              debugPrint('Invest card image error: $error');
               return Container(
                 height: 160.h,
                 color: const Color(0xFFFFEFC0),

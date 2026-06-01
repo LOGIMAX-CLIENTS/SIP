@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/app_control_model.dart';
 import '../services/app_control_service.dart';
+import '../security/certificate_pinning.dart';
 
 // ─── Intervals ────────────────────────────────────────────────────────────────
-const _kAlertPollInterval = Duration(minutes: 1);  // check every 1 min globally
-const _kMaintenancePollInterval = Duration(seconds: 30); // faster while in maintenance
+const _kAlertPollInterval = Duration(minutes: 1); // check every 1 min globally
+const _kMaintenancePollInterval =
+    Duration(seconds: 30); // faster while in maintenance
 
 class AppControlState {
   final AppControlData? data;
@@ -96,12 +99,13 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
 
-      print('[AppControl] currentVersion: $currentVersion');
-      print('[AppControl] raw response: $raw');
+      if (kDebugMode)
+        debugPrint('[AppControl] currentVersion: $currentVersion');
 
       if (raw == null) {
-        print('[AppControl] raw is null — skipping');
-        state = state.copyWith(isLoading: false, currentVersion: currentVersion);
+        if (kDebugMode) debugPrint('[AppControl] raw is null — skipping');
+        state =
+            state.copyWith(isLoading: false, currentVersion: currentVersion);
         return;
       }
 
@@ -109,8 +113,22 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
       final versionInfo = controlData.versionInfo;
       final maintenance = controlData.maintenance;
 
-      print('[AppControl] versionInfo: ${versionInfo != null ? "parsed" : "null"}');
-      print('[AppControl] maintenance.isEnabled: ${maintenance.isEnabled}');
+      // ── Dynamic SSL Pin Update ──
+      // Server can push new cert fingerprints via app/control.
+      // This allows cert renewals without app republishing.
+      final dataMap = raw['data'];
+      final rawPins = dataMap is Map ? dataMap['certificate_pins'] : null;
+      if (rawPins is List && rawPins.isNotEmpty) {
+        final pins = rawPins.cast<String>();
+        await CertificatePinning.updatePins(pins);
+      }
+
+      if (kDebugMode) {
+        debugPrint(
+            '[AppControl] versionInfo: ${versionInfo != null ? "parsed" : "null"}');
+        debugPrint(
+            '[AppControl] maintenance.isEnabled: ${maintenance.isEnabled}');
+      }
 
       // ── Maintenance takes priority over everything ──
       if (maintenance.isEnabled) {
@@ -130,20 +148,30 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
       }
 
       // ── Version check (per-platform) ──
+      // Skip if the server returned a config for a different platform
+      // (e.g. server returns "web" but we're running on android/ios).
       bool updateRequired = false;
       bool forceUpdate = false;
 
-      if (versionInfo != null && currentVersion.isNotEmpty) {
+      if (versionInfo != null &&
+          currentVersion.isNotEmpty &&
+          controlData.isPlatformMatch) {
         final platformVersion = versionInfo.current;
-        print('[AppControl] platform latestVersion: ${platformVersion.latestVersion}');
-        print('[AppControl] platform minVersion: ${platformVersion.minVersion}');
-        print('[AppControl] platform storeUrl: ${platformVersion.storeUrl}');
 
-        updateRequired = _isLower(currentVersion, platformVersion.latestVersion);
+        updateRequired =
+            _isLower(currentVersion, platformVersion.latestVersion);
         forceUpdate = versionInfo.forceUpdate ||
             _isLower(currentVersion, platformVersion.minVersion);
 
-        print('[AppControl] updateRequired: $updateRequired, forceUpdate: $forceUpdate');
+        if (kDebugMode) {
+          debugPrint(
+              '[AppControl] updateRequired: $updateRequired, forceUpdate: $forceUpdate');
+        }
+      } else if (!controlData.isPlatformMatch) {
+        if (kDebugMode) {
+          debugPrint(
+              '[AppControl] Skipping version check — response platform "${controlData.responsePlatform}" does not match device');
+        }
       }
 
       final alert = controlData.alert;
@@ -151,9 +179,6 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
       final showAlert = alert != null &&
           alert.isActive &&
           !(alert.isMaintenance && !maintenance.isEnabled);
-
-      print('[AppControl] alert: ${alert != null ? "type=${alert.type}, isActive=${alert.isActive}, isMaintenance=${alert.isMaintenance}" : "null"}');
-      print('[AppControl] showAlert: $showAlert');
 
       state = state.copyWith(
         data: controlData,
@@ -165,8 +190,10 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
         currentVersion: currentVersion,
       );
     } catch (e, stack) {
-      print('[AppControl] ERROR in _fetch: $e');
-      print('[AppControl] Stack: $stack');
+      if (kDebugMode) {
+        debugPrint('[AppControl] ERROR in _fetch: $e');
+        debugPrint('[AppControl] Stack: $stack');
+      }
       state = state.copyWith(isLoading: false);
     }
   }

@@ -32,6 +32,11 @@ This document summarizes the complete set of API endpoints required for the Star
     *   The key is persisted in `FlutterSecureStorage` and reused for the session.
     *   If the endpoint is unreachable, the app transparently falls back to **AES-256-CBC** so the user experience is never broken.
     *   The private key is **never exposed** to the client; sensitive fields are encrypted one-way with RSA before transmission.
+9.  **SSL Certificate Pinning (Dynamic):**
+    *   All HTTPS connections validate the server certificate's SHA-256 fingerprint against a trusted list.
+    *   **Hardcoded fallback:** Shipped in the APK for first-install / offline scenarios.
+    *   **Server-managed pins:** The `app/control` API returns a `certificate_pins` array. These are cached in encrypted storage and used for all subsequent connections.
+    *   **Certificate renewal without app republish:** Server adds the new fingerprint to `certificate_pins` before renewal → apps auto-cache → cert is renewed → zero downtime.
 
 ---
 
@@ -114,7 +119,10 @@ This document summarizes the complete set of API endpoints required for the Star
           "title": "Under Maintenance",
           "subtitle": "We're upgrading our systems for a better experience. Please check back soon.",
           "expected_resume": "We'll be back by 4:00 AM IST"
-        }
+        },
+        "certificate_pins": [
+          "F3:AB:FB:70:B3:D0:A7:F2:CB:EF:02:8A:2C:C4:95:62:55:D8:FC:35:71:E5:32:0E:7F:04:D7:00:47:10:86:AC"
+        ]
       }
     }
     ```
@@ -132,6 +140,53 @@ This document summarizes the complete set of API endpoints required for the Star
 | `info` | Blue | ✅ Yes |
 | `warning` | Amber | ✅ Yes |
 | `maintenance` | Indigo | ❌ No |
+
+#### `certificate_pins` — Dynamic SSL Pinning
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `certificate_pins` | Array\<String\> | No | List of pins the app should trust. Supports **two formats** (can be mixed in the same array). |
+
+**Supported Pin Formats:**
+
+| Format | Example | Changes on cert renewal? |
+|---|---|---|
+| **Certificate fingerprint** (colon-hex) | `"F3:AB:FB:70:B3:D0:..."` | ✅ Yes — new cert = new fingerprint |
+| **Public key pin** (Base64 SPKI SHA-256) | `"hEdBgpqZW1U6x1XwUf+0UfNg4zu2oy/OwkIOGCppqXs="` | ❌ **No** — stable if same key pair is reused |
+
+> **Recommendation:** Use **public key pins** for production. They don't change on cert renewals (as long as server reuses the same key pair), so no app/API update is needed.
+
+**Example response with both formats:**
+```json
+"certificate_pins": [
+  "F3:AB:FB:70:B3:D0:A7:F2:CB:EF:02:8A:2C:C4:95:62:55:D8:FC:35:71:E5:32:0E:7F:04:D7:00:47:10:86:AC",
+  "hEdBgpqZW1U6x1XwUf+0UfNg4zu2oy/OwkIOGCppqXs="
+]
+```
+The app auto-detects the format (colon = cert fingerprint, no colon = public key pin).
+
+**How it works:**
+*   On every `app/control` fetch, the app reads `certificate_pins` and caches them in encrypted local storage.
+*   These cached pins are used for SSL validation on all subsequent HTTPS connections.
+*   If `certificate_pins` is missing or empty, the app falls back to hardcoded pins shipped with the APK.
+
+**Certificate Renewal Workflow (No App Republish Needed):**
+1.  **2 weeks before renewal:** Add the NEW certificate's fingerprint to the array (keep old one too).
+2.  All active apps will auto-fetch and cache both fingerprints within their next poll cycle.
+3.  **Renew the certificate** on the server.
+4.  Remove the old fingerprint from the array.
+5.  Result: Zero downtime, zero app store update.
+
+> If using public key pins and the server reuses the same key pair, **no changes are needed at all** during cert renewal.
+
+**How to get the pins:**
+```bash
+# Certificate fingerprint (colon-hex)
+echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl x509 -noout -fingerprint -sha256
+
+# Public key pin (Base64 SPKI SHA-256) — RECOMMENDED
+echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl enc -base64
+```
 
 *   **Failure Handling:** If this endpoint is unavailable, the app continues normally with no update/alert/maintenance popup.
 

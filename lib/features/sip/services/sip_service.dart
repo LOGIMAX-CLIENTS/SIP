@@ -167,7 +167,7 @@ class SipService {
     if (subscriptionId != null && subscriptionId.isNotEmpty) {
       payload['subscription_id'] = subscriptionId;
     }
-    print('payload confirm sip: $payload');
+    SecureLogger.d('SIP: Confirming with payload keys: ${payload.keys}');
     final response = await _apiClient.post('sip/confirm', data: payload);
     return response.data;
   }

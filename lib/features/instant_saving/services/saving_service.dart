@@ -46,8 +46,8 @@ class SavingService {
     required double weight,
     String? couponCode,
   }) async {
-    debugPrint(
-        '[INITIATE] buy_type → $buyType (${buyType == 1 ? 'AMOUNT' : 'GRAMS'}) | amount=$amount | weight=$weight');
+    SecureLogger.d(
+        '[INITIATE] buy_type → $buyType (${buyType == 1 ? 'AMOUNT' : 'GRAMS'})');
     final response = await _apiClient.post('savings/initiate', data: {
       'id_customer': customerId,
       'id_metal': metalId,

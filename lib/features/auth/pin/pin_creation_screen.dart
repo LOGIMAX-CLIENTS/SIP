@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -472,10 +473,10 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
         final token = await FcmService.getToken();
         if (token != null) {
           await notifService.registerFcmToken(token);
-          debugPrint('[FCM] Token registered after new-user registration.');
+          if (kDebugMode) debugPrint('[FCM] Token registered after new-user registration.');
         }
       } catch (e) {
-        debugPrint('[FCM] Token registration skipped during registration: $e');
+        if (kDebugMode) debugPrint('[FCM] Token registration skipped during registration: $e');
       }
     });
   }

@@ -29,8 +29,7 @@ class PlatformVersionInfo {
     String? fallbackStoreUrl,
   }) =>
       PlatformVersionInfo(
-        latestVersion:
-            json['latest_version'] ?? fallbackLatest ?? '',
+        latestVersion: json['latest_version'] ?? fallbackLatest ?? '',
         minVersion: json['min_version'] ?? fallbackMin ?? '',
         storeUrl: json['store_url'] ?? fallbackStoreUrl ?? '',
         title: json['title'] ?? '',
@@ -163,12 +162,27 @@ class AppControlData {
   final AppVersionInfo? versionInfo;
   final AppAlert? alert;
   final MaintenanceInfo maintenance;
+  final String responsePlatform; // platform field from API response
 
   const AppControlData({
     this.versionInfo,
     this.alert,
     this.maintenance = MaintenanceInfo.off,
+    this.responsePlatform = '',
   });
+
+  /// Whether the response platform matches the running device platform.
+  /// Returns false when server returns e.g. "web" but app runs on android/ios.
+  bool get isPlatformMatch {
+    if (responsePlatform.isEmpty)
+      return true; // no platform field → assume match
+    if (kIsWeb) return responsePlatform == 'web';
+    try {
+      if (Platform.isAndroid) return responsePlatform == 'android';
+      if (Platform.isIOS) return responsePlatform == 'ios';
+    } catch (_) {}
+    return true; // fallback — don't block
+  }
 
   factory AppControlData.fromJson(Map<String, dynamic> json) {
     final data = json['data'] as Map<String, dynamic>? ?? {};
@@ -179,9 +193,11 @@ class AppControlData {
       alert: data.containsKey('alert') && data['alert'] != null
           ? AppAlert.fromJson(data['alert'])
           : null,
-      maintenance: data.containsKey('maintenance') && data['maintenance'] != null
-          ? MaintenanceInfo.fromJson(data['maintenance'])
-          : MaintenanceInfo.off,
+      maintenance:
+          data.containsKey('maintenance') && data['maintenance'] != null
+              ? MaintenanceInfo.fromJson(data['maintenance'])
+              : MaintenanceInfo.off,
+      responsePlatform: (data['platform'] as String?) ?? '',
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/security/app_lifecycle_observer.dart';
 import 'core/security/root_detection_service.dart';
+import 'core/security/certificate_pinning.dart';
 import 'shared/widgets/compromised_device_screen.dart';
 import 'shared/widgets/app_control_wrapper.dart';
 import 'routes/app_router.dart';
@@ -45,7 +46,10 @@ void main() async {
     // 2. Lock portrait orientation — mobile only
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-    // 3. Start FCM service — mobile only
+    // 3. Initialize SSL certificate pinning (loads cached server pins)
+    await CertificatePinning.init();
+
+    // 4. Start FCM service — mobile only
     await FcmService.init();
   }
 

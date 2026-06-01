@@ -5,6 +5,7 @@ import '../security/encryption_service.dart';
 import '../security/secure_storage_service.dart';
 import '../security/session_manager.dart';
 import '../security/secure_logger.dart';
+import '../security/certificate_pinning.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../shared/widgets/session_invalidated_dialog.dart';
 
@@ -31,6 +32,9 @@ class ApiSecurityInterceptor extends Interceptor {
           'Accept': 'application/json',
         },
       ));
+
+      // Apply certificate pinning to public key fetch
+      CertificatePinning.setup(plainDio);
 
       final response = await plainDio.get(AppConfig.publicKeyEndpoint);
 
@@ -238,6 +242,9 @@ class ApiSecurityInterceptor extends Interceptor {
               'Accept': 'application/json',
             },
           ));
+
+          // Apply certificate pinning to token refresh
+          CertificatePinning.setup(refreshDio);
 
           final refreshResponse = await refreshDio.post(
             'users/auth/token/refresh',

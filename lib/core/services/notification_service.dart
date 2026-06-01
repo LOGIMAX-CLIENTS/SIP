@@ -82,7 +82,7 @@ class NotificationService {
   Future<int> fetchUnreadCount() async {
     final response = await _api.post('users/notifications/unread-count');
     final data = response.data;
-    debugPrint('[Notification] unread-count raw response: $data');
+    if (kDebugMode) debugPrint('[Notification] unread-count response received');
     if (data == null) return 0;
 
     // Handle multiple possible response structures:
@@ -101,7 +101,7 @@ class NotificationService {
       // Fallback: check top-level keys
       count = (data['count'] ?? data['unread_count'] ?? 0) as int;
     }
-    debugPrint('[Notification] parsed unread count: $count');
+    if (kDebugMode) debugPrint('[Notification] parsed unread count: $count');
     return count;
   }
 
@@ -117,7 +117,7 @@ class NotificationService {
     try {
       final storedToken = await SecureStorageService.getFcmToken();
       if (storedToken == token) {
-        debugPrint('[FCM] Token unchanged — skipping registration.');
+        if (kDebugMode) debugPrint('[FCM] Token unchanged — skipping registration.');
         return;
       }
 
@@ -139,12 +139,9 @@ class NotificationService {
       });
 
       await SecureStorageService.saveFcmToken(token);
-      debugPrint('[FCM] Token registered — device: $deviceId ($deviceType) '
-          'manufacturer: ${deviceInfo['manufacturer']} '
-          'model: ${deviceInfo['device_model']} (${deviceInfo['hardware_id']}) '
-          'os: ${deviceInfo['os']} ${deviceInfo['os_version']}');
+      if (kDebugMode) debugPrint('[FCM] Token registered successfully.');
     } catch (e) {
-      debugPrint('[FCM] Token registration failed: $e');
+      if (kDebugMode) debugPrint('[FCM] Token registration failed: $e');
     }
   }
 }
@@ -249,10 +246,10 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
   Future<void> refreshUnreadCount() async {
     try {
       final count = await _service.fetchUnreadCount();
-      debugPrint('[Notification] badge count updated: $count');
+      if (kDebugMode) debugPrint('[Notification] badge count updated: $count');
       state = state.copyWith(unreadCount: count);
     } catch (e) {
-      debugPrint('[Notification] refreshUnreadCount failed: $e');
+      if (kDebugMode) debugPrint('[Notification] refreshUnreadCount failed: $e');
     }
   }
 }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Network Security Configuration for VAPT / Production.
+     - Blocks all cleartext (HTTP) traffic at the OS level.
+     - Only trusts system CA certificates.
+     Reference: https://developer.android.com/training/articles/security-config -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

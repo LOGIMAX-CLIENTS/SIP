@@ -10,8 +10,8 @@ class AppConfig {
   static const String baseUrl = String.fromEnvironment(
     'BASE_URL',
     // defaultValue: 'https://api.startgold.com/api/api/v1/', //  Live
-    defaultValue:
-        'https://startgoldapi.logimaxindia.com/api/api/v1/', // Staging
+    //defaultValue:'https://startgoldapi.logimaxindia.com/api/api/v1/', // Staging
+    defaultValue: 'https://vaptapi.startgold.com/api/api/v1/', // VAPT Server
   );
 
   // Storage Keys
@@ -37,7 +37,8 @@ class AppConfig {
 
   // Security
   static const List<String> allowedCertFingerprints = [
-    'XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX:XX', // Placeholder
+    'F3:AB:FB:70:B3:D0:A7:F2:CB:EF:02:8A:2C:C4:95:62:55:D8:FC:35:71:E5:32:0E:7F:04:D7:00:47:10:86:AC', // cert fingerprint (changes on renewal)
+    'hEdBgpqZW1U6x1XwUf+0UfNg4zu2oy/OwkIOGCppqXs=', // public key pin (stable across renewals)
   ];
 
   // List of sensitive endpoints that REQUIRE encryption
@@ -82,14 +83,14 @@ class AppConfig {
     'withdrawal_amount',
     'payment_details',
     'amount', // from Payment APIs rule
-    // 'amount_inr', // ⚠️ DEBUG: commented out to see real value in logs — re-enable before release
+    'amount_inr',
     'payment_pin', // from Payment APIs rule
     'bank_details', // from Payment APIs rule
     'mpin', // MPIN rule
     'old_mpin',
     'new_mpin',
     'mobile', // encrypt PII
-    // 'weight', // ⚠️ DEBUG: commented out to see real value in logs — re-enable before release
+    'weight',
     'buy_rate', // withdrawal: rate at time of sale
   ];
 }
