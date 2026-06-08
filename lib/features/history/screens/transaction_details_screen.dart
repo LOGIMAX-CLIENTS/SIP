@@ -100,6 +100,8 @@ class _TransactionDetailsScreenState
     final bool isSaving = routeType == 'purchase' || isSip;
     final bool isReferral = routeType == 'referral' ||
         details.title.toLowerCase().contains('referral');
+    final bool isOffer = routeType == 'offer' ||
+        details.title.toLowerCase().contains('offer');
     final textColor = isDark ? Colors.white : const Color(0xFF1E293B);
     final mutedTextColor = isDark ? Colors.white54 : const Color(0xFF64748B);
     final cardColor = isDark ? Colors.white.withOpacity(0.04) : Colors.white;
@@ -110,10 +112,10 @@ class _TransactionDetailsScreenState
       padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
       child: Column(
         children: [
-          _buildTopCard(details, isSaving, isSip, isReferral, cardColor, borderColor,
+          _buildTopCard(details, isSaving, isSip, isReferral, isOffer, cardColor, borderColor,
               textColor, mutedTextColor, isDark),
           SizedBox(height: 16.h),
-          _buildStatusCard(details, isSaving, isSip, cardColor, borderColor, textColor,
+          _buildStatusCard(details, isSaving, isSip, isOffer, cardColor, borderColor, textColor,
               mutedTextColor, isDark),
           if (isSip && details.schemeInfo != null) ...[
             SizedBox(height: 16.h),
@@ -121,7 +123,7 @@ class _TransactionDetailsScreenState
                 textColor, mutedTextColor, isDark),
           ],
           SizedBox(height: 16.h),
-          _buildOrderDetails(details, isSaving, isSip, isReferral, cardColor, borderColor,
+          _buildOrderDetails(details, isSaving, isSip, isReferral, isOffer, cardColor, borderColor,
               textColor, mutedTextColor, isDark),
           SizedBox(height: 16.h),
         ],
@@ -134,6 +136,7 @@ class _TransactionDetailsScreenState
       bool isSaving,
       bool isSip,
       bool isReferral,
+      bool isOffer,
       Color cardColor,
       Color borderColor,
       Color textColor,
@@ -145,7 +148,9 @@ class _TransactionDetailsScreenState
             ? 'Instant Saving'
             : isReferral
                 ? 'Referral Reward'
-                : 'Withdrawal';
+                : isOffer
+                    ? 'Offer Reward'
+                    : 'Withdrawal';
 
     final typeColor = isSip
         ? const Color(0xFF0D9488)  // teal
@@ -153,7 +158,9 @@ class _TransactionDetailsScreenState
             ? const Color(0xFF1B882C)
             : isReferral
                 ? const Color(0xFF7C3AED)
-                : const Color(0xFFDC2626);
+                : isOffer
+                    ? const Color(0xFF0D9488) // teal (same as SIP)
+                    : const Color(0xFFDC2626);
 
     return Container(
       padding: EdgeInsets.all(20.w),
@@ -191,16 +198,45 @@ class _TransactionDetailsScreenState
                     color: typeColor,
                   ),
                 ),
-                if (isSip && details.subtitle.isNotEmpty) ...[
+                if ((isSip || isOffer) && details.subtitle.isNotEmpty) ...[
                   SizedBox(height: 2.h),
-                  Text(
-                    details.subtitle,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 11.sp,
-                      fontWeight: FontWeight.w500,
-                      color: mutedTextColor,
-                    ),
-                  ),
+                  Builder(builder: (_) {
+                    final parts = RegExp(r'(\d+)').allMatches(details.subtitle);
+                    final spans = <TextSpan>[];
+                    int lastEnd = 0;
+                    for (final m in parts) {
+                      if (m.start > lastEnd) {
+                        spans.add(TextSpan(
+                          text: details.subtitle.substring(lastEnd, m.start),
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 11.sp,
+                            fontWeight: FontWeight.w500,
+                            color: mutedTextColor,
+                          ),
+                        ));
+                      }
+                      spans.add(TextSpan(
+                        text: m.group(0),
+                        style: GoogleFonts.lora(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w600,
+                          color: mutedTextColor,
+                        ),
+                      ));
+                      lastEnd = m.end;
+                    }
+                    if (lastEnd < details.subtitle.length) {
+                      spans.add(TextSpan(
+                        text: details.subtitle.substring(lastEnd),
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w500,
+                          color: mutedTextColor,
+                        ),
+                      ));
+                    }
+                    return RichText(text: TextSpan(children: spans));
+                  }),
                 ],
               ],
             ),
@@ -218,7 +254,7 @@ class _TransactionDetailsScreenState
               ),
               SizedBox(height: 4.h),
               Text(
-                '${details.weightGrams} g',
+                '${details.weightGrams.toStringAsFixed(6)} gm',
                 style: GoogleFonts.lora(
                   fontSize: 13.sp,
                   color: mutedTextColor,
@@ -236,6 +272,7 @@ class _TransactionDetailsScreenState
       TransactionDetailResponse details,
       bool isSaving,
       bool isSip,
+      bool isOffer,
       Color cardColor,
       Color borderColor,
       Color textColor,
@@ -322,7 +359,7 @@ class _TransactionDetailsScreenState
                 ),
                 if (isSaving) SizedBox(width: 12.w),
               ],
-              if (isSaving && !isSip)
+              if (isSaving && !isSip && !isOffer)
                 Expanded(
                   flex: details.invoiceUrl.isNotEmpty ? 6 : 10,
                   child: DecoratedBox(
@@ -373,6 +410,7 @@ class _TransactionDetailsScreenState
         statusLower == 'cancelled';
     final bool isPending =
         statusLower == 'pending' || statusLower == 'processing';
+    final bool isOnHold = statusLower == 'on hold';
 
     // Status-specific styling
     final Color stepColor;
@@ -392,6 +430,12 @@ class _TransactionDetailsScreenState
       badgeTextColor =
           isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
       stepIcon = Icons.schedule_rounded;
+    } else if (isOnHold) {
+      stepColor = const Color(0xFFD97706);
+      badgeBgColor = const Color(0xFFD97706).withOpacity(0.12);
+      badgeTextColor =
+          isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
+      stepIcon = Icons.pause_circle_rounded;
     } else {
       // Success / default
       stepColor = const Color(0xFF10B981);
@@ -542,6 +586,7 @@ class _TransactionDetailsScreenState
       bool isSaving,
       bool isSip,
       bool isReferral,
+      bool isOffer,
       Color cardColor,
       Color borderColor,
       Color textColor,
@@ -554,20 +599,24 @@ class _TransactionDetailsScreenState
             ? 'Order Details'
             : isReferral
                 ? 'Referral Reward Details'
-                : 'Withdrawal Details';
+                : isOffer
+                    ? 'Offer Details'
+                    : 'Withdrawal Details';
 
-    // Row labels
+    // Row labels — use metal-appropriate labels for offer
     final String rateLabel = isSip
         ? '${details.metalName} Rate'
         : isSaving
             ? 'Gold Purchased At'
             : isReferral
                 ? 'Gold Credited At'
-                : 'Gold Sold At';
+                : isOffer
+                    ? '${details.metalName} Rate'
+                    : 'Gold Sold At';
 
     final String subSectionTitle = isSaving
         ? 'Transaction Details'
-        : isReferral
+        : (isReferral || isOffer)
             ? 'Reward Details'
             : 'Settlement Details';
 
@@ -619,7 +668,7 @@ class _TransactionDetailsScreenState
                 details.priceBreakdown.rate, textColor, mutedTextColor),
             _buildDetailRow('Gold Quantity', details.priceBreakdown.quantity,
                 textColor, mutedTextColor),
-            _buildDetailRow('Gold Value', details.priceBreakdown.value,
+            _buildDetailRow(isOffer ? 'Silver Value' : 'Gold Value', details.priceBreakdown.value,
                 textColor, mutedTextColor),
             _buildDetailRow(
                 'GST', details.priceBreakdown.gst, textColor, mutedTextColor),
@@ -642,7 +691,7 @@ class _TransactionDetailsScreenState
             ),
             SizedBox(height: 8.h),
             _buildDetailRow(
-                isReferral ? 'Reward ID' : 'Order ID',
+                (isReferral || isOffer) ? 'Reward ID' : 'Order ID',
                 details.orderId, textColor, mutedTextColor,
                 showCopy: true),
             _buildDetailRow(
@@ -653,7 +702,7 @@ class _TransactionDetailsScreenState
                 showCopy: true),
             _buildDetailRow('Placed On', details.technicalDetails.placedOn,
                 textColor, mutedTextColor),
-            if (!isReferral)
+            if (!isReferral && !isOffer)
               _buildDetailRow('Paid Via',
                   details.technicalDetails.paidVia, textColor, mutedTextColor),
           ]
@@ -728,6 +777,8 @@ class _TransactionDetailsScreenState
             : 'assets/withdraw/sip_silver.svg';
       case 'referral':
         return 'assets/withdraw/trans_referal.svg';
+      case 'offer':
+        return 'assets/withdraw/offer-reward-silver.svg';
       default: // withdrawal
         return isGold
             ? 'assets/withdraw/with_gold.svg'

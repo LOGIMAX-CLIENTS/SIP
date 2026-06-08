@@ -615,7 +615,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                 final inrValue = withdrawable * rate;
                 return Row(
                   children: [
-                    Text('${withdrawable.toStringAsFixed(4)} gm',
+                    Text('${withdrawable.toStringAsFixed(6)} gm',
                         style: GoogleFonts.lora(
                             fontSize: 20.sp,
                             fontWeight: FontWeight.w700,
@@ -721,7 +721,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                                   : rates.silverBuy;
                               final grams =
                                   price > 0 ? state.amount / price : 0.0;
-                              return Text('${grams.toStringAsFixed(4)}gm',
+                              return Text('${grams.toStringAsFixed(6)}gm',
                                   style: GoogleFonts.lora(
                                       fontSize: 12.sp,
                                       color: Colors.black45,
@@ -949,7 +949,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       iconColor: const Color(0xFF1B882C),
                       bgColor: const Color(0xFF1B882C).withOpacity(0.08),
                       label: 'Withdrawable',
-                      value: '${withdrawable.toStringAsFixed(4)} gm',
+                      value: '${withdrawable.toStringAsFixed(6)} gm',
                       valueColor: const Color(0xFF1B882C),
                     ),
                     Divider(height: 1, color: Colors.black.withOpacity(0.05)),
@@ -958,7 +958,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       iconColor: const Color(0xFFD97706),
                       bgColor: const Color(0xFFD97706).withOpacity(0.08),
                       label: 'On Hold',
-                      value: '${onHold.toStringAsFixed(4)} gm',
+                      value: '${onHold.toStringAsFixed(6)} gm',
                       valueColor: const Color(0xFFD97706),
                     ),
                     Divider(height: 1, color: Colors.black.withOpacity(0.05)),
@@ -967,7 +967,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       iconColor: const Color(0xFF5C3300),
                       bgColor: const Color(0xFFEF9B00).withOpacity(0.10),
                       label: 'Total Holding',
-                      value: '${totalQty.toStringAsFixed(4)} gm',
+                      value: '${totalQty.toStringAsFixed(6)} gm',
                       valueColor: Colors.black87,
                     ),
                   ],

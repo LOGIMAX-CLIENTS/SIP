@@ -414,6 +414,7 @@ class _TransactionHistoryScreenState
     final isSaving = tx.type == 'purchase';
     final isReferral = tx.type == 'referral';
     final isSip = tx.type == 'sip';
+    final isOffer = tx.type == 'offer';
     final cardColor = isDark ? Colors.white.withOpacity(0.04) : Colors.white;
     final borderColor =
         isDark ? Colors.white10 : Colors.black.withOpacity(0.05);
@@ -426,7 +427,9 @@ class _TransactionHistoryScreenState
             ? 'Instant Saving'
             : isReferral
                 ? 'Referral Reward'
-                : 'Withdrawal';
+                : isOffer
+                    ? 'Offer Reward'
+                    : 'Withdrawal';
 
     final typeColor = isSip
         ? const Color(0xFF0D9488)  // teal — SIP
@@ -434,7 +437,9 @@ class _TransactionHistoryScreenState
             ? const Color(0xFF1B882C)   // green — Instant Saving
             : isReferral
                 ? const Color(0xFF7C3AED) // purple — Referral
-                : const Color(0xFFDC2626); // red — Withdrawal
+                : isOffer
+                    ? const Color(0xFF0D9488) // teal — Offer Reward (same as SIP)
+                    : const Color(0xFFDC2626); // red — Withdrawal
 
     final statusColor = _statusColor(tx.status);
 
@@ -537,7 +542,7 @@ class _TransactionHistoryScreenState
                 ),
                 SizedBox(height: 4.h),
                 Text(
-                  '${tx.weightGrams} g',
+                  '${tx.weightGrams.toStringAsFixed(6)} gm',
                   style: GoogleFonts.lora(
                     fontSize: 12.sp,
                     color: mutedColor,
@@ -638,6 +643,8 @@ class _TransactionHistoryScreenState
         return const Color(0xFF10B981);
       case 'pending':
         return const Color(0xFFF59E0B);
+      case 'on hold':
+        return const Color(0xFFD97706);
       case 'cancelled':
       case 'failed':
         return const Color(0xFFDC2626);
@@ -659,6 +666,8 @@ class _TransactionHistoryScreenState
             : 'assets/withdraw/sip_silver.svg';
       case 'referral':
         return 'assets/withdraw/trans_referal.svg';
+      case 'offer':
+        return 'assets/withdraw/offer-reward-silver.svg';
       default:
         return isGold
             ? 'assets/withdraw/with_gold.svg'

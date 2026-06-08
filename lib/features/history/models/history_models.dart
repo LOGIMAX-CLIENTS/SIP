@@ -43,7 +43,7 @@ class TransactionItem {
   final String type;
   final int soType;
   final double amount;
-  final String weightGrams;
+  final double weightGrams;
   final String displayDate;
   final String status;
   final String metalName;
@@ -72,7 +72,7 @@ class TransactionItem {
       type: json['type'] ?? '',
       soType: json['so_type'] ?? 0,
       amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0.0,
-      weightGrams: json['weight_grams']?.toString() ?? '0',
+      weightGrams: double.tryParse(json['weight_grams']?.toString() ?? '0') ?? 0.0,
       displayDate: json['display_date'] ?? '',
       status: json['status'] ?? '',
       metalName: json['metal_name'] ?? 'Gold 24K',
@@ -87,7 +87,7 @@ class TransactionDetailResponse {
   final String title;
   final String subtitle;
   final String amount;
-  final String weightGrams;
+  final double weightGrams;
   final String metalName;
   final String scheduledDate;
   final String paymentMethod;
@@ -131,7 +131,7 @@ class TransactionDetailResponse {
       title: root['title'] ?? '',
       subtitle: root['subtitle'] ?? '',
       amount: root['amount']?.toString() ?? '0',
-      weightGrams: root['weight_grams']?.toString() ?? '0',
+      weightGrams: double.tryParse(root['weight_grams']?.toString() ?? '0') ?? 0.0,
       metalName: root['metal_name'] ?? 'Gold 24K',
       scheduledDate: root['scheduled_date'] ?? '',
       paymentMethod: root['payment_method'] ?? '',
@@ -185,13 +185,15 @@ class PriceBreakdown {
   });
 
   factory PriceBreakdown.fromJson(Map<String, dynamic> json) {
-    final qty = json['quantity']?.toString() ?? json['gold_quantity']?.toString() ?? '0';
+    final qtyRaw = json['quantity']?.toString() ?? json['gold_quantity']?.toString() ?? '0';
+    // Strip any existing unit suffix (e.g. "0.0005 g") to parse pure number
+    final qtyNum = double.tryParse(qtyRaw.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0.0;
     final rate = json['rate']?.toString() ?? json['gold_rate']?.toString() ?? '0';
     final val = json['value']?.toString() ?? json['gold_value']?.toString() ?? '0';
     final gst = json['gst']?.toString() ?? '0.00';
     final total = json['total_amount']?.toString() ?? '0';
     return PriceBreakdown(
-      quantity: '$qty g',
+      quantity: '${qtyNum.toStringAsFixed(6)} gm',
       rate: '₹$rate',
       value: '₹$val',
       gst: '₹$gst',

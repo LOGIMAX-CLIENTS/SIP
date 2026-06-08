@@ -288,7 +288,7 @@ class _WithdrawalConfirmationScreenState
     // When market is closed: weight and rate can't be calculated reliably.
     final weightText = isCurrentMarketClosed
         ? '\u2014'
-        : '${amountGrams.toStringAsFixed(4)} gm';
+        : '${amountGrams.toStringAsFixed(6)} gm';
     final rateText = isCurrentMarketClosed
         ? 'Market Closed'
         : '\u20b9${rate.toStringAsFixed(2)} / gm';

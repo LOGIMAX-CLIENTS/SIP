@@ -4,7 +4,7 @@ This document summarizes the complete set of API endpoints required for the Star
 
 ---
 
-## 🔐 GLOBAL SECURITY ARCHITECTURE
+## ðŸ” GLOBAL SECURITY ARCHITECTURE
 
 1.  **Transport Encryption:** All communication is strictly via **HTTPS (TLS 1.2+)**. 
 2.  **Field-Level Encryption (AES-256-CBC):**
@@ -36,15 +36,15 @@ This document summarizes the complete set of API endpoints required for the Star
     *   All HTTPS connections validate the server certificate's SHA-256 fingerprint against a trusted list.
     *   **Hardcoded fallback:** Shipped in the APK for first-install / offline scenarios.
     *   **Server-managed pins:** The `app/control` API returns a `certificate_pins` array. These are cached in encrypted storage and used for all subsequent connections.
-    *   **Certificate renewal without app republish:** Server adds the new fingerprint to `certificate_pins` before renewal → apps auto-cache → cert is renewed → zero downtime.
+    *   **Certificate renewal without app republish:** Server adds the new fingerprint to `certificate_pins` before renewal â†’ apps auto-cache â†’ cert is renewed â†’ zero downtime.
 
 ---
 
-## 0. 🔑 Encryption Key Exchange
+## 0. ðŸ”‘ Encryption Key Exchange
 
 ### 0.1 Fetch Server RSA Public Key
 *   **Endpoint:** `GET crypto/public-key`
-*   **Authorization:** None (public endpoint – called before login)
+*   **Authorization:** None (public endpoint â€“ called before login)
 *   **Purpose:** Retrieves the server's RSA-OAEP-SHA256 public key used to encrypt sensitive fields client-side before transmission.
 *   **Trigger:** Called automatically by `ApiSecurityInterceptor` on app startup. Result is cached in `FlutterSecureStorage`.
 *   **Response (Success):**
@@ -64,11 +64,11 @@ This document summarizes the complete set of API endpoints required for the Star
 
 ---
 
-## 0.2 🌐 App Runtime Control
+## 0.2 ðŸŒ App Runtime Control
 
 ### 0.2.1 Fetch App Control Data
 *   **Endpoint:** `POST app/control`
-*   **Authorization:** None (public endpoint — called before login and periodically while app is open)
+*   **Authorization:** None (public endpoint â€” called before login and periodically while app is open)
 *   **Purpose:** Central runtime control gate. Returns current version info (with platform-specific popups), live global alerts, and maintenance status.
 *   **Polling:** App polls this endpoint every **5 minutes** while active to pick up live alert changes without requiring a restart.
 *   **Request Body:**
@@ -80,7 +80,7 @@ This document summarizes the complete set of API endpoints required for the Star
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `platform` | String | Yes | `"android"` or `"ios"` — sent so the server can return platform-specific version info, alerts, and maintenance status |
+| `platform` | String | Yes | `"android"` or `"ios"` â€” sent so the server can return platform-specific version info, alerts, and maintenance status |
 
 *   **Response:**
     ```json
@@ -110,7 +110,7 @@ This document summarizes the complete set of API endpoints required for the Star
           "is_active": true,
           "type": "warning",
           "title": "Scheduled Maintenance",
-          "message": "Our servers will be down for maintenance on Apr 2, 2:00–4:00 AM IST.",
+          "message": "Our servers will be down for maintenance on Apr 2, 2:00â€“4:00 AM IST.",
           "action_url": null,
           "action_label": null
         },
@@ -130,18 +130,18 @@ This document summarizes the complete set of API endpoints required for the Star
 #### Version Update Logic (Client-Side)
 | Condition | Behaviour |
 |---|---|
-| `current < android.min_version` (or `ios.min_version`) | **Force update** — dialog shown, app unusable until updated |
-| `current < android.latest_version` (or `ios.latest_version`) | **Optional update** — dialog with "Later" skip option |
+| `current < android.min_version` (or `ios.min_version`) | **Force update** â€” dialog shown, app unusable until updated |
+| `current < android.latest_version` (or `ios.latest_version`) | **Optional update** â€” dialog with "Later" skip option |
 | `current >= platform.latest_version` | No popup shown |
 
 #### Alert `type` Values
 | Value | Color | Dismissible |
 |---|---|---|
-| `info` | Blue | ✅ Yes |
-| `warning` | Amber | ✅ Yes |
-| `maintenance` | Indigo | ❌ No |
+| `info` | Blue | âœ… Yes |
+| `warning` | Amber | âœ… Yes |
+| `maintenance` | Indigo | âŒ No |
 
-#### `certificate_pins` — Dynamic SSL Pinning
+#### `certificate_pins` â€” Dynamic SSL Pinning
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -151,8 +151,8 @@ This document summarizes the complete set of API endpoints required for the Star
 
 | Format | Example | Changes on cert renewal? |
 |---|---|---|
-| **Certificate fingerprint** (colon-hex) | `"F3:AB:FB:70:B3:D0:..."` | ✅ Yes — new cert = new fingerprint |
-| **Public key pin** (Base64 SPKI SHA-256) | `"hEdBgpqZW1U6x1XwUf+0UfNg4zu2oy/OwkIOGCppqXs="` | ❌ **No** — stable if same key pair is reused |
+| **Certificate fingerprint** (colon-hex) | `"F3:AB:FB:70:B3:D0:..."` | âœ… Yes â€” new cert = new fingerprint |
+| **Public key pin** (Base64 SPKI SHA-256) | `"hEdBgpqZW1U6x1XwUf+0UfNg4zu2oy/OwkIOGCppqXs="` | âŒ **No** â€” stable if same key pair is reused |
 
 > **Recommendation:** Use **public key pins** for production. They don't change on cert renewals (as long as server reuses the same key pair), so no app/API update is needed.
 
@@ -184,7 +184,7 @@ The app auto-detects the format (colon = cert fingerprint, no colon = public key
 # Certificate fingerprint (colon-hex)
 echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl x509 -noout -fingerprint -sha256
 
-# Public key pin (Base64 SPKI SHA-256) — RECOMMENDED
+# Public key pin (Base64 SPKI SHA-256) â€” RECOMMENDED
 echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl enc -base64
 ```
 
@@ -193,7 +193,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
 #### Maintenance Mode Behaviour
 | `is_enabled` | Client Behaviour |
 |---|---|
-| `true` at launch | `initialRoute` → `/maintenance` (blocks all normal routing) |
+| `true` at launch | `initialRoute` â†’ `/maintenance` (blocks all normal routing) |
 | `true` while in-app | `AppControlWrapper` redirects to `/maintenance` on next poll |
 | `false` (lifted) | `MaintenanceScreen` auto-navigates to the original `resumeRoute` |
 
@@ -214,7 +214,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
       "success": true,
       "data": {
         "slides": [
-          { "id": 1, "image": "https://cdn.gold.com/slides/1.png", "title": "Buy 24K Gold", "desc": "Start with just ₹10." }
+          { "id": 1, "image": "https://cdn.gold.com/slides/1.png", "title": "Buy 24K Gold", "desc": "Start with just â‚¹10." }
         ]
       }
     }
@@ -319,12 +319,12 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
       "data": {
         "homeTitle": {
           "en": "Home",
-          "ta": "முகப்பு",
-          "te": "హోమ్"
+          "ta": "à®®à¯à®•à®ªà¯à®ªà¯",
+          "te": "à°¹à±‹à°®à±"
         },
         "loginTitle": {
           "en": "Secure Login",
-          "ta": "பாதுகாப்பான உள்நுழைவு"
+          "ta": "à®ªà®¾à®¤à¯à®•à®¾à®ªà¯à®ªà®¾à®© à®‰à®³à¯à®¨à¯à®´à¯ˆà®µà¯"
         }
       }
     }
@@ -470,7 +470,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
 
 ### 2.3.1 Pre-Validate Registration Fields
 *   **Page Name:** `RegistrationScreen`
-*   **Reason:** Validates the registration form data (name, email, DOB, referral code) on the server before navigating to PIN creation. Ensures data is unique, correctly formatted, and the temp_token is still valid — without actually creating the account yet.
+*   **Reason:** Validates the registration form data (name, email, DOB, referral code) on the server before navigating to PIN creation. Ensures data is unique, correctly formatted, and the temp_token is still valid â€” without actually creating the account yet.
 *   **Trigger:** User taps "Confirm" on the Personal Information screen (after agreeing to T&C).
 *   **Endpoint:** `POST users/auth/register-check`
 *   **Authorization:** None (uses temp_token from OTP verification)
@@ -500,14 +500,14 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
     | `device_id` | String | Yes | Unique device identifier |
     | `device_type` | String | Yes | `"android"` or `"ios"` |
 
-*   **Response (Success — fields are valid):**
+*   **Response (Success â€” fields are valid):**
     ```json
     {
       "success": true,
       "message": "Validation passed. Proceed to MPIN creation."
     }
     ```
-*   **Response (Error — validation failed):**
+*   **Response (Error â€” validation failed):**
     ```json
     {
       "success": false,
@@ -704,7 +704,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
       "success": true,
       "message": "Portfolio summary retrieved",
       "data": {
-        "total_holdings_grams": 0.5,
+        "total_holdings_grams": 0.500000,
         "current_value_inr": 3125.25,
         "total_invested": 2900,
         "growth_percentage": 7.7
@@ -752,10 +752,10 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
         "total_earned": "100.00",
         "reward_amount": "100.00",
         "share_link": "https://startgold.com/refer/KSU8Y314",
-        "title": "Invite a friend and earn ₹100 worth of Gold.",
+        "title": "Invite a friend and earn â‚¹100 worth of Gold.",
         "bullet_points": [
           { "content": "Share the link with friends, family, and relatives." },
-          { "content": "Both you and your friend get ₹100 worth of gold." },
+          { "content": "Both you and your friend get â‚¹100 worth of gold." },
           { "content": "Reward is credited automatically after your friend's first purchase." }
         ]
       }
@@ -814,8 +814,8 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
     | `reward_balance` | Double | Available referral reward balance for the selected metal |
 
 *   **UI Behaviour:**
-    - If `reward_balance > 0` → a green **"Referral Reward Balance — ₹XXX.XX — Available"** chip is shown inside the withdrawal input card, below the current holding row.
-    - If `reward_balance == 0` or API fails → chip is hidden silently (no error shown).
+    - If `reward_balance > 0` â†’ a green **"Referral Reward Balance â€” â‚¹XXX.XX â€” Available"** chip is shown inside the withdrawal input card, below the current holding row.
+    - If `reward_balance == 0` or API fails â†’ chip is hidden silently (no error shown).
 
 ### 5.5 Session Termination
 *   `POST /auth/logout`: Invalidate session on server-side.
@@ -898,7 +898,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
         "transaction_id": "TXN_123456",
         "payment_token": "PG_TOKEN_XYZ",
         "order_amount": 100.0,
-        "grams_locked": 0.016,
+        "grams_locked": 0.016000,
         "expiry_seconds": 600
       }
     }
@@ -926,7 +926,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
       "data": {
         "status": "SUCCESS",
         "transaction_id": "CF_123456",
-        "credited_weight": 0.0070
+        "credited_weight": 0.007000
       }
     }
     ```
@@ -1066,7 +1066,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
       "success": true,
       "data": {
         "status": "SUCCESS / FAILED / PENDING",
-        "new_balance": 0.05
+        "new_balance": 0.050000
       }
     }
     ```
@@ -1176,17 +1176,17 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
     |-------|------|-------------|
     | `email` | String? | Support email address *(row hidden if absent)* |
     | `toll_free` | String? | Toll-free helpline number *(row hidden if absent)* |
-    | `phone` | String? | Support phone number — "Call Us" *(row hidden if absent)* |
-    | `whatsapp` | String? | WhatsApp support number — opens `wa.me` link *(row hidden if absent)* |
+    | `phone` | String? | Support phone number â€” "Call Us" *(row hidden if absent)* |
+    | `whatsapp` | String? | WhatsApp support number â€” opens `wa.me` link *(row hidden if absent)* |
     | `office_address` | String? | Corporate / branch office address *(row hidden if absent)* |
     | `registered_address` | String? | Registered office address *(row hidden if absent)* |
     | `working_hours` | String? | Business hours display string *(row hidden if absent)* |
-    | `facebook` | String? | Facebook page URL *(optional — icon hidden if absent)* |
-    | `twitter` | String? | X (Twitter) profile URL *(optional — icon hidden if absent)* |
-    | `instagram` | String? | Instagram profile URL *(optional — icon hidden if absent)* |
-    | `website` | String? | Official website URL *(optional — icon hidden if absent)* |
+    | `facebook` | String? | Facebook page URL *(optional â€” icon hidden if absent)* |
+    | `twitter` | String? | X (Twitter) profile URL *(optional â€” icon hidden if absent)* |
+    | `instagram` | String? | Instagram profile URL *(optional â€” icon hidden if absent)* |
+    | `website` | String? | Official website URL *(optional â€” icon hidden if absent)* |
 
-*   **Note:** **All fields are optional.** The app renders each contact card row and social icon tile **only** when the corresponding field is present and non-empty in the API response. If a field is `null`, missing, or an empty string, that row/icon is **not shown** — no fallback or placeholder is displayed.
+*   **Note:** **All fields are optional.** The app renders each contact card row and social icon tile **only** when the corresponding field is present and non-empty in the API response. If a field is `null`, missing, or an empty string, that row/icon is **not shown** â€” no fallback or placeholder is displayed.
 
 ---
 
@@ -1252,7 +1252,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
     ```
 ---
 
-## 12. 🚀 PRODUCTION READINESS CHECKLIST
+## 12. ðŸš€ PRODUCTION READINESS CHECKLIST
 
 Before deploying the application to the Production Environment (Play Store / App Store), the following changes **MUST** be implemented in `lib/core/config/app_config.dart` and the server infrastructure:
 
@@ -1290,7 +1290,7 @@ Before deploying the application to the Production Environment (Play Store / App
 
 ---
 
-## 13. ⚙️ AUTOMATION: SYNC RELEASE INFO
+## 13. âš™ï¸ AUTOMATION: SYNC RELEASE INFO
 
 To avoid manually editing 10+ platform-specific files, use the integrated sync script.
 
@@ -1320,7 +1320,7 @@ python scripts/update_release_info.py
 
 ---
 
-## 14. 💸 WITHDRAWAL APIs
+## 14. ðŸ’¸ WITHDRAWAL APIs
 
 ### 14.1 Fetch Saved Accounts
 Lists all saved UPI handles and bank accounts. First item is auto-selected in UI when only one exists.
@@ -1351,7 +1351,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ### 14.2 Verify & Add UPI Handle
 - **Endpoint:** `POST account/verify-upi`
-- **Encryption:** `upi_id` → AES-256
+- **Encryption:** `upi_id` â†’ AES-256
 - **Request:**
 ```json
 { "id_customer": "1234", "mobile": "9876543210", "upi_id": "<encrypted>" }
@@ -1369,7 +1369,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ### 14.3 Verify & Add Bank Account
 - **Endpoint:** `POST account/verify-bank`
-- **Encryption:** `account_no`, `ifsc_code` → AES-256
+- **Encryption:** `account_no`, `ifsc_code` â†’ AES-256
 - **Request:**
 ```json
 { "id_customer": "1234", "mobile": "9876543210", "account_holder": "John Doe", "account_no": "<encrypted>", "ifsc_code": "<encrypted>" }
@@ -1387,7 +1387,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ### 14.4 Submit Withdrawal
 - **Endpoint:** `POST withdraw`
-- **Encryption:** `withdrawal_amount`, `upi_id`, `transaction_pin` → AES-256
+- **Encryption:** `withdrawal_amount`, `upi_id`, `transaction_pin` â†’ AES-256
 - **Request:**
 ```json
 { "id_customer": "1234", "mobile": "9876543210", "withdrawal_amount": "<encrypted>", "upi_id": "<encrypted>", "transaction_pin": "<encrypted>" }
@@ -1426,7 +1426,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
           "type": "purchase",
           "status": "Success",
           "amount": 10.00,
-          "weight_grams": 0.0005,
+          "weight_grams": 0.000500,
           "metal_name": "Gold",
           "display_date": "11 Mar '26, 01:03pm"
         },
@@ -1436,7 +1436,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
           "type": "withdrawal",
           "status": "Success",
           "amount": 9.64,
-          "weight_grams": 0.0006,
+          "weight_grams": 0.000600,
           "metal_name": "Gold",
           "display_date": "11 Mar '26, 11:07am"
         }
@@ -1448,7 +1448,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
           "type": "purchase",
           "status": "Success",
           "amount": 10.00,
-          "weight_grams": 0.0011,
+          "weight_grams": 0.001100,
           "metal_name": "Gold",
           "display_date": "05 Feb '25, 11:03am"
         }
@@ -1479,7 +1479,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
     "title": "Instant Saving",
     "subtitle": "Gold purchased",
     "amount": 10.00,
-    "weight_grams": 0.0005,
+    "weight_grams": 0.000500,
     "metal_name": "Gold",
     "timeline": [
       {
@@ -1500,17 +1500,119 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
     ],
     "footer_message": "Gold has been added to your Jar locker.",
     "price_breakdown": {
-      "gold_quantity": "0.0005 g",
-      "gold_rate": "₹16,577.19/g",
-      "gold_value": "₹9.76",
-      "gst": "₹0.24",
-      "total_amount": "₹10"
+      "gold_quantity": "0.000500 gm",
+      "gold_rate": "₹16,577.19/gm",
+      "gold_value": "â‚¹9.76",
+      "gst": "â‚¹0.24",
+      "total_amount": "â‚¹10"
     },
     "technical_details": {
       "transaction_id_display": "........4e9b64a",
       "gold_transaction_id": "........3DZ8B45",
       "placed_on": "11 Mar '26, 01:03 PM",
       "paid_via": "UPI"
+    }
+  }
+}
+```
+
+---
+
+### 15.3 Fetch SIP Transaction History
+- **Page Name:** `SipTransactionHistoryScreen`
+- **Endpoint:** `POST sip/transactions`
+- **Authorization:** `Bearer Token`
+- **Description:** Retrieves all SIP transaction history. Response structure is identical to `POST transactions/history`.
+- **Request Body:** `{}` (empty — user identified from token)
+- **Response:**
+```json
+{
+  "success": true,
+  "message": "SIP transactions retrieved successfully",
+  "data": {
+    "grouped_transactions": {
+      "15 May 2026": [
+        {
+          "transaction_id": "SIP_15MAY_01",
+          "title": "Auto Savings",
+          "type": "purchase",
+          "so_type": 1,
+          "status": "Success",
+          "amount": 100.00,
+          "weight_grams": 0.006500,
+          "metal_name": "Gold",
+          "display_date": "15 May '26, 09:00am"
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+### 15.4 Fetch SIP Transaction Details
+- **Page Name:** `SipTransactionDetailsScreen`
+- **Endpoint:** `POST sip/transaction-details`
+- **Authorization:** `Bearer Token`
+- **Description:** Fetches details for a single SIP transaction. Response structure is identical to `POST transactions/details`.
+- **Request Body:**
+```json
+{
+  "transaction_id": "SIP_15MAY_01"
+}
+```
+- **Response:**
+```json
+{
+  "success": true,
+  "message": "SIP transaction details retrieved successfully",
+  "data": {
+    "transaction_id": "SIP_15MAY_01",
+    "title": "Auto Savings",
+    "subtitle": "Gold purchased via SIP",
+    "amount": 100.00,
+    "weight_grams": 0.006500,
+    "metal_name": "Gold",
+    "timeline": [
+      {
+        "step_name": "Payment",
+        "status": "Success",
+        "time": "15 May '26, 09:00 AM"
+      },
+      {
+        "step_name": "Gold order",
+        "status": "Success",
+        "time": "15 May '26, 09:00 AM"
+      },
+      {
+        "step_name": "Gold purchase",
+        "status": "Success",
+        "time": "15 May '26, 09:00 AM"
+      }
+    ],
+    "footer_message": "Gold has been added to your Jar locker.",
+    "price_breakdown": {
+      "gold_quantity": "0.006500 gm",
+      "gold_rate": "₹15,384.62/gm",
+      "gold_value": "₹97.09",
+      "gst": "₹2.91",
+      "total_amount": "₹100"
+    },
+    "technical_details": {
+      "transaction_id_display": "........abc1234",
+      "gold_transaction_id": "........XYZ5678",
+      "placed_on": "15 May '26, 09:00 AM",
+      "paid_via": "Auto Debit"
+    },
+    "scheme_info": {
+      "scheme_id": 1,
+      "label": "Daily Gold SIP",
+      "frequency": "Daily",
+      "amount": "100",
+      "total_saved": "3000",
+      "cycles_done": 30,
+      "status": "Active"
     }
   }
 }
@@ -1568,7 +1670,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 ### List My Tickets
 *   **Endpoint:** `POST support/list`
 *   **Authorization:** Bearer token required
-*   **Payload:** `{}` (empty body — user identified from token)
+*   **Payload:** `{}` (empty body â€” user identified from token)
 *   **Response:**
     ```json
     {
@@ -1587,13 +1689,13 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
     ```
 
 > **Note:** The client tries multiple response shapes:
-> `data` as array → `data.tickets` → `data.enquiries` → `data.data` → `data.list`
+> `data` as array â†’ `data.tickets` â†’ `data.enquiries` â†’ `data.data` â†’ `data.list`
 
 ---
 
-## 12. 🔔 Notifications
+## 12. ðŸ”” Notifications
 
-> **Design Rule:** FCM push notifications are a **trigger only** — not a data source.
+> **Design Rule:** FCM push notifications are a **trigger only** â€” not a data source.
 > The app ALWAYS fetches fresh data from the API when the notification screen opens.
 > FCM payload is never rendered directly in the UI.
 
@@ -1604,7 +1706,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 *   **Endpoint:** `POST users/notifications`
 *   **Authorization:** `Bearer Token`
 *   **Trigger:** Called every time the Notifications screen opens (FCM tap or in-app navigation).
-*   **Request Body:** `{}` (empty — user identified from token)
+*   **Request Body:** `{}` (empty â€” user identified from token)
 *   **Response:**
     ```json
     {
@@ -1613,7 +1715,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
         {
           "id": 1,
           "title": "Gold Price Alert",
-          "message": "Gold increased ₹50 today. Check your portfolio!",
+          "message": "Gold increased â‚¹50 today. Check your portfolio!",
           "type": "market",
           "is_read": false,
           "created_at": "2026-04-17"
@@ -1621,7 +1723,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
         {
           "id": 2,
           "title": "Purchase Successful",
-          "message": "You bought 0.0689g of Gold for ₹500.",
+          "message": "You bought 0.0689g of Gold for â‚¹500.",
           "type": "transaction",
           "is_read": true,
           "created_at": "2026-04-16"
@@ -1641,8 +1743,8 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
     | *(default)* | Bell icon | Green |
 
 *   **`is_read` Behaviour:**
-    - `false` → Card shown with **green dot badge** + **bold title** + light green background.
-    - `true` → Card shown in normal white/dark background, no badge.
+    - `false` â†’ Card shown with **green dot badge** + **bold title** + light green background.
+    - `true` â†’ Card shown in normal white/dark background, no badge.
 
 ---
 
@@ -1664,7 +1766,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
     }
     ```
 *   **Client Behaviour:**
-    - Optimistic update — UI is updated **immediately** on tap before the API call completes.
+    - Optimistic update â€” UI is updated **immediately** on tap before the API call completes.
     - If the API call fails, the UI retains the optimistic state (next reload from `GET /notifications` corrects it).
 
 ---
@@ -1683,7 +1785,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
       }
     }
     ```
-*   **Client Provider:** `unreadCountProvider` — consumed by the navigation bar to show the red badge number.
+*   **Client Provider:** `unreadCountProvider` â€” consumed by the navigation bar to show the red badge number.
 
 ---
 
@@ -1691,30 +1793,30 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ```
 Server sends FCM push
-        │
-        ├─ App FOREGROUND  → flutter_local_notifications shows heads-up banner
-        │
-        └─ User TAPS notification (any app state)
-                 │
-                 ▼
+        â”‚
+        â”œâ”€ App FOREGROUND  â†’ flutter_local_notifications shows heads-up banner
+        â”‚
+        â””â”€ User TAPS notification (any app state)
+                 â”‚
+                 â–¼
         Navigate to /notifications  (AppRouter.notifications)
-                 │
-                 ▼
-        NotificationsScreen opens → calls POST users/notifications
-                 │
-                 ▼
+                 â”‚
+                 â–¼
+        NotificationsScreen opens â†’ calls POST users/notifications
+                 â”‚
+                 â–¼
         Renders fresh list from API
-                 │
-                 ▼
-        User taps item → POST users/notifications/read
-                 │
-                 ▼
+                 â”‚
+                 â–¼
+        User taps item â†’ POST users/notifications/read
+                 â”‚
+                 â–¼
         Optimistic UI update (green dot removed)
 ```
 
 *   **FCM Token Registration:** After login, retrieve `FcmService.getToken()` and send it to your backend so the server can push to this specific device.
 *   **Token Refresh:** Listen to `FcmService.onTokenRefresh` and update the backend whenever the token changes.
-*   **Background Handler:** `_firebaseMessagingBackgroundHandler` — top-level function, logs only. Does NOT navigate.
+*   **Background Handler:** `_firebaseMessagingBackgroundHandler` â€” top-level function, logs only. Does NOT navigate.
 
 ---
 
@@ -1722,14 +1824,14 @@ Server sends FCM push
 
 | Rule | Detail |
 |---|---|
-| FCM payload | **Display only** — never contains financial data |
+| FCM payload | **Display only** â€” never contains financial data |
 | Sensitive data | **Never** sent via push notification payload |
 | Navigation | Always triggered by notification **tap** not by payload content |
 | Data source | Always fetched **fresh from API**, never from FCM payload |
 
 ---
 
-## 16. 🗑️ Delete Account
+## 16. ðŸ—‘ï¸ Delete Account
 
 > **Security Note:** Both endpoints require a valid `Authorization: Bearer <token>`. No sensitive fields are encrypted (policy info and the `confirm` flag carry no PII). Data wipe happens server-side on success.
 
@@ -1764,7 +1866,7 @@ Server sends FCM push
   | Value | Client Behaviour |
   |---|---|
   | `true` | "Delete My Account" button shown in the footer |
-  | `false` | Footer button **completely hidden** — user cannot proceed |
+  | `false` | Footer button **completely hidden** â€” user cannot proceed |
 
 - **On API Error:** Screen shows an error state with a **Retry** button; no destructive action is possible.
 
@@ -1804,7 +1906,7 @@ All local data is cleared in this order before navigating away:
 
 | Storage Layer | Action |
 |---|---|
-| `FlutterSecureStorage` | `SecureStorageService.logout()` → `deleteAll()` |
+| `FlutterSecureStorage` | `SecureStorageService.logout()` â†’ `deleteAll()` |
 | `SharedPreferences` | `prefs.clear()` |
 | Navigation | `Navigator.pushNamedAndRemoveUntil('/login', (route) => false)` |
 
@@ -1819,13 +1921,13 @@ A `showGeneralDialog` dialog with a scale+fade animation is shown **before** the
 > *"Are you sure you want to delete your account?"*  
 > *"All data will be permanently erased and cannot be recovered."*
 
-- **Cancel** → dismisses dialog, no API call made.
-- **Yes, Delete** → proceeds to call `POST delete-account`.
+- **Cancel** â†’ dismisses dialog, no API call made.
+- **Yes, Delete** â†’ proceeds to call `POST delete-account`.
 
 ---
 ---
 
-# Content – Refund Policy API
+# Content â€“ Refund Policy API
 
 ## 10. Refund Policy
 
@@ -1927,7 +2029,7 @@ Fetches the refund policy content for the application.
     - Called once when the Nominee form screen is opened.
     - Populates the "Relationship" dropdown dynamically.
     - Falls back to a hardcoded list if the API fails, ensuring the form remains functional.
-*   **Client Provider:** `nomineeRelationshipsProvider` — fetches and caches the relationship list.
+*   **Client Provider:** `nomineeRelationshipsProvider` â€” fetches and caches the relationship list.
 
 ---
 
@@ -1940,7 +2042,7 @@ Fetches the refund policy content for the application.
     ```json
     {}
     ```
-*   **Response (Success — nominee exists):**
+*   **Response (Success â€” nominee exists):**
     ```json
     {
       "success": true,
@@ -1957,7 +2059,7 @@ Fetches the refund policy content for the application.
       }
     }
     ```
-*   **Response (Success — no nominee):**
+*   **Response (Success â€” no nominee):**
     ```json
     {
       "success": true,
@@ -1977,7 +2079,7 @@ Fetches the refund policy content for the application.
 | `state` | String | No | State name (auto-filled from pincode) |
 | `pincode` | String | No | 6-digit pincode |
 
-*   **Client Provider:** `nomineeDetailsProvider` — auto-fetched when NomineeScreen loads.
+*   **Client Provider:** `nomineeDetailsProvider` â€” auto-fetched when NomineeScreen loads.
 
 ---
 
@@ -2082,7 +2184,7 @@ Fetches the refund policy content for the application.
     | `is_read` | Bool/Int | `true` / `1` = read, `false` / `0` = unread |
     | `created_at` | String | ISO 8601 timestamp |
 
-*   **Client Provider:** `notificationProvider` — `StateNotifier` that holds the full list + unread count.
+*   **Client Provider:** `notificationProvider` â€” `StateNotifier` that holds the full list + unread count.
 
 ---
 
@@ -2109,7 +2211,7 @@ Fetches the refund policy content for the application.
       "message": "Notification marked as read"
     }
     ```
-*   **Client Action:** Optimistic update — the notification is marked as read locally immediately; unread count is recomputed.
+*   **Client Action:** Optimistic update â€” the notification is marked as read locally immediately; unread count is recomputed.
 
 ---
 
@@ -2126,7 +2228,7 @@ Fetches the refund policy content for the application.
       "message": "All notifications marked as read"
     }
     ```
-*   **Client Action:** Optimistic update — all local notifications set to `isRead: true`, unread count reset to `0`.
+*   **Client Action:** Optimistic update â€” all local notifications set to `isRead: true`, unread count reset to `0`.
 
 ---
 
@@ -2177,7 +2279,7 @@ Fetches the refund policy content for the application.
     > The client handles multiple response shapes for backwards compatibility:
     > `{ "data": { "count": N } }`, `{ "data": { "unread_count": N } }`, `{ "data": N }`, or top-level `{ "count": N }` / `{ "unread_count": N }`.
 
-*   **Client Provider:** `unreadCountProvider` — lightweight provider derived from `notificationProvider`, used by the nav bar badge.
+*   **Client Provider:** `unreadCountProvider` â€” lightweight provider derived from `notificationProvider`, used by the nav bar badge.
 
 ---
 
@@ -2213,7 +2315,7 @@ Fetches the refund policy content for the application.
     | `os_version` | String | Yes | OS version string (e.g. `"14"`, `"17.4"`) |
     | `manufacturer` | String | Yes | Device manufacturer (e.g. `"Samsung Electronics"`, `"Apple"`) |
     | `brand` | String | Yes | Device brand (e.g. `"samsung"`, `"Apple"`) |
-    | `hardware_id` | String | Yes | Hardware product ID — Android: `product` (e.g. `"SM-S928B"`), iOS: `utsname.machine` (e.g. `"iPhone15,2"`) |
+    | `hardware_id` | String | Yes | Hardware product ID â€” Android: `product` (e.g. `"SM-S928B"`), iOS: `utsname.machine` (e.g. `"iPhone15,2"`) |
 
 *   **Response:**
     ```json
@@ -2222,8 +2324,8 @@ Fetches the refund policy content for the application.
       "message": "Device token registered successfully"
     }
     ```
-*   **Deduplication:** The FCM token is persisted in `SecureStorage`. On each Firebase token refresh, the client compares old vs new — if unchanged, the API call is skipped entirely.
-*   **Failure Handling:** Registration failures are logged via `debugPrint` but silently swallowed — push notifications are non-critical and must not block the user experience.
+*   **Deduplication:** The FCM token is persisted in `SecureStorage`. On each Firebase token refresh, the client compares old vs new â€” if unchanged, the API call is skipped entirely.
+*   **Failure Handling:** Registration failures are logged via `debugPrint` but silently swallowed â€” push notifications are non-critical and must not block the user experience.
 
 > [!NOTE]
 > **Security card mapping:** The server uses these fields to build the "New device attempting login" notification:
@@ -2239,3 +2341,713 @@ Fetches the refund policy content for the application.
 
 > [!IMPORTANT]
 > This endpoint does **not** require field-level encryption. The FCM token and device metadata are non-sensitive public identifiers.
+
+---
+
+## 15. Countdown Offer (100-Day Grand Launch)
+
+### 15.1 Fetch Countdown Offer Configuration
+*   **Page Name:** `HomeScreen`
+*   **Widget:** `CountdownOfferWidget` (orchestrator) â†’ `CountdownOfferNew` / `CountdownOfferExisting`
+*   **Endpoint:** `POST home/countdown-offer`
+*   **Authorization:** `Bearer Token`
+*   **Description:** Settings-driven offer widget. Returns whether the offer is enabled and, if so, the customer-specific payload (NEW or EXISTING). Admin can toggle/modify from the backend without app release.
+*   **Encryption:** âŒ Not required â€” public display data (same category as `/gold-rate`, `/schemes`).
+*   **Trigger:** Called on home screen load, tab switch, and pull-to-refresh.
+*   **Provider:** `countdownOfferProvider` (auto-dispose, watches `userProvider`)
+
+*   **Response (New Customer â€” offer enabled):**
+    ```json
+    {
+      "success": true,
+      "data": {
+        "enabled": true,
+        "customer_type": "NEW",
+        "new_offer": {
+          "offer_name": "100-DAY GRAND LAUNCH",
+          "offer_start_date": "MAY 15",
+          "offer_end_date": "AUG 23",
+          "remaining_days": 98,
+          "remaining_hours": 15,
+          "remaining_minutes": 32,
+          "remaining_seconds": 48,
+          "reward_percentage": 78,
+          "daily_penalty_percentage": 1,
+          "benchmark_amount": 50000,
+          "benchmark_percentage": 100,
+          "cta_text": "Start Investing"
+        },
+        "know_more_bottom_sheet": {
+          "type": "container",
+          "decoration": {
+            "gradient": {
+              "gradientType": "linear",
+              "begin": "topCenter",
+              "end": "bottomCenter",
+              "colors": ["#FFF8EE", "#FFF3DD"]
+            }
+          },
+          "child": {
+            "type": "column",
+            "mainAxisSize": "min",
+            "children": [
+              {
+                "type": "flexible",
+                "child": {
+                  "type": "singleChildScrollView",
+                  "padding": {"left": 20, "top": 16, "right": 20, "bottom": 16},
+                  "child": {
+                    "type": "column",
+                    "crossAxisAlignment": "start",
+                    "children": [
+                      {
+                        "type": "richText",
+                        "spans": [
+                          {"text": "Your ", "style": {"fontSize": 24, "fontWeight": "w700", "color": "#000000", "fontFamily": "PlayfairDisplay"}},
+                          {"text": "Rewards", "style": {"fontSize": 24, "fontWeight": "w700", "color": "#1B882C", "fontFamily": "PlayfairDisplay"}},
+                          {"text": ",", "style": {"fontSize": 24, "fontWeight": "w700", "color": "#000000", "fontFamily": "PlayfairDisplay"}}
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "data": "Explained Clearly",
+                        "style": {"fontSize": 24, "fontWeight": "w700", "color": "#000000", "fontFamily": "PlayfairDisplay"}
+                      },
+                      {"type": "sizedBox", "height": 20},
+                      {
+                        "type": "card",
+                        "elevation": 2,
+                        "color": "#FFFFFF",
+                        "borderRadius": {"all": 16},
+                        "child": {
+                          "type": "container",
+                          "padding": {"left": 16, "top": 16, "right": 16, "bottom": 16},
+                          "child": {
+                            "type": "row",
+                            "crossAxisAlignment": "start",
+                            "children": [
+                              {
+                                "type": "container",
+                                "width": 28,
+                                "height": 28,
+                                "decoration": {"color": "#E8F5E9", "borderRadius": {"all": 14}},
+                                "child": {"type": "center", "child": {"type": "icon", "iconType": "info", "size": 16, "color": "#1B882C"}}
+                              },
+                              {"type": "sizedBox", "width": 12},
+                              {
+                                "type": "expanded",
+                                "child": {
+                                  "type": "text",
+                                  "data": "Your reward percentage is locked based on the day you begin your gold saving journey.",
+                                  "style": {"fontSize": 13, "fontWeight": "w400", "color": "#555555", "height": 1.5}
+                                }
+                              },
+                              {"type": "sizedBox", "width": 8},
+                              {
+                                "type": "assetImage",
+                                "asset": "assets/offer/gold-silver-offer.png",
+                                "width": 72,
+                                "height": 72,
+                                "fit": "contain"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {"type": "sizedBox", "height": 12},
+                      {
+                        "type": "card",
+                        "elevation": 2,
+                        "color": "#FFFFFF",
+                        "borderRadius": {"all": 16},
+                        "child": {
+                          "type": "container",
+                          "padding": {"left": 16, "top": 16, "right": 16, "bottom": 16},
+                          "child": {
+                            "type": "column",
+                            "crossAxisAlignment": "start",
+                            "children": [
+                              {
+                                "type": "row",
+                                "children": [
+                                  {
+                                    "type": "container",
+                                    "width": 32,
+                                    "height": 32,
+                                    "decoration": {"color": "#064E3B", "borderRadius": {"all": 16}},
+                                    "child": {"type": "center", "child": {"type": "icon", "iconType": "star", "size": 18, "color": "#FFFFFF"}}
+                                  },
+                                  {"type": "sizedBox", "width": 12},
+                                  {
+                                    "type": "expanded",
+                                    "child": {
+                                      "type": "text",
+                                      "data": "Turn Your Gold Savings\ninto Silver Rewards",
+                                      "style": {"fontSize": 15, "fontWeight": "w700", "color": "#000000", "height": 1.3}
+                                    }
+                                  }
+                                ]
+                              },
+                              {"type": "sizedBox", "height": 12},
+                              {
+                                "type": "text",
+                                "data": "Celebrate our launch with exclusive daily silver benefits for early investors.\n\nEarly participation unlocks maximum rewards.",
+                                "style": {"fontSize": 13, "fontWeight": "w400", "color": "#555555", "height": 1.5}
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {"type": "sizedBox", "height": 20},
+                      {
+                        "type": "row",
+                        "children": [
+                          {
+                            "type": "container",
+                            "width": 28,
+                            "height": 28,
+                            "decoration": {"color": "#E8F5E9", "borderRadius": {"all": 14}},
+                            "child": {"type": "center", "child": {"type": "icon", "iconType": "info", "size": 16, "color": "#064E3B"}}
+                          },
+                          {"type": "sizedBox", "width": 10},
+                          {"type": "text", "data": "Educational Card", "style": {"fontSize": 16, "fontWeight": "w700", "color": "#000000"}}
+                        ]
+                      },
+                      {"type": "sizedBox", "height": 12},
+                      {
+                        "type": "container",
+                        "decoration": {
+                          "border": {"color": "#40DE6A02", "width": 1},
+                          "borderRadius": {"all": 12}
+                        },
+                        "child": {
+                          "type": "column",
+                          "children": [
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 12, "right": 16, "bottom": 12},
+                              "decoration": {"color": "#064E3B", "borderRadius": {"topLeft": 12, "topRight": 12}},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Investment Day", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#FFFFFF"}},
+                                  {"type": "text", "data": "Silver Benefit", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#FFFFFF"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 10, "right": 16, "bottom": 10},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 1", "style": {"fontSize": 13, "color": "#333333"}},
+                                  {"type": "text", "data": "100%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#1B882C"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 10, "right": 16, "bottom": 10},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 10", "style": {"fontSize": 13, "color": "#333333"}},
+                                  {"type": "text", "data": "91%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#1B882C"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 10, "right": 16, "bottom": 10},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 50", "style": {"fontSize": 13, "color": "#333333"}},
+                                  {"type": "text", "data": "51%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#1B882C"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 10, "right": 16, "bottom": 10},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 91 ~ 100", "style": {"fontSize": 13, "color": "#333333"}},
+                                  {"type": "text", "data": "Flat 10%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#1B882C"}}
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {"type": "sizedBox", "height": 20},
+                      {
+                        "type": "card",
+                        "elevation": 2,
+                        "color": "#FFFFFF",
+                        "borderRadius": {"all": 16},
+                        "child": {
+                          "type": "container",
+                          "padding": {"left": 16, "top": 16, "right": 16, "bottom": 16},
+                          "child": {
+                            "type": "column",
+                            "children": [
+                              {
+                                "type": "row",
+                                "crossAxisAlignment": "start",
+                                "children": [
+                                  {
+                                    "type": "container",
+                                    "width": 28,
+                                    "height": 28,
+                                    "decoration": {"color": "#E8F5E9", "borderRadius": {"all": 14}},
+                                    "child": {"type": "center", "child": {"type": "icon", "iconType": "check", "size": 16, "color": "#1B882C"}}
+                                  },
+                                  {"type": "sizedBox", "width": 12},
+                                  {
+                                    "type": "expanded",
+                                    "child": {
+                                      "type": "text",
+                                      "data": "You can redeem your accumulated gold after 100 days, either as FIAT or in the form of a gold bar/coin.",
+                                      "style": {"fontSize": 12, "fontWeight": "w400", "color": "#555555", "height": 1.5}
+                                    }
+                                  }
+                                ]
+                              },
+                              {"type": "sizedBox", "height": 14},
+                              {
+                                "type": "row",
+                                "crossAxisAlignment": "start",
+                                "children": [
+                                  {
+                                    "type": "container",
+                                    "width": 28,
+                                    "height": 28,
+                                    "decoration": {"color": "#FFF3E0", "borderRadius": {"all": 14}},
+                                    "child": {"type": "center", "child": {"type": "icon", "iconType": "info", "size": 16, "color": "#E65100"}}
+                                  },
+                                  {"type": "sizedBox", "width": 12},
+                                  {
+                                    "type": "expanded",
+                                    "child": {
+                                      "type": "text",
+                                      "data": "Bonus silver will be eligible for redemption from the 101st day onwards and can be redeemed as FIAT only.",
+                                      "style": {"fontSize": 12, "fontWeight": "w400", "color": "#555555", "height": 1.5}
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {"type": "sizedBox", "height": 12},
+                      {
+                        "type": "card",
+                        "elevation": 0,
+                        "color": "#F0FAF1",
+                        "borderRadius": {"all": 16},
+                        "child": {
+                          "type": "container",
+                          "padding": {"left": 16, "top": 16, "right": 16, "bottom": 16},
+                          "decoration": {
+                            "border": {"color": "#40388E3C", "width": 1},
+                            "borderRadius": {"all": 16}
+                          },
+                          "child": {
+                            "type": "row",
+                            "crossAxisAlignment": "start",
+                            "children": [
+                              {
+                                "type": "container",
+                                "width": 32,
+                                "height": 32,
+                                "decoration": {"color": "#064E3B", "borderRadius": {"all": 16}},
+                                "child": {"type": "center", "child": {"type": "icon", "iconType": "star", "size": 18, "color": "#FFD700"}}
+                              },
+                              {"type": "sizedBox", "width": 12},
+                              {
+                                "type": "expanded",
+                                "child": {
+                                  "type": "text",
+                                  "data": "The earlier you start, the more you earn.\nDon't miss out on maximum rewards!",
+                                  "style": {"fontSize": 13, "fontWeight": "w600", "color": "#064E3B", "height": 1.5}
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "padding",
+                "padding": {"left": 41, "top": 8, "right": 41, "bottom": 20},
+                "child": {
+                  "type": "elevatedButton",
+                  "style": {
+                    "foregroundColor": "#064E3B",
+                    "gradient": {
+                      "gradientType": "linear",
+                      "begin": "centerLeft",
+                      "end": "centerRight",
+                      "colors": ["#FFB500", "#FFCA49"]
+                    },
+                    "shape": {
+                      "type": "roundedRectangle",
+                      "borderRadius": {"all": 50}
+                    }
+                  },
+                  "child": {
+                    "type": "text",
+                    "data": "Start Investing",
+                    "style": {"fontSize": 16, "fontWeight": "w700"}
+                  },
+                  "onPressed": {
+                    "actionType": "navigate",
+                    "request": {
+                      "routeName": "/instantSaving"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+    ```
+*   **Response (Existing Customer â€” offer enabled):**
+    ```json
+    {
+      "success": true,
+      "data": {
+        "enabled": true,
+        "customer_type": "EXISTING",
+        "existing_offer": {
+          "offer_name": "100-DAY GRAND LAUNCH",
+          "silver_earned": "0.006300",
+          "invest_days": 2,
+          "days_remaining": 98,
+          "current_reward_percentage": 98,
+          "offer_end_date": "Aug 23",
+          "cta_text": "Add Investment"
+        },
+        "know_more_bottom_sheet": {
+          "type": "container",
+          "decoration": {
+            "gradient": {
+              "gradientType": "linear",
+              "begin": "topCenter",
+              "end": "bottomCenter",
+              "colors": ["#FFF8E4", "#FFDF92"]
+            },
+            "borderRadius": {
+              "topLeft": 28,
+              "topRight": 28
+            }
+          },
+          "child": {
+            "type": "column",
+            "mainAxisSize": "min",
+            "children": [
+              {
+                "type": "flexible",
+                "child": {
+                  "type": "singleChildScrollView",
+                  "padding": {"left": 24, "top": 16, "right": 24, "bottom": 16},
+                  "child": {
+                    "type": "column",
+                    "crossAxisAlignment": "start",
+                    "children": [
+                      {
+                        "type": "align",
+                        "alignment": "topRight",
+                        "child": {
+                          "type": "iconButton",
+                          "icon": {"type": "icon", "iconType": "close", "size": 24, "color": "#88000000"},
+                          "onPressed": {"actionType": "navigateBack"}
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "data": "Offer Benefits:",
+                        "style": {"fontSize": 18, "fontWeight": "w700", "color": "#DE000000"}
+                      },
+                      {"type": "sizedBox", "height": 12},
+                      {
+                        "type": "text",
+                        "data": "Your reward percentage is locked based on the day you begin your journey.",
+                        "style": {"fontSize": 13, "fontWeight": "w400", "color": "#88000000", "height": 1.5}
+                      },
+                      {"type": "sizedBox", "height": 20},
+                      {
+                        "type": "text",
+                        "data": "Turn Your Gold Investments into Silver Rewards",
+                        "style": {"fontSize": 16, "fontWeight": "w700", "color": "#DE000000"}
+                      },
+                      {"type": "sizedBox", "height": 12},
+                      {
+                        "type": "text",
+                        "data": "Celebrate our launch with exclusive daily silver benefits for early investors.\n\nEarly participation unlocks maximum rewards.",
+                        "style": {"fontSize": 13, "fontWeight": "w400", "color": "#88000000", "height": 1.5}
+                      },
+                      {"type": "sizedBox", "height": 24},
+                      {
+                        "type": "text",
+                        "data": "Educational Card",
+                        "style": {"fontSize": 16, "fontWeight": "w700", "color": "#DE000000"}
+                      },
+                      {"type": "sizedBox", "height": 12},
+                      {
+                        "type": "container",
+                        "decoration": {
+                          "border": {"color": "#40DE6A02", "width": 1},
+                          "borderRadius": {"all": 12}
+                        },
+                        "child": {
+                          "type": "column",
+                          "children": [
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 12, "right": 16, "bottom": 12},
+                              "color": "#80FFFFFF",
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Investment Day", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#064E3B"}},
+                                  {"type": "text", "data": "Silver Benefit", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#064E3B"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 8, "right": 16, "bottom": 8},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 1", "style": {"fontSize": 13, "color": "#000000"}},
+                                  {"type": "text", "data": "100%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#000000"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 8, "right": 16, "bottom": 8},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 10", "style": {"fontSize": 13, "color": "#000000"}},
+                                  {"type": "text", "data": "91%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#000000"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 8, "right": 16, "bottom": 8},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 50", "style": {"fontSize": 13, "color": "#000000"}},
+                                  {"type": "text", "data": "51%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#000000"}}
+                                ]
+                              }
+                            },
+                            {
+                              "type": "container",
+                              "padding": {"left": 16, "top": 8, "right": 16, "bottom": 8},
+                              "child": {
+                                "type": "row",
+                                "mainAxisAlignment": "spaceBetween",
+                                "children": [
+                                  {"type": "text", "data": "Day 91-100", "style": {"fontSize": 13, "color": "#000000"}},
+                                  {"type": "text", "data": "Flat 10%", "style": {"fontSize": 13, "fontWeight": "w700", "color": "#000000"}}
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {"type": "sizedBox", "height": 20},
+                      {
+                        "type": "text",
+                        "data": "â€¢ User can redeem their gold anytime as FIAT, gold coin/bar redemption available only after Day 100.\nâ€¢ FIAT redemption between Day 1 â€“ 50 forfeits the Bonus Silver offer.\nâ€¢ Bonus Silver redeemable from Day 51 onwards as FIAT money.\nâ€¢ Additional Bonus Silver redemption available only after Day 100.",
+                        "style": {"fontSize": 12, "fontWeight": "w400", "color": "#88000000", "height": 1.5}
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "padding",
+                "padding": {"left": 24, "top": 8, "right": 24, "bottom": 16},
+                "child": {
+                  "type": "elevatedButton",
+                  "style": {
+                    "backgroundColor": "#1B882C",
+                    "foregroundColor": "#FFFFFF",
+                    "shape": {
+                      "type": "roundedRectangle",
+                      "borderRadius": {"all": 50}
+                    }
+                  },
+                  "child": {
+                    "type": "text",
+                    "data": "Start Investing",
+                    "style": {"fontSize": 16, "fontWeight": "w700"}
+                  },
+                  "onPressed": {
+                    "actionType": "navigate",
+                    "request": {
+                      "routeName": "/instantSaving"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+    ```
+
+*   **Response (Offer disabled):**
+    ```json
+    {
+      "success": true,
+      "data": {
+        "enabled": false
+      }
+    }
+    ```
+
+*   **Fields (New Customer Offer):**
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `offer_name` | String | Yes | Display name for the offer badge banner |
+    | `offer_start_date` | String | Yes | Formatted start date (e.g. `"MAY 15"`) |
+    | `offer_end_date` | String | Yes | Formatted end date (e.g. `"AUG 23"`) |
+    | `remaining_days` | Integer | Yes | Days remaining for countdown timer |
+    | `remaining_hours` | Integer | Yes | Hours remaining for countdown timer |
+    | `remaining_minutes` | Integer | Yes | Minutes remaining for countdown timer |
+    | `remaining_seconds` | Integer | Yes | Seconds remaining for countdown timer |
+    | `reward_percentage` | Integer | Yes | Current reward percentage (e.g. `78`) — used when input amount < `benchmark_amount` |
+    | `daily_penalty_percentage` | Integer | Yes | Penalty per missed day (e.g. `1`) |
+    | `benchmark_amount` | Number | Yes | Minimum investment amount (in ₹) to unlock `benchmark_percentage` (e.g. `50000`) |
+    | `benchmark_percentage` | Integer | Yes | Reward percentage when input ≥ `benchmark_amount` (e.g. `100`) |
+    | `cta_text` | String | Yes | CTA button label (e.g. `"Start Investing"`) |
+
+*   **Fields (Existing Customer Offer):**
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `offer_name` | String | Yes | Display name for the offer badge banner |
+    | `silver_earned` | String | Yes | Silver earned in grams (e.g. `"0.0063"`) |
+    | `invest_days` | Integer | Yes | Number of days the customer has invested |
+    | `days_remaining` | Integer | Yes | Days remaining in the offer period |
+    | `current_reward_percentage` | Integer | Yes | Current reward percentage based on invest streak |
+    | `offer_end_date` | String | Yes | Formatted end date (e.g. `"Aug 23"`) |
+    | `cta_text` | String | Yes | CTA button label (e.g. `"Add Investment"`) |
+
+*   **Fields (`know_more_bottom_sheet` â€” Server-Driven UI):**
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `know_more_bottom_sheet` | Object | **No** | LDUI (Layout-Driven UI) widget tree for the "Know More" bottom sheet. Sent as a **nested JSON object** (not an escaped string). When present, the app renders the bottom sheet dynamically using the Mirai framework. When absent (`null`), the app falls back to the hardcoded bottom sheet UI. |
+
+    **LDUI Widget Types Supported:**
+
+    | Widget `type` | Description | Key Properties |
+    |---------------|-------------|----------------|
+    | `container` | Box with decoration, padding, color | `decoration`, `padding`, `color`, `width`, `height`, `child` |
+    | `column` | Vertical layout | `children`, `mainAxisSize`, `crossAxisAlignment` |
+    | `row` | Horizontal layout | `children`, `mainAxisAlignment`, `crossAxisAlignment` |
+    | `text` | Text display | `data`, `style` (fontSize, fontWeight, color, height, fontFamily) |
+    | `richText` | Multi-styled text spans | `spans` (array of `{text, style}`) |
+    | `icon` | Material icon | `iconType`, `size`, `color` |
+    | `sizedBox` | Empty spacing | `height`, `width` |
+    | `padding` | Adds padding around child | `padding`, `child` |
+    | `flexible` | Flex child in Column/Row | `child` |
+    | `singleChildScrollView` | Scrollable content | `padding`, `child` |
+    | `align` | Alignment wrapper | `alignment`, `child` |
+    | `iconButton` | Tappable icon | `icon`, `onPressed` |
+    | `elevatedButton` | Material button | `style`, `child`, `onPressed` |
+    | `image` / `networkImage` | Network image | `url`, `width`, `height`, `fit`, `borderRadius` |
+    | `assetImage` | Local asset image | `asset`, `width`, `height`, `fit` |
+    | `card` | Material card | `elevation`, `color`, `borderRadius`, `child` |
+    | `clipRRect` | Rounded clip | `borderRadius`, `child` |
+    | `center` | Center wrapper | `child` |
+    | `stack` | Stack layout | `children`, `alignment` |
+    | `expanded` | Expand in flex | `child` |
+
+    **Supported `iconType` values:** `close`, `arrow_back`, `check`, `info`, `star`
+
+    **Supported `fontFamily` values:** `PlayfairDisplay`, `Lora`, `Poppins`, `Inter`
+
+    **Action Types (`onPressed`):**
+
+    | `actionType` | Description | Additional Fields |
+    |--------------|-------------|-------------------|
+    | `navigateBack` | Pops the current route (closes bottom sheet) | â€” |
+    | `navigate` | Pushes a named route | `request.routeName` (e.g. `"/instantSaving"`) |
+
+    **Color Format:** Hex ARGB string (e.g. `"#DE000000"` = black with 87% opacity, `"#1B882C"` = solid green)
+
+    **Decoration Properties:**
+
+    | Property | Type | Description |
+    |----------|------|-------------|
+    | `gradient` | Object | `gradientType`, `begin`, `end`, `colors[]` |
+    | `borderRadius` | Object | `topLeft`, `topRight`, `bottomLeft`, `bottomRight`, or `all` |
+    | `border` | Object | `color`, `width` |
+
+*   **Client Behaviour:**
+
+    | `enabled` | `customer_type` | Widget Rendered |
+    |-----------|----------------|-----------------|
+    | `false` | â€” | `SizedBox.shrink()` â€” zero visual presence |
+    | `true` | `NEW` | `CountdownOfferNew` â€” countdown timer + "Start Investing" CTA |
+    | `true` | `EXISTING` | `CountdownOfferExisting` â€” progress card + "Add Investment" CTA |
+    | â€” | unknown | `SizedBox.shrink()` â€” safety fallback |
+
+    | `know_more_bottom_sheet` | Behaviour |
+    |--------------------------|-----------|
+    | Present (non-null) | Bottom sheet rendered dynamically via Mirai LDUI parser |
+    | Absent (`null`) | Bottom sheet uses the hardcoded Flutter UI (fallback) |
+
+*   **Error Handling:**
+    - API failure â†’ returns `CountdownOfferResponse.disabled()` â†’ widget hidden
+    - Network error â†’ same as above â€” offer is non-critical, never breaks Home screen
+    - Timer reaches `0:0:0:0` â†’ widget hides automatically (offer expired)
+    - `know_more_bottom_sheet` parse error â†’ falls back to hardcoded bottom sheet
+
+*   **Refresh Triggers:**
+    - Home tab selected (via `selectedTabProvider` listener)
+    - Pull-to-refresh on Home screen
+    - Login/logout (via `userProvider` watch)
+
+> [!NOTE]
+> The countdown timer runs client-side with `Timer.periodic(1 second)` â€” it decrements from the initial API values. The API provides the "current snapshot" of remaining time; the client takes over from there. On next refresh (tab switch, pull-to-refresh), fresh values are fetched from the server.
+
+> [!IMPORTANT]
+> This is **public display data** â€” NO field-level encryption is required. Falls under the same security category as `GET /gold-rate`, `GET /schemes`, etc.
+
+> [!NOTE]
+> **Server-Driven UI (LDUI):** The `know_more_bottom_sheet` field is a **nested JSON object** (NOT an escaped string). The server can modify the bottom sheet content â€” text, colors, table rows, button labels, and navigation actions â€” without requiring an app update. The Flutter app parses this JSON and renders the widget tree dynamically using the Mirai framework.
+
+> [!IMPORTANT]
+> **Backward Compatibility:** The `know_more_bottom_sheet` field is **optional**. Existing API responses that don't include this field will continue to work â€” the app falls back to the hardcoded bottom sheet UI. This ensures zero downtime during the rollout.

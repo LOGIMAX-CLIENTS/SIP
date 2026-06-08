@@ -21,6 +21,8 @@ import '../main/main_screen.dart';
 import '../../shared/widgets/numeric_styled_text.dart';
 import 'widgets/micro_savings_banner.dart';
 import 'widgets/learn_carousel.dart';
+import 'widgets/countdown_offer_widget.dart';
+import '../../core/providers/countdown_offer_provider.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/providers/timer_provider.dart';
 import '../instant_saving/controller/saving_controller.dart';
@@ -135,9 +137,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ref.read(portfolioProvider.notifier).fetchPortfolio();
             // 2. Home dashboard — growth streak, schemes, latest metrics
             ref.invalidate(homeDashboardProvider);
-            // 3. Profile — name, photo (in case updated)
+            // 3. Countdown offer — refresh offer state
+            ref.invalidate(countdownOfferProvider);
+            // 4. Profile — name, photo (in case updated)
             ref.invalidate(profileProvider);
-            // 4. Notification badge — refresh unread count
+            // 5. Notification badge — refresh unread count
             ref.read(notificationProvider.notifier).refreshUnreadCount();
             // 5. Sell-rate timer — lock freshest live rate for header display
             final homeStatusMap =
@@ -173,8 +177,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFFDFBF3),
       body: RefreshIndicator(
-        onRefresh: () async =>
-            ref.read(portfolioProvider.notifier).fetchPortfolio(),
+        onRefresh: () async {
+          ref.read(portfolioProvider.notifier).fetchPortfolio();
+          ref.invalidate(homeDashboardProvider);
+          ref.invalidate(countdownOfferProvider);
+          ref.invalidate(profileProvider);
+          ref.read(notificationProvider.notifier).refreshUnreadCount();
+        },
         color: AppTheme.arcticBlue,
         backgroundColor: Colors.transparent,
         child: CustomScrollView(
@@ -193,33 +202,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(
               child: Stack(
                 children: [
-                  // Gold gradient visible behind green section's rounded corners
-                  // (matches Rate History section gradient so there's no white gap)
-                  if (ref
-                          .watch(homeDashboardProvider)
-                          .valueOrNull
-                          ?.rateHistory !=
-                      null)
-                    Positioned(
+                  // Color visible behind green section's rounded corners
+                  // Uses offer card color when offer is active, otherwise rate-history gradient
+                  Builder(builder: (context) {
+                    final offerAsync = ref.watch(countdownOfferProvider);
+                    final isOfferActive =
+                        offerAsync.valueOrNull?.enabled ?? false;
+                    final hasRateHistory = ref
+                            .watch(homeDashboardProvider)
+                            .valueOrNull
+                            ?.rateHistory !=
+                        null;
+
+                    if (!isOfferActive && !hasRateHistory) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Positioned(
                       bottom: 0,
                       left: 0,
                       right: 0,
                       height: 32,
                       child: Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment(-0.73, -0.68),
-                            end: Alignment(0.73, 0.68),
-                            colors: [
-                              Color(0xFFF9F3E3),
-                              Color(0xFFFFDF90),
-                              Color(0xFFf4bd44),
-                            ],
-                            stops: [0.0, 0.5679, 1.0],
-                          ),
+                        decoration: BoxDecoration(
+                          color: isOfferActive ? const Color(0xFFFFF0CB) : null,
+                          gradient: isOfferActive
+                              ? null
+                              : const LinearGradient(
+                                  begin: Alignment(-0.73, -0.68),
+                                  end: Alignment(0.73, 0.68),
+                                  colors: [
+                                    Color(0xFFF9F3E3),
+                                    Color(0xFFFFDF90),
+                                    Color(0xFFf4bd44),
+                                  ],
+                                  stops: [0.0, 0.5679, 1.0],
+                                ),
                         ),
                       ),
-                    ),
+                    );
+                  }),
                   Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
@@ -287,6 +309,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ],
               ),
+            ),
+            // ── Countdown Offer Widget ──
+            SliverToBoxAdapter(
+              child: Builder(builder: (context) {
+                final offerAsync = ref.watch(countdownOfferProvider);
+                final isOfferActive = offerAsync.valueOrNull?.enabled ?? false;
+
+                if (!isOfferActive) {
+                  return const CountdownOfferWidget();
+                }
+
+                // Stack: fill behind bottom rounded corners with #F3BA3F
+                return Stack(
+                  children: [
+                    // Background fill visible behind bottom rounded corners
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 32,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [
+                              Color(0xFFF9F0DE),
+                              Color(0xFFF3BA3F),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const CountdownOfferWidget(),
+                  ],
+                );
+              }),
             ),
             SliverToBoxAdapter(
               child: AnimatedSwitcher(
@@ -1306,7 +1365,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ).createShader(bounds),
                 blendMode: BlendMode.srcIn,
                 child: Text(
-                  '${data.summary.balance.toStringAsFixed(4)} gm',
+                  '${data.summary.balance.toStringAsFixed(6)} gm',
                   style: GoogleFonts.lora(
                     fontSize: 28.sp,
                     fontWeight: FontWeight.bold,

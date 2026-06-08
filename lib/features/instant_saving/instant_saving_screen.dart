@@ -25,6 +25,7 @@ import '../../core/security/secure_logger.dart';
 import '../../core/error/failures.dart';
 import '../../shared/utils/no_leading_zeros_formatter.dart';
 import 'payment_handler.dart';
+import '../../core/providers/countdown_offer_provider.dart';
 
 class InstantSavingScreen extends ConsumerStatefulWidget {
   const InstantSavingScreen({super.key});
@@ -342,6 +343,9 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                   SizedBox(height: 10.h),
                   _buildAmountInputCard(isDark, type, marketState, configAsync,
                       amountDenoms, weightDenoms),
+                  // ── Best Offer block (Gold only, when countdown offer is enabled & silver market open) ──
+                  if (type == CommodityType.gold && marketStatusMap['3'] != false)
+                    _buildBestOfferBlock(isDark, marketState, configAsync),
                   SizedBox(height: 16.h),
                 ],
               ),
@@ -662,10 +666,10 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
       if (_isAmountMode) {
         final double gstRate = configAsync.valueOrNull?.gst ?? 3.0;
-        final double goldValue = inputVal / (1 + (gstRate / 100));
-        conversion = rate > 0 ? goldValue / rate : 0.0;
+        final double goldValue = _trunc2(inputVal / (1 + (gstRate / 100)));
+        conversion = rate > 0 ? _trunc6(goldValue / rate) : 0.0;
       } else {
-        conversion = inputVal * rate;
+        conversion = _trunc2(inputVal * rate);
       }
     }
 
@@ -817,7 +821,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                   if (inputVal > 0)
                     Text(
                       _isAmountMode
-                          ? '${conversion.toStringAsFixed(4)}gm'
+                          ? '${conversion.toStringAsFixed(6)}gm'
                           : '\u20b9${conversion.toStringAsFixed(2)}',
                       style: GoogleFonts.lora(
                           fontSize: 12.sp,
@@ -869,6 +873,210 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Best Offer block — shows FREE SILVER reward info.
+  /// Only rendered when:
+  ///   1. Countdown offer is enabled (server settings)
+  ///   2. Gold commodity is selected (not Silver)
+  Widget _buildBestOfferBlock(
+      bool isDark,
+      AsyncValue<MarketRates> marketState,
+      AsyncValue<SavingConfig> configAsync) {
+    final offerAsync = ref.watch(countdownOfferProvider);
+
+    return offerAsync.maybeWhen(
+      data: (offer) {
+        if (!offer.enabled) return const SizedBox.shrink();
+
+        // Determine reward percentage from the offer
+        // For NEW customers: if input amount >= benchmark_amount, use
+        // benchmark_percentage; otherwise use reward_percentage.
+        final double inputVal =
+            double.tryParse(_amountController.text) ?? 0.0;
+        final int rewardPercentage;
+        if (offer.customerType == 'EXISTING' && offer.existingOffer != null) {
+          rewardPercentage = offer.existingOffer!.currentRewardPercentage;
+        } else if (offer.customerType == 'NEW' && offer.newOffer != null) {
+          final newOffer = offer.newOffer!;
+          if (newOffer.benchmarkAmount > 0 &&
+              inputVal >= newOffer.benchmarkAmount) {
+            rewardPercentage = newOffer.benchmarkPercentage;
+          } else {
+            rewardPercentage = newOffer.rewardPercentage;
+          }
+        } else {
+          return const SizedBox.shrink();
+        }
+
+        // Calculate silver reward step-by-step.
+        // Precision rules (matching backend):
+        //   - Amounts (₹) → truncate to 2 decimals
+        //   - Weights (gm) → truncate to 6 decimals
+        //
+        // Backend formula:
+        //   so_qty       = gold weight in grams                    (6 decimals)
+        //   target_wt    = so_qty × (reward_pct / 100)             (6 decimals)
+        //   reward_amt   = target_wt × silver_sell_rate             (2 decimals)
+        //   reward_net   = reward_amt / (1 + gst / 100)            (2 decimals)
+        //   reward_qty   = reward_net / silver_sell_rate            (6 decimals)
+        final double goldRate =
+            marketState.valueOrNull?.goldSell ?? 0.0;
+        final double silverRate =
+            marketState.valueOrNull?.silverSell ?? 0.0;
+        final double gstRate = configAsync.valueOrNull?.gst ?? 3.0;
+
+        // Step 0: Determine gold quantity (so_qty) in grams → 6 decimals
+        double goldQty = 0.0;
+        if (inputVal > 0 && goldRate > 0) {
+          if (_isAmountMode) {
+            // ₹ mode → remove GST → convert to grams
+            final double goldValue = _trunc2(inputVal / (1 + (gstRate / 100)));
+            goldQty = _trunc6(goldValue / goldRate);
+          } else {
+            // Grams mode → user entered gold grams directly
+            goldQty = _trunc6(inputVal);
+          }
+        }
+
+        // Steps 1–3: Silver reward with proper precision at each step
+        double silverGrams = 0.0;
+        if (goldQty > 0 && silverRate > 0) {
+          final targetWt   = _trunc6(goldQty * rewardPercentage / 100);
+          final rewardAmt  = _trunc2(targetWt * silverRate);
+          final rewardNet  = _trunc2(rewardAmt / (1 + (gstRate / 100)));
+          silverGrams      = _trunc6(rewardNet / silverRate);
+        }
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24.w, 16.h, 24.w, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // "Best Offer" label
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 6.h),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [Color(0xFF1B882C), Color(0xFF003716)],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(12.r),
+                    topRight: Radius.circular(12.r),
+                  ),
+                ),
+                child: Text(
+                  'Best Offer',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              // Offer content card
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(16.w),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FFF4),
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(16.r),
+                    bottomLeft: Radius.circular(16.r),
+                    bottomRight: Radius.circular(16.r),
+                  ),
+                  border: Border.all(
+                    color: const Color(0xFF1B882C).withValues(alpha: 0.15),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 32.w,
+                      height: 32.w,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B882C).withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.card_giftcard_rounded,
+                        size: 18.sp,
+                        color: const Color(0xFF1B882C),
+                      ),
+                    ),
+                    SizedBox(width: 12.w),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'FREE SILVER',
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 14.sp,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF064E3B),
+                            ),
+                          ),
+                          SizedBox(height: 4.h),
+                          if (silverGrams > 0) ...[
+                            RichText(
+                              text: TextSpan(
+                                style: GoogleFonts.playfairDisplay(
+                                  fontSize: 12.sp,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF064E3B).withValues(alpha: 0.7),
+                                  height: 1.5,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'You will receive '),
+                                  TextSpan(
+                                    text: '${silverGrams.toStringAsFixed(6)} gm',
+                                    style: GoogleFonts.lora(
+                                      fontSize: 12.sp,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF064E3B),
+                                    ),
+                                  ),
+                                  const TextSpan(
+                                      text: ' of silver rewards equivalent to your gold investment.'),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: 2.h),
+                            Text(
+                              'Incl. 3% GST',
+                              style: GoogleFonts.lora(
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF064E3B).withValues(alpha: 0.45),
+                              ),
+                            ),
+                          ] else ...[
+                            Text(
+                              'Get free silver rewards equivalent to your gold investment.',
+                              style: GoogleFonts.playfairDisplay(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF064E3B).withValues(alpha: 0.7),
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 
@@ -1001,15 +1209,15 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         : market.value.silverSell;
     double totalPayable, metalValue, gstAmount, grams;
     if (_isAmountMode) {
-      totalPayable = inputVal;
-      metalValue = totalPayable / (1 + gstRate);
-      gstAmount = totalPayable - metalValue;
-      grams = rate > 0 ? metalValue / rate : 0.0;
+      totalPayable = _trunc2(inputVal);
+      metalValue = _trunc2(totalPayable / (1 + gstRate));
+      gstAmount = _trunc2(totalPayable - metalValue);
+      grams = rate > 0 ? _trunc6(metalValue / rate) : 0.0;
     } else {
-      grams = inputVal;
-      metalValue = grams * rate;
-      gstAmount = metalValue * gstRate;
-      totalPayable = metalValue + gstAmount;
+      grams = _trunc6(inputVal);
+      metalValue = _trunc2(grams * rate);
+      gstAmount = _trunc2(metalValue * gstRate);
+      totalPayable = _trunc2(metalValue + gstAmount);
     }
     return {
       'total': totalPayable,
@@ -1356,6 +1564,11 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       }
     }
   }
+
+  // ── Truncation helpers (floor, NOT round) ─────────────────────────────
+  // Match backend precision: weights → 6 decimals, amounts → 2 decimals.
+  static double _trunc6(double v) => (v * 1000000).floorToDouble() / 1000000;
+  static double _trunc2(double v) => (v * 100).floorToDouble() / 100;
 }
 
 /// Wise-style breakdown bottom sheet
@@ -1457,7 +1670,7 @@ class _BreakdownSheet extends StatelessWidget {
                       child: Divider(
                           height: 1, color: Colors.black.withOpacity(0.06)),
                     ),
-                    _row('Quantity', '${grams.toStringAsFixed(4)}gm'),
+                    _row('Quantity', '${grams.toStringAsFixed(6)}gm'),
                   ],
                 ),
               ),

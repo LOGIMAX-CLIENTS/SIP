@@ -584,7 +584,7 @@ class _SipTransactionHistoryScreenState
                 ),
                 SizedBox(height: 4.h),
                 Text(
-                  '${tx.weightGrams} g',
+                  '${tx.weightGrams.toStringAsFixed(6)} gm',
                   style: GoogleFonts.lora(
                     fontSize: 12.sp,
                     color: mutedColor,

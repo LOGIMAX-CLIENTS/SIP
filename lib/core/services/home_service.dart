@@ -1,5 +1,6 @@
 import '../network/api_client.dart';
 import '../../features/home/models/home_dashboard.dart';
+import '../../features/home/models/countdown_offer_model.dart';
 import '../security/secure_logger.dart';
 
 class HomeService {
@@ -19,5 +20,21 @@ class HomeService {
     }
   }
 
-
+  /// Fetches the countdown offer configuration.
+  ///
+  /// This is public display data (same category as /gold-rate, /schemes)
+  /// — NO encryption required per security rules.
+  /// On any failure the widget silently hides via [CountdownOfferResponse.disabled].
+  Future<CountdownOfferResponse> getCountdownOffer() async {
+    try {
+      final response = await _apiClient.post('home/countdown-offer');
+      if (response.data != null && response.data['success'] == true) {
+        return CountdownOfferResponse.fromJson(response.data);
+      }
+      return CountdownOfferResponse.disabled();
+    } catch (e, st) {
+      SecureLogger.e('CountdownOffer error: $e\n$st');
+      return CountdownOfferResponse.disabled();
+    }
+  }
 }
