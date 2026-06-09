@@ -64,7 +64,12 @@ class NewCustomerOffer {
   final int dailyPenaltyPercentage;
   final double benchmarkAmount;
   final int benchmarkPercentage;
+  final bool benchmarkEnabled;
   final String ctaText;
+
+  /// API-driven description text for the offer card.
+  final String descriptionTitle;
+  final String descriptionBody;
 
   /// URL for the WebView-based "Know More" offer benefits page.
   final String? webviewUrl;
@@ -81,7 +86,10 @@ class NewCustomerOffer {
     required this.dailyPenaltyPercentage,
     required this.benchmarkAmount,
     required this.benchmarkPercentage,
+    required this.benchmarkEnabled,
     required this.ctaText,
+    required this.descriptionTitle,
+    required this.descriptionBody,
     this.webviewUrl,
   });
 
@@ -101,7 +109,10 @@ class NewCustomerOffer {
           (json['benchmark_amount'] as num?)?.toDouble() ?? 0.0,
       benchmarkPercentage:
           (json['benchmark_percentage'] as num?)?.toInt() ?? 100,
+      benchmarkEnabled: json['benchmark_enabled'] == true,
       ctaText: json['cta_text'] as String? ?? 'Start Investing',
+      descriptionTitle: json['description_title'] as String? ?? 'Invest in Gold,',
+      descriptionBody: json['description_body'] as String? ?? 'Get Free Silver Rewards',
       webviewUrl: json['webview_url'] as String?,
     );
   }

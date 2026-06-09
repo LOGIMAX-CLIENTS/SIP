@@ -900,7 +900,8 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           rewardPercentage = offer.existingOffer!.currentRewardPercentage;
         } else if (offer.customerType == 'NEW' && offer.newOffer != null) {
           final newOffer = offer.newOffer!;
-          if (newOffer.benchmarkAmount > 0 &&
+          if (newOffer.benchmarkEnabled &&
+              newOffer.benchmarkAmount > 0 &&
               inputVal >= newOffer.benchmarkAmount) {
             rewardPercentage = newOffer.benchmarkPercentage;
           } else {

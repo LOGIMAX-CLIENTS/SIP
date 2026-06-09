@@ -1101,6 +1101,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// Format number with Indian comma separators (e.g., 16446 → 16,446).
+  String _formatIndianRate(double rate) {
+    final intPart = rate % 1 == 0 ? rate.toInt().toString() : rate.toString();
+    // Only format the integer portion
+    final parts = intPart.split('.');
+    String digits = parts[0];
+    if (digits.length <= 3) return intPart;
+    // Indian grouping: last 3 digits, then groups of 2
+    final last3 = digits.substring(digits.length - 3);
+    String rest = digits.substring(0, digits.length - 3);
+    final buffer = StringBuffer();
+    while (rest.length > 2) {
+      buffer.write(rest.substring(0, rest.length - 2));
+      buffer.write(',');
+      rest = rest.substring(rest.length - 2);
+    }
+    // Rebuild: handle the remaining part
+    final groups = <String>[];
+    String remaining = digits.substring(0, digits.length - 3);
+    while (remaining.length > 2) {
+      groups.insert(0, remaining.substring(remaining.length - 2));
+      remaining = remaining.substring(0, remaining.length - 2);
+    }
+    if (remaining.isNotEmpty) groups.insert(0, remaining);
+    groups.add(last3);
+    final formatted = groups.join(',');
+    return parts.length > 1 ? '$formatted.${parts[1]}' : formatted;
+  }
+
   Widget _buildGrowthStreakCard(bool isDark, RateHistory history) {
     final activeOrange = const Color(0xFFE2700D); // "Invest Now" button orange
     final textGreen =
@@ -1110,162 +1139,94 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isSilver = history.title.toLowerCase().contains('silver');
     final metalString = isSilver ? 'Silver' : 'Gold';
 
-    return SizedBox(
-      width: double.infinity,
-      height: 250.h,
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Left Side Content
-          Positioned(
-            left: 4.w,
-            top: 0,
-            bottom: 0,
-            child: SizedBox(
-              width: 185.w,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(height: 16.h),
-                  // Plain label
-                  NumericStyledText(
-                    history.title,
+          // ── Column 1: Text + Button ──
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Plain label
+                NumericStyledText(
+                  history.title,
+                  fontSize: 12.sp,
+                  color: const Color(0xFF6C4B08),
+                  fontWeight: FontWeight.w600,
+                ),
+                SizedBox(height: 12.h),
+
+                // Main Title — mixed text/numbers
+                NumericStyledText(
+                  history.highlightText,
+                  fontSize: 20.sp,
+                  fontWeight: FontWeight.w700,
+                  color: textGreen,
+                  height: 1.2,
+                ),
+                SizedBox(height: 8.h),
+
+                // Subtitle
+                Text(
+                  'Save Today, Golden Tomorrow',
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
-                    color: const Color(0xFF6C4B08),
-                    fontWeight: FontWeight.w600,
+                    color: textGreen.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w500,
                   ),
-                  SizedBox(height: 12.h),
+                ),
+                SizedBox(height: 20.h),
 
-                  // Main Title — mixed text/numbers
-                  NumericStyledText(
-                    history.highlightText,
-                    fontSize: 20.sp,
-                    fontWeight: FontWeight.w700,
-                    color: textGreen,
-                    height: 1.2,
-                  ),
-                  SizedBox(height: 8.h),
-
-                  // Subtitle
-                  Text(
-                    'Start saving in ${metalString.toLowerCase()} today',
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 13.sp,
-                      color: textGreen.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const Spacer(),
-
-                  // Button — compact pill, not full width
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IntrinsicWidth(
-                      child: SizedBox(
-                        height: 40.h,
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              ref.read(selectedTabProvider.notifier).state = 1,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: activeOrange,
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(horizontal: 28.w),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(100.r)),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            'Invest Now',
-                            style: GoogleFonts.playfairDisplay(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13.sp,
-                            ),
-                          ),
+                // Button — compact pill
+                IntrinsicWidth(
+                  child: SizedBox(
+                    height: 40.h,
+                    child: ElevatedButton(
+                      onPressed: () =>
+                          ref.read(selectedTabProvider.notifier).state = 1,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: activeOrange,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 28.w),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(100.r)),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Invest Now',
+                        style: GoogleFonts.playfairDisplay(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13.sp,
                         ),
                       ),
                     ),
                   ),
-                  SizedBox(height: 21.h),
-                ],
-              ),
+                ),
+                SizedBox(height: 12.h),
+              ],
             ),
           ),
 
-          // Right Side Custom Bar Charts
-          Positioned(
-            right: 0,
-            bottom: 15.h,
-            top: 0,
-            width: 135.w,
-            child: Stack(
-              clipBehavior: Clip.none,
+          // ── Column 2: Bar Chart Image + End Year Label ──
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // ── Short Bar (Start Year) ──
-                Positioned(
-                  left: 0,
-                  bottom: 0,
-                  child: Column(
-                    children: [
-                      _buildChartDataPoint(
-                        '${history.startYear} : ₹${history.startRate % 1 == 0 ? history.startRate.toInt() : history.startRate}/g',
-                        backgroundColor: const Color(0xFFFFB10F),
-                        textColor: const Color(0xFF000000),
-                      ),
-                      SizedBox(height: 6.h),
-                      Container(
-                        width: 38.w,
-                        height: 60.h,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment(-0.87, -0.5),
-                            end: Alignment(0.87, 0.5),
-                            colors: [Color(0xFF1B882C), Color(0xFF003716)],
-                            stops: [0.0223, 0.9399],
-                          ),
-                          borderRadius: BorderRadius.circular(4.r),
-                        ),
-                      ),
-                    ],
-                  ),
+                // End Year badge
+                _buildChartDataPoint(
+                  '${history.endYear} : ₹${_formatIndianRate(history.endRate.toDouble())}/g',
+                  backgroundColor: const Color(0xFFFFB10F),
+                  textColor: const Color(0xFF000000),
                 ),
-
-                // ── Tall Bar (End Year) ──
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Column(
-                    children: [
-                      _buildChartDataPoint(
-                        '${history.endYear} : ₹${history.endRate % 1 == 0 ? history.endRate.toInt() : history.endRate}/g',
-                        /*   backgroundColor: const Color(0xFFECA31E),
-                        textColor: const Color(0xFF6C4B08), */
-                        backgroundColor: const Color(0xFFFFB10F),
-                        textColor: const Color(0xFF000000),
-                      ),
-                      SizedBox(height: 6.h),
-                      Container(
-                        width: 38.w,
-                        height: 145.h,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment(-0.87, -0.5),
-                            end: Alignment(0.87, 0.5),
-                            colors: [Color(0xFF1B882C), Color(0xFF003716)],
-                            stops: [0.0223, 0.9399],
-                          ),
-                          borderRadius: BorderRadius.circular(4.r),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF003716)
-                                  .withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(3, 0),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                SizedBox(height: 6.h),
+                // Bar chart image
+                Image.asset(
+                  'assets/home/rarehistory-bar.png',
+                  fit: BoxFit.contain,
                 ),
               ],
             ),

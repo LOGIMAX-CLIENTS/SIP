@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -249,15 +249,29 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
                         SizedBox(height: 12.h),
                         GestureDetector(
                           onTap: () => _showOfferBenefitsSheet(context),
-                          child: Text(
-                            'Know more',
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 12.sp,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF1B882C),
-                              decoration: TextDecoration.underline,
-                              decorationColor: const Color(0xFF1B882C),
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Know more',
+                                style: GoogleFonts.playfairDisplay(
+                                  fontSize: 12.sp,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF1B882C),
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: const Color(0xFF1B882C),
+                                ),
+                              ),
+                              SizedBox(width: 4.w),
+                              Padding(
+                                padding: EdgeInsets.only(top: 3.h),
+                                child: Icon(
+                                  Icons.arrow_forward,
+                                  size: 14.sp,
+                                  color: const Color(0xFF1B882C),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -279,9 +293,7 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
     );
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Green Ribbon Banner (title-bgbar.png) with gold text Ã¢â€â‚¬Ã¢â€â‚¬
   Widget _buildBadgeBanner() {
-
 
     return Stack(
       alignment: Alignment.center,
@@ -289,7 +301,7 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
         // Green ribbon background image
         Image.asset(
           'assets/offer/title-bgbar.png',
-          width: 300.w,
+          width: 340.w,
           fit: BoxFit.contain,
         ),
         // Text overlay Ã¢â‚¬â€ gold gradient via ShaderMask
@@ -300,26 +312,14 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
             colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
           ).createShader(bounds),
           blendMode: BlendMode.srcIn,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/offer/lightning.png',
-                width: 20.w,
-                height: 28.h,
-                color: Colors.white,
-              ),
-              SizedBox(width: 6.w),
-              Text(
-                widget.offer.offerName.toUpperCase(),
-                style: GoogleFonts.lora(
-                  fontSize: 15.sp,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  letterSpacing: 1.11,
-                ),
-              ),
-            ],
+          child: Text(
+            widget.offer.offerName.toUpperCase(),
+            style: GoogleFonts.lora(
+              fontSize: 17.sp,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.8,
+            ),
           ),
         ),
       ],
@@ -464,13 +464,13 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
     );
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ "Invest in Gold, Receive an Equivalent Weight in Free Silver" Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Offer description — driven by API fields ──
   Widget _buildOfferDescription() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Invest in Gold,',
+          widget.offer.descriptionTitle,
           style: GoogleFonts.lora(
             fontSize: 16.sp,
             fontWeight: FontWeight.w600,
@@ -478,40 +478,13 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
           ),
         ),
         SizedBox(height: 4.h),
-        Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: 'Receive an Equivalent\nWeight in ',
-                style: GoogleFonts.lora(
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFFDE6A02),
-                  height: 26 / 20,
-                ),
-              ),
-              WidgetSpan(
-                alignment: PlaceholderAlignment.baseline,
-                baseline: TextBaseline.alphabetic,
-                child: ShaderMask(
-                  shaderCallback: (bounds) => const LinearGradient(
-                    begin: Alignment(-0.87, -0.5),
-                    end: Alignment(0.87, 0.5),
-                    colors: [Color(0xFF003716), Color(0xFF167525)],
-                  ).createShader(bounds),
-                  blendMode: BlendMode.srcIn,
-                  child: Text(
-                    'Free Silver',
-                    style: GoogleFonts.lora(
-                      fontSize: 20.sp,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      height: 26 / 20,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+        Text(
+          widget.offer.descriptionBody,
+          style: GoogleFonts.lora(
+            fontSize: 20.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFFDE6A02),
+            height: 26 / 20,
           ),
         ),
       ],

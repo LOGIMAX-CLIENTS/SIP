@@ -83,15 +83,13 @@ class CountdownOfferExisting extends StatelessWidget {
   }
 
   Widget _buildBadgeBanner() {
-    final parts = _splitTextAndNumbers(offer.offerName.toUpperCase());
-
     return Stack(
       alignment: Alignment.center,
       children: [
         // Green ribbon background image
         Image.asset(
           'assets/offer/title-bgbar.png',
-          width: 300.w,
+          width: 340.w,
           fit: BoxFit.contain,
         ),
         // Text overlay — gold gradient via ShaderMask
@@ -102,26 +100,14 @@ class CountdownOfferExisting extends StatelessWidget {
             colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
           ).createShader(bounds),
           blendMode: BlendMode.srcIn,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/offer/lightning.png',
-                width: 20.w,
-                height: 28.h,
-                color: Colors.white,
-              ),
-              SizedBox(width: 6.w),
-              Text(
-                offer.offerName.toUpperCase(),
-                style: GoogleFonts.lora(
-                  fontSize: 15.sp,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  letterSpacing: 1.11,
-                ),
-              ),
-            ],
+          child: Text(
+            offer.offerName.toUpperCase(),
+            style: GoogleFonts.lora(
+              fontSize: 17.sp,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.8,
+            ),
           ),
         ),
       ],

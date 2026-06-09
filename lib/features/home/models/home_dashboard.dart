@@ -67,13 +67,15 @@ class RateHistory {
 
 class InvestSection {
   final String title;
+  final String subtitle;
   final List<InvestBlock> blocks;
 
-  InvestSection({required this.title, required this.blocks});
+  InvestSection({required this.title, this.subtitle = 'Small steps today,\nBig rewards tomorrow.', required this.blocks});
 
   factory InvestSection.fromJson(Map<String, dynamic> json) {
     return InvestSection(
       title: json['title'] ?? '',
+      subtitle: json['subtitle'] ?? 'Small steps today,\nBig rewards tomorrow.',
       blocks: (json['blocks'] as List?)
               ?.map((e) => InvestBlock.fromJson(e))
               .toList() ??

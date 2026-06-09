@@ -1,4 +1,139 @@
 {
     "java.configuration.updateBuildConfiguration": "interactive",
-    "typescript.tsserver.useSyntaxServer": "always"
+    "typescript.tsserver.useSyntaxServer": "always",
+
+    // ── Enhanced Dart/Flutter Syntax Highlighting ──
+    "editor.semanticHighlighting.enabled": true,
+
+    "editor.semanticTokenColorCustomizations": {
+        "enabled": true,
+        "rules": {
+            "class": "#E5C07B",
+            "enum": "#E5C07B",
+            "type": "#E5C07B",
+            "interface": "#E5C07B",
+            "typeParameter": "#D19A66",
+            "parameter": "#ABB2BF",
+            "variable": "#E06C75",
+            "variable.readonly": "#D19A66",
+            "property": "#E06C75",
+            "enumMember": "#56B6C2",
+            "function": "#61AFEF",
+            "method": "#61AFEF",
+            "keyword": "#C678DD",
+            "number": "#D19A66",
+            "string": "#98C379",
+            "comment": { "foreground": "#5C6370", "fontStyle": "italic" },
+            "annotation": "#56B6C2"
+        }
+    },
+
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "name": "Keywords (if, else, return, final, const, var, void)",
+                "scope": [
+                    "keyword.control.dart",
+                    "keyword.other.dart",
+                    "keyword.declaration.dart",
+                    "storage.modifier.dart",
+                    "storage.type.primitive.dart"
+                ],
+                "settings": { "foreground": "#C678DD" }
+            },
+            {
+                "name": "Class/Type Names",
+                "scope": [
+                    "entity.name.type.dart",
+                    "entity.name.type.class.dart",
+                    "support.class.dart",
+                    "entity.other.inherited-class.dart"
+                ],
+                "settings": { "foreground": "#E5C07B" }
+            },
+            {
+                "name": "Functions & Methods",
+                "scope": [
+                    "entity.name.function.dart",
+                    "support.function.dart"
+                ],
+                "settings": { "foreground": "#61AFEF" }
+            },
+            {
+                "name": "Strings",
+                "scope": [
+                    "string.interpolated.dart",
+                    "string.quoted.single.dart",
+                    "string.quoted.double.dart"
+                ],
+                "settings": { "foreground": "#98C379" }
+            },
+            {
+                "name": "String Interpolation ($variable, ${expression})",
+                "scope": [
+                    "variable.parameter.dart",
+                    "meta.string-contents.interpolated.dart"
+                ],
+                "settings": { "foreground": "#E06C75" }
+            },
+            {
+                "name": "Numbers & Constants",
+                "scope": [
+                    "constant.numeric.dart",
+                    "constant.language.dart"
+                ],
+                "settings": { "foreground": "#D19A66" }
+            },
+            {
+                "name": "Comments (// and ///)",
+                "scope": [
+                    "comment.line.double-slash.dart",
+                    "comment.block.documentation.dart"
+                ],
+                "settings": { "foreground": "#5C6370", "fontStyle": "italic" }
+            },
+            {
+                "name": "Doc Comment Keywords (@param, @return)",
+                "scope": "comment.block.documentation.dart storage.type.class.doc.dart",
+                "settings": { "foreground": "#7C8495", "fontStyle": "bold italic" }
+            },
+            {
+                "name": "Annotations (@override, @required, etc.)",
+                "scope": [
+                    "meta.declaration.annotation.dart",
+                    "storage.type.annotation.dart"
+                ],
+                "settings": { "foreground": "#56B6C2" }
+            },
+            {
+                "name": "Operators (=, ==, +, -, =>, etc.)",
+                "scope": "keyword.operator.dart",
+                "settings": { "foreground": "#56B6C2" }
+            },
+            {
+                "name": "Punctuation (., ;, {, }, (, ))",
+                "scope": [
+                    "punctuation.dot.dart",
+                    "punctuation.terminator.dart",
+                    "punctuation.separator.dart"
+                ],
+                "settings": { "foreground": "#ABB2BF" }
+            },
+            {
+                "name": "Import/Export paths",
+                "scope": "keyword.control.import.dart",
+                "settings": { "foreground": "#C678DD" }
+            },
+            {
+                "name": "this keyword",
+                "scope": "variable.language.this.dart",
+                "settings": { "foreground": "#E06C75", "fontStyle": "italic" }
+            },
+            {
+                "name": "Named Parameters",
+                "scope": "entity.name.named-parameter.dart",
+                "settings": { "foreground": "#ABB2BF" }
+            }
+        ]
+    }
 }
