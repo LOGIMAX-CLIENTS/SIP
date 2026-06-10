@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../routes/app_router.dart';
 import '../models/countdown_offer_model.dart';
+import 'offer_webview_screen.dart';
 
 /// Existing Customer UI for the 100-Day Grand Launch Countdown Offer.
 ///
@@ -54,7 +55,6 @@ class CountdownOfferExisting extends StatelessWidget {
             // ── Green Ribbon Banner ──
             _buildBadgeBanner(),
 
-            // ── Green Progress Card ──
             Padding(
               padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 20.h),
               child: _buildProgressCard(context),
@@ -194,8 +194,8 @@ class CountdownOfferExisting extends StatelessWidget {
             children: [
               Expanded(
                 child: _buildStatColumn(
-                  'Invest Days',
-                  '${offer.investDays} days',
+                  'Invested Day',
+                  'Day ${offer.investDays}',
                 ),
               ),
               Container(
@@ -268,6 +268,10 @@ class CountdownOfferExisting extends StatelessWidget {
 
           // ── CTA Button ──
           _buildCtaButton(context),
+          SizedBox(height: 14.h),
+
+          // ── "About the Offer" Know More ──
+          _buildAboutOfferRow(context),
         ],
       ),
       ),  // outer border Container
@@ -332,6 +336,46 @@ class CountdownOfferExisting extends StatelessWidget {
             color: const Color(0xFF064E3B),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAboutOfferRow(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showOfferBenefitsSheet(context),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'About the Offer',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 13.sp,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          SizedBox(width: 6.w),
+          Icon(
+            Icons.arrow_forward,
+            size: 15.sp,
+            color: Colors.white,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showOfferBenefitsSheet(BuildContext context) {
+    // Use API-provided URL, or fall back to the default offer benefits page
+    final url = (offer.webviewUrl != null && offer.webviewUrl!.isNotEmpty)
+        ? offer.webviewUrl!
+        : 'https://startgold.com/offer-benefits';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OfferWebViewScreen(url: url),
       ),
     );
   }

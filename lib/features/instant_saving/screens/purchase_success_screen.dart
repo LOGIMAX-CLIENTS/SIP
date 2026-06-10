@@ -49,9 +49,9 @@ class PurchaseSuccessScreen extends ConsumerWidget {
   }
 
   String _formatWeight(dynamic weight) {
-    if (weight == null) return '0.0000 gm';
+    if (weight == null) return '0.000000 gm';
     final num val = weight is num ? weight : num.tryParse('$weight') ?? 0;
-    return '${val.toStringAsFixed(4)} gm';
+    return '${val.toStringAsFixed(6)} gm';
   }
 
   bool _isDisplayable(dynamic val) {

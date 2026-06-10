@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
+import '../../../shared/widgets/gradient_header.dart';
 
 // Conditional imports — only loaded on native platforms.
 import 'package:webview_flutter/webview_flutter.dart';
@@ -109,25 +111,31 @@ class _OfferWebViewScreenState extends State<OfferWebViewScreen> {
     if (kIsWeb || _controller == null) {
       return Scaffold(
         backgroundColor: const Color(0xFFFFF8EE),
-        appBar: _buildAppBar(),
-        body: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF1B882C)),
-              SizedBox(height: 16),
-              Text('Opening in browser...'),
-            ],
-          ),
+        body: Column(
+          children: [
+            GradientHeader(title: widget.title),
+            const Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF1B882C)),
+                    SizedBox(height: 16),
+                    Text('Opening in browser...'),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFF8EE),
-      appBar: _buildAppBar(),
       body: Column(
         children: [
+          GradientHeader(title: widget.title),
           Expanded(
             child: Stack(
               children: [
@@ -147,54 +155,72 @@ class _OfferWebViewScreenState extends State<OfferWebViewScreen> {
     );
   }
 
-  AppBar _buildAppBar() {
-    return AppBar(
-      backgroundColor: const Color(0xFFFFF8EE),
-      elevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios, color: Colors.black87),
-        onPressed: () => Navigator.pop(context),
-      ),
-      title: Text(
-        widget.title,
-        style: const TextStyle(
-          color: Colors.black87,
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      centerTitle: true,
-    );
-  }
-
   Widget _buildFooterButton() {
     return SafeArea(
       top: false,
       child: Container(
-        padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 12.h),
+        padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 12.h),
         decoration: const BoxDecoration(
           color: Color(0xFFFFF8EE),
         ),
-        child: CustomButton(
-          text: 'Start Investing',
-          svgIconPath: 'assets/buttons/tick.svg',
-          onPressed: () {
-            Navigator.pop(context);
-            Navigator.pushNamed(context, AppRouter.instantSaving);
-          },
-          gradient: const LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [Color(0xFF1B882C), Color(0xFF003716)],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF1B882C).withValues(alpha: 0.35),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Trust Badge ──
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_rounded,
+                    size: 14.sp, color: const Color(0xFF64748B)),
+                SizedBox(width: 6.w),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '100% ',
+                        style: GoogleFonts.lora(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                      TextSpan(
+                        text: 'Secure • Trusted by Thousands',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 10.h),
+            // ── CTA Button ──
+            CustomButton(
+              text: 'Start Investing',
+              svgIconPath: 'assets/buttons/tick.svg',
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, AppRouter.instantSaving);
+              },
+              gradient: const LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [Color(0xFF1B882C), Color(0xFF003716)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF1B882C).withValues(alpha: 0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              textColor: Colors.white,
             ),
           ],
-          textColor: Colors.white,
         ),
       ),
     );

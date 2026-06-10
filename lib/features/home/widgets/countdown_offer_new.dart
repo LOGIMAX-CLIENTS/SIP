@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -256,10 +256,10 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
                                 'Know more',
                                 style: GoogleFonts.playfairDisplay(
                                   fontSize: 12.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF1B882C),
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF003716),
                                   decoration: TextDecoration.underline,
-                                  decorationColor: const Color(0xFF1B882C),
+                                  decorationColor: const Color(0xFF003716),
                                 ),
                               ),
                               SizedBox(width: 4.w),
@@ -268,7 +268,7 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
                                 child: Icon(
                                   Icons.arrow_forward,
                                   size: 14.sp,
-                                  color: const Color(0xFF1B882C),
+                                  color: const Color(0xFF003716),
                                 ),
                               ),
                             ],

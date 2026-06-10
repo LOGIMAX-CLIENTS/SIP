@@ -35,9 +35,16 @@ class CountdownOfferResponse {
       );
     }
     if (customerType == 'EXISTING' && data['existing_offer'] != null) {
-      existingOffer = ExistingCustomerOffer.fromJson(
-        data['existing_offer'] as Map<String, dynamic>,
-      );
+      final existingJson =
+          Map<String, dynamic>.from(data['existing_offer'] as Map<String, dynamic>);
+      // webview_url may come at root data level or top-level json — inject into existing_offer map
+      if (!existingJson.containsKey('webview_url')) {
+        final rootUrl = data['webview_url'] ?? json['webview_url'];
+        if (rootUrl != null) {
+          existingJson['webview_url'] = rootUrl;
+        }
+      }
+      existingOffer = ExistingCustomerOffer.fromJson(existingJson);
     }
 
     return CountdownOfferResponse(
@@ -127,6 +134,9 @@ class ExistingCustomerOffer {
   final String offerEndDate;
   final String ctaText;
 
+  /// URL for the WebView-based "Know More" offer benefits page.
+  final String? webviewUrl;
+
   ExistingCustomerOffer({
     required this.offerName,
     required this.silverEarned,
@@ -135,6 +145,7 @@ class ExistingCustomerOffer {
     required this.currentRewardPercentage,
     required this.offerEndDate,
     required this.ctaText,
+    this.webviewUrl,
   });
 
   factory ExistingCustomerOffer.fromJson(Map<String, dynamic> json) {
@@ -147,6 +158,7 @@ class ExistingCustomerOffer {
           (json['current_reward_percentage'] as num?)?.toInt() ?? 0,
       offerEndDate: json['offer_end_date'] as String? ?? '',
       ctaText: json['cta_text'] as String? ?? 'Start Investing',
+      webviewUrl: json['webview_url'] as String?,
     );
   }
 }

@@ -109,7 +109,7 @@ class _TransactionDetailsScreenState
         isDark ? Colors.white10 : Colors.black.withOpacity(0.05);
 
     return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 80.h),
       child: Column(
         children: [
           _buildTopCard(details, isSaving, isSip, isReferral, isOffer, cardColor, borderColor,
@@ -604,15 +604,16 @@ class _TransactionDetailsScreenState
                     : 'Withdrawal Details';
 
     // Row labels — use metal-appropriate labels for offer
+    final String baseMetal = details.metalName.toLowerCase().contains('silver') ? 'Silver' : 'Gold';
     final String rateLabel = isSip
-        ? '${details.metalName} Rate'
+        ? '$baseMetal Rate'
         : isSaving
-            ? 'Gold Purchased At'
+            ? '$baseMetal Purchased At'
             : isReferral
-                ? 'Gold Credited At'
+                ? '$baseMetal Credited At'
                 : isOffer
-                    ? '${details.metalName} Rate'
-                    : 'Gold Sold At';
+                    ? '$baseMetal Rate'
+                    : '$baseMetal Sold At';
 
     final String subSectionTitle = isSaving
         ? 'Transaction Details'
@@ -666,9 +667,9 @@ class _TransactionDetailsScreenState
             SizedBox(height: 4.h),
             _buildDetailRow(rateLabel,
                 details.priceBreakdown.rate, textColor, mutedTextColor),
-            _buildDetailRow('Gold Quantity', details.priceBreakdown.quantity,
+            _buildDetailRow('$baseMetal Quantity', details.priceBreakdown.quantity,
                 textColor, mutedTextColor),
-            _buildDetailRow(isOffer ? 'Silver Value' : 'Gold Value', details.priceBreakdown.value,
+            _buildDetailRow('$baseMetal Value', details.priceBreakdown.value,
                 textColor, mutedTextColor),
             _buildDetailRow(
                 'GST', details.priceBreakdown.gst, textColor, mutedTextColor),

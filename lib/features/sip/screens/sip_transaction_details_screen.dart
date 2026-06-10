@@ -494,7 +494,8 @@ class _SipTransactionDetailsScreenState
       Color textColor,
       Color mutedTextColor,
       bool isDark) {
-    final rateLabel = '${details.metalName} Rate';
+    final String baseMetal = details.metalName.toLowerCase().contains('silver') ? 'Silver' : 'Gold';
+    final rateLabel = '$baseMetal Rate';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -542,9 +543,9 @@ class _SipTransactionDetailsScreenState
             SizedBox(height: 4.h),
             _buildDetailRow(rateLabel, details.priceBreakdown.rate, textColor,
                 mutedTextColor),
-            _buildDetailRow('Gold Quantity', details.priceBreakdown.quantity,
+            _buildDetailRow('$baseMetal Quantity', details.priceBreakdown.quantity,
                 textColor, mutedTextColor),
-            _buildDetailRow('Gold Value', details.priceBreakdown.value,
+            _buildDetailRow('$baseMetal Value', details.priceBreakdown.value,
                 textColor, mutedTextColor),
             _buildDetailRow(
                 'GST', details.priceBreakdown.gst, textColor, mutedTextColor),
