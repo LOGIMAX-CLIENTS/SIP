@@ -1,0 +1,247 @@
+# Complete VAPT Changes — All Files Modified
+
+---
+
+## File 1: `android/app/build.gradle.kts`
+**Finding:** 2.1 — App on Vulnerable Android Version  
+**Change:** Bumped minSdk from 24 to 29
+
+```diff
+ defaultConfig {
+     applicationId = "com.startgold.app"
+-    minSdk = flutter.minSdkVersion
++    minSdk = 29
+     targetSdk = flutter.targetSdkVersion
+```
+
+---
+
+## File 2: `lib/core/services/mpin_service.dart`
+**Finding:** 2.2 — Weak Security Pin Mechanism  
+**Change:** Changed PIN length from 4 to 6
+
+```diff
+ class MpinNotifier extends StateNotifier<MpinState> {
+   final MpinService _mpinService;
+-  static const int pinLength = 4;
++  static const int pinLength = 6;
+```
+
+---
+
+## File 3: `lib/features/mpin/mpin_screen.dart`
+**Finding:** 2.2 — Weak Security Pin Mechanism  
+**Changes:** Updated subtitle strings + PIN dot generation
+
+```diff
+ // Subtitle strings (around line 377)
+-  ? 'Create a 4-digit PIN for quick & secure access.'
++  ? 'Create a 6-digit PIN for quick & secure access.'
+   : isReset
+-      ? 'Enter your new 4-digit security PIN.'
++      ? 'Enter your new 6-digit security PIN.'
+
+ // PIN dots generation (around line 420)
+-  children: List.generate(4, (index) {
++  children: List.generate(MpinNotifier.pinLength, (index) {
+```
+
+---
+
+## File 4: `lib/features/mpin/change_mpin_screen.dart`
+**Finding:** 2.2 — Weak Security Pin Mechanism  
+**Changes:** Updated subtitles, length checks, PIN dots
+
+```diff
+ // Subtitles (line 55-56)
+-  case _ChangePinStep.enterOld: return 'Enter your existing 4-digit MPIN.';
+-  case _ChangePinStep.enterNew: return 'Choose a new 4-digit PIN.';
++  case _ChangePinStep.enterOld: return 'Enter your existing 6-digit MPIN.';
++  case _ChangePinStep.enterNew: return 'Choose a new 6-digit PIN.';
+
+ // Length checks (line 62, 66)
+-  if (_currentInput.length < 4) {
++  if (_currentInput.length < MpinNotifier.pinLength) {
+
+-  if (_currentInput.length == 4) {
++  if (_currentInput.length == MpinNotifier.pinLength) {
+
+ // PIN dots (line 254)
+-  children: List.generate(4, (index) {
++  children: List.generate(MpinNotifier.pinLength, (index) {
+```
+
+---
+
+## File 5: `lib/features/auth/login/login_screen.dart`
+**Finding:** 2.4 — Unintended Data Leakage - Clipboard  
+**Change:** Disabled copy/paste on phone number field
+
+```diff
+ TextField(
+   controller: _mobileController,
+   keyboardType: TextInputType.phone,
++  enableInteractiveSelection: false,
++  contextMenuBuilder: (context, editableTextState) =>
++      const SizedBox.shrink(),
+   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+```
+
+---
+
+## File 6: `lib/core/security/root_detection_service.dart`
+**Finding:** 2.5 — Root Detection Bypass  
+**Change:** Replaced entire file — from basic single-check to multi-layered detection
+
+### Android: 7 Layers
+| Layer | What It Checks |
+|:---:|---|
+| 1 | `root_checker_plus` plugin |
+| 2 | `su` binary in 10 known paths |
+| 3 | Magisk artifacts (`/sbin/.magisk`, etc.) |
+| 4 | Frida detection via `/proc/self/maps` |
+| 5 | Xposed/LSPosed/EdXposed via `/proc/self/maps` |
+| 6 | Root management package directories |
+| 7 | `which su` command execution test |
+
+### iOS: 7 Layers
+| Layer | What It Checks |
+|:---:|---|
+| 1 | `root_checker_plus` plugin (`isJailbreak`) |
+| 2 | 40+ jailbreak file/directory paths (Cydia, Sileo, Zebra, Filza, checkra1n, unc0ver, Dopamine, Substrate, libhooker, etc.) |
+| 3 | Sandbox escape — write test to `/private/` |
+| 4 | Frida port scan (127.0.0.1:27042) |
+| 5 | Cycript port scan (127.0.0.1:8556) |
+| 6 | `DYLD_INSERT_LIBRARIES` environment variable check |
+| 7 | Symbolic link detection on system paths |
+
+---
+
+## File 7: `lib/features/profile/profile_controller.dart`
+**Finding:** 2.6 — Login Notification Not Present  
+**Change:** Added `lastLoginAt` + `lastFailedLoginAt` fields to `UserProfile` model
+
+```diff
+ // Model fields (line 21-22)
+   final String referralMessage;
++  final String? lastLoginAt;
++  final String? lastFailedLoginAt;
+
+ // Constructor (line 39-40)
+   this.referralMessage = '',
++  this.lastLoginAt,
++  this.lastFailedLoginAt,
+
+ // copyWith (line 56-57)
+   String? referralMessage,
++  String? lastLoginAt,
++  String? lastFailedLoginAt,
+
+ // copyWith body (line 74-75)
+   referralMessage: referralMessage ?? this.referralMessage,
++  lastLoginAt: lastLoginAt ?? this.lastLoginAt,
++  lastFailedLoginAt: lastFailedLoginAt ?? this.lastFailedLoginAt,
+
+ // API parsing (line 160-161)
+   referralMessage: data['referral_message']?.toString() ?? '',
++  lastLoginAt: data['last_login_at']?.toString(),
++  lastFailedLoginAt: data['last_failed_login_at']?.toString(),
+```
+
+---
+
+## File 8: `lib/features/profile/profile_screen.dart`
+**Finding:** 2.6 — Login Notification Not Present  
+**Changes:** Added import, date formatter, and login display UI
+
+```diff
+ // Import added (line 8)
++import 'package:intl/intl.dart';
+
+ // Date formatter method added (line 109-118)
++  String _formatLoginDate(String isoDate) {
++    try {
++      final dt = DateTime.parse(isoDate).toLocal();
++      return DateFormat('dd/MM/yyyy, h:mm a').format(dt);
++    } catch (_) {
++      return isoDate;
++    }
++  }
+
+ // Profile header — after phone number (line 701-755)
++  // Last successful login (green check icon)
++  if (user.lastLoginAt != null && user.lastLoginAt!.isNotEmpty)
++    Row(children: [
++      Icon(Icons.check_circle_outline_rounded, color: Color(0xFF4ADE80)),
++      Text('Last login: ${_formatLoginDate(user.lastLoginAt!)}'),
++    ]),
++
++  // Last failed login (amber warning icon)  
++  if (user.lastFailedLoginAt != null && user.lastFailedLoginAt!.isNotEmpty)
++    Row(children: [
++      Icon(Icons.warning_amber_rounded, color: Color(0xFFFBBF24)),
++      Text('Last failed login: ${_formatLoginDate(user.lastFailedLoginAt!)}'),
++    ]),
+```
+
+**Display format:** Indian format `dd/MM/yyyy, h:mm a` → `13/06/2026, 3:34 PM`
+
+---
+
+## File 9: `lib/features/withdrawal/screens/upi_selection_screen.dart`
+**Change:** Font fix — UPI identifier numbers now use Lora font
+
+```diff
+ // Import added (line 8)
++import '../../../shared/widgets/numeric_styled_text.dart';
+
+ // UPI identifier text (line 189-195)
+-  Text(
++  NumericStyledText(
+     method.identifier,
+-    style: GoogleFonts.playfairDisplay(
+-      fontSize: 12.sp,
+-      color: isDark ? Colors.white54 : Colors.black45,
+-    ),
++    fontSize: 12.sp,
++    fontWeight: FontWeight.w400,
++    color: isDark ? Colors.white54 : Colors.black45,
+   ),
+```
+
+---
+
+## File 10: `lib/features/sip/screens/sip_transaction_history_screen.dart`
+**Change:** Font fix — "Gold 24K" chip now uses Lora for "24K"
+
+```diff
+ // Commodity chip label (line 369-382)
+-  child: Text(
++  child: NumericStyledText(
+     label,
+-    style: GoogleFonts.playfairDisplay(
+-      fontSize: 11.sp,
+-      ...
+-    ),
++    fontSize: 11.sp,
++    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
++    color: ...,
+   ),
+```
+
+---
+
+## Backend API Requirements
+
+The `profile/customer_details` API needs to return these new fields:
+
+```json
+{
+  "data": {
+    "last_login_at": "2026-06-13T10:04:09.000000Z",
+    "last_failed_login_at": "2026-06-12T17:52:00.000000Z"
+  }
+}
+```
+
+MPIN APIs (`/mpin/create`, `/validate`, `/change`, `/reset`) must accept 6-digit PINs.

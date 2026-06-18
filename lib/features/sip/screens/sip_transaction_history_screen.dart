@@ -366,19 +366,17 @@ class _SipTransactionHistoryScreenState
             width: isSelected ? 1.5 : 1,
           ),
         ),
-        child: Text(
+        child: NumericStyledText(
           label,
-          style: GoogleFonts.playfairDisplay(
-            fontSize: 11.sp,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected
-                ? (label == 'All'
-                    ? const Color(0xFF064E3B)
-                    : isGold
-                        ? const Color(0xFF92400E)
-                        : const Color(0xFF475569))
-                : const Color(0xFF64748B),
-          ),
+          fontSize: 11.sp,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected
+              ? (label == 'All'
+                  ? const Color(0xFF064E3B)
+                  : isGold
+                      ? const Color(0xFF92400E)
+                      : const Color(0xFF475569))
+              : const Color(0xFF64748B),
         ),
       ),
     );

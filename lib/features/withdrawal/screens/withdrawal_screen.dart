@@ -19,6 +19,7 @@ import '../../market/models/market_rates.dart';
 import '../../../shared/widgets/loaders.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/custom_button.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/utils/no_leading_zeros_formatter.dart';
 
@@ -685,6 +686,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                           child: TextField(
                             controller: _amountController,
                             keyboardType: TextInputType.number,
+                            contextMenuBuilder: SecureClipboard.none,
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
                               const NoLeadingZerosFormatter(allowDecimal: false),

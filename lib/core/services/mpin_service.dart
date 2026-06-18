@@ -131,7 +131,7 @@ class MpinState {
 
 class MpinNotifier extends StateNotifier<MpinState> {
   final MpinService _mpinService;
-  static const int pinLength = 4;
+  static const int pinLength = 6;
 
   MpinNotifier(this._mpinService) : super(MpinState());
 

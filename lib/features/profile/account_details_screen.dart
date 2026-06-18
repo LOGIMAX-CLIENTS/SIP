@@ -11,6 +11,7 @@ import 'widgets/profile_photo_widget.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/custom_button.dart';
+import '../../shared/widgets/secure_clipboard.dart';
 import '../../shared/utils/upper_case_words_formatter.dart';
 
 class AccountDetailsScreen extends ConsumerStatefulWidget {
@@ -390,6 +391,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                           textCapitalization: textCapitalization,
                           inputFormatters: inputFormatters,
                           onChanged: onChanged,
+                          contextMenuBuilder: SecureClipboard.none,
                           style: inputStyle,
                           decoration: InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 12.h), hintStyle: GoogleFonts.playfairDisplay(fontSize: 16.sp, color: Colors.grey)),
                         )

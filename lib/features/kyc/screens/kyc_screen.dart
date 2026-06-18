@@ -9,6 +9,7 @@ import 'package:startgold/shared/theme/app_theme.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/custom_button.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
+import 'package:startgold/shared/widgets/secure_clipboard.dart';
 
 class KycScreen extends ConsumerStatefulWidget {
   final String requestFrom;
@@ -419,6 +420,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     ? TextCapitalization.characters
                     : TextCapitalization.none,
                 inputFormatters: formatters,
+                contextMenuBuilder: SecureClipboard.none,
                 style: GoogleFonts.playfairDisplay(
                     color: stylized
                         ? Colors.black87

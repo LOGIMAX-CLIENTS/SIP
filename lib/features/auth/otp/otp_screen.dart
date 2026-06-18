@@ -12,6 +12,7 @@ import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/localization/language_provider.dart';
 import '../../../core/utils/masking_utils.dart';
@@ -246,6 +247,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                               length: 6,
                               controller: _otpController,
                               keyboardType: TextInputType.number,
+                              contextMenuBuilder: SecureClipboard.none,
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly
                               ],

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:intl/intl.dart';
 import '../../core/services/biometric_service.dart';
 import '../../routes/app_router.dart';
 import '../../core/security/secure_storage_service.dart';
@@ -103,6 +104,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted)
       AppToast.show(context, msg,
           type: newValue ? ToastType.success : ToastType.info);
+  }
+
+  /// Formats ISO 8601 login timestamp to Indian format.
+  /// e.g., "2026-06-13T10:04:09.000000Z" → "13/06/2026, 3:34 PM"
+  String _formatLoginDate(String isoDate) {
+    try {
+      final dt = DateTime.parse(isoDate).toLocal();
+      return DateFormat('dd/MM/yyyy, h:mm a').format(dt);
+    } catch (_) {
+      return isoDate; // Fallback: show raw value if parsing fails
+    }
   }
 
   @override
@@ -686,6 +698,60 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        // ── VAPT Finding 6: Last Login Info ─────────
+                        if (user.lastLoginAt != null &&
+                            user.lastLoginAt!.isNotEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(top: 6.h),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle_outline_rounded,
+                                  size: 12.sp,
+                                  color: const Color(0xFF4ADE80),
+                                ),
+                                SizedBox(width: 4.w),
+                                Flexible(
+                                  child: Text(
+                                    'Last login: ${_formatLoginDate(user.lastLoginAt!)}',
+                                    style: GoogleFonts.lora(
+                                      fontSize: 11.sp,
+                                      color: Colors.white.withOpacity(0.6),
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        // ── VAPT Finding 6: Last Failed Login ───────
+                        if (user.lastFailedLoginAt != null &&
+                            user.lastFailedLoginAt!.isNotEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(top: 4.h),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 12.sp,
+                                  color: const Color(0xFFFBBF24),
+                                ),
+                                SizedBox(width: 4.w),
+                                Flexible(
+                                  child: Text(
+                                    'Last failed login: ${_formatLoginDate(user.lastFailedLoginAt!)}',
+                                    style: GoogleFonts.lora(
+                                      fontSize: 11.sp,
+                                      color: const Color(0xFFFBBF24).withOpacity(0.8),
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),

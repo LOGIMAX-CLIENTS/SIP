@@ -10,6 +10,7 @@ import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/utils/navigation_utils.dart';
@@ -117,6 +118,7 @@ class _PinScreenState extends ConsumerState<PinScreen> {
                               length: 4,
                               controller: _pinController,
                               keyboardType: TextInputType.number,
+                              contextMenuBuilder: SecureClipboard.none,
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly,
                               ],

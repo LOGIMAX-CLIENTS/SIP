@@ -11,6 +11,7 @@ import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/utils/navigation_utils.dart';
 
@@ -394,6 +395,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       onTap: onTap,
       validator: validator,
       inputFormatters: inputFormatters,
+      contextMenuBuilder: SecureClipboard.none,
       style: isNumeric
           ? GoogleFonts.lora(
               fontSize: 16.sp,

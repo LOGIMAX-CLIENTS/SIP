@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/utils/upper_case_words_formatter.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/security/secure_logger.dart';
@@ -690,6 +691,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                     inputFormatters: inputFormatters,
                     validator: validator,
                     onChanged: onChanged,
+                    contextMenuBuilder: SecureClipboard.none,
                     style: isNumeric
                         ? GoogleFonts.lora(
                             fontSize: 16.sp,

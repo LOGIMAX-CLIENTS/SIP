@@ -5,12 +5,14 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/shared/widgets/animations.dart';
+import '../../../shared/widgets/numeric_styled_text.dart';
 import '../providers/withdrawal_provider.dart';
 import '../models/withdrawal_method.dart';
 import '../services/withdrawal_service.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
 
 class UpiSelectionScreen extends ConsumerStatefulWidget {
@@ -186,12 +188,11 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                     ),
                   ),
                   SizedBox(height: 2.h),
-                  Text(
+                  NumericStyledText(
                     method.identifier,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 12.sp,
-                      color: isDark ? Colors.white54 : Colors.black45,
-                    ),
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w400,
+                    color: isDark ? Colors.white54 : Colors.black45,
                   ),
                 ],
               ),
@@ -613,6 +614,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                   controller: ctrl,
                   enabled: !isVerifying,
                   onChanged: (_) => setModalState(() {}),
+                  contextMenuBuilder: SecureClipboard.none,
                   style: GoogleFonts.playfairDisplay(
                       color: isDark ? Colors.white : Colors.black),
                   decoration: InputDecoration(
@@ -881,6 +883,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
           controller: ctrl,
           onChanged: onChanged,
           keyboardType: kbd,
+          contextMenuBuilder: SecureClipboard.none,
           textCapitalization: forceUpperCase
               ? TextCapitalization.characters
               : TextCapitalization.none,

@@ -7,8 +7,8 @@ enum SocketStatus { connecting, connected, disconnected, error }
 
 class NativeSocketService {
 //  final String _wsUrl = 'wss://sgbackoffice.startgold.com/ws/'; //  Live
-  final String _wsUrl = 'ws://13.202.62.253:57200'; //  Staging
-  // final String _wsUrl = 'wss://vaptbackoffice.startgold.com/ws/'; //  VAPT Server
+  //final String _wsUrl = 'ws://13.202.62.253:57200'; //  Staging
+   final String _wsUrl = 'wss://vaptbackoffice.startgold.com/ws/'; //  VAPT Server
   final List<String> _protocols = [
     '0b286a8b1100f097e7c8e879dbd4174e468a9e92f888e6e289595efdd4747b89'
   ];

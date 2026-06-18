@@ -105,8 +105,39 @@ class SecureStorageService {
   }
   // ─────────────────────────────────────────────────────────────────────────
 
+  /// Clears all session data but preserves keys that must survive
+  /// across login/logout cycles (device identity, onboarding flag).
+  ///
+  /// **Why not `deleteAll()`?**
+  /// DeviceIdService stores `persistent_device_id` and
+  /// `persistent_device_type` in the same FlutterSecureStorage instance.
+  /// Wiping them causes a new UUID to be generated on next login, making
+  /// the server treat the same physical device as a "new device" — which
+  /// triggers spurious 409 SESSION_INVALIDATED errors on other devices.
   static Future<void> logout() async {
+    // Keys that MUST survive logout
+    const preserveKeys = [
+      'persistent_device_id',
+      'persistent_device_type',
+      AppConfig.keyHasSeenOnboarding,
+    ];
+
+    // 1. Read values to preserve
+    final preserved = <String, String>{};
+    for (final key in preserveKeys) {
+      final value = await _storage.read(key: key);
+      if (value != null && value.isNotEmpty) {
+        preserved[key] = value;
+      }
+    }
+
+    // 2. Wipe everything
     await _storage.deleteAll();
+
+    // 3. Restore preserved keys
+    for (final entry in preserved.entries) {
+      await _storage.write(key: entry.key, value: entry.value);
+    }
   }
 }
 

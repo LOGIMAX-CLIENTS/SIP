@@ -13,6 +13,7 @@ import '../../../main.dart' show navigatorKey;
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/shared_service.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -273,6 +274,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   child: TextField(
                                     controller: _mobileController,
                                     keyboardType: TextInputType.phone,
+                                    enableInteractiveSelection: false,
+                                    contextMenuBuilder: SecureClipboard.none,
+                                    enableSuggestions: false,
+                                    autocorrect: false,
                                     inputFormatters: [
                                       FilteringTextInputFormatter.digitsOnly
                                     ],
@@ -479,7 +484,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _selectedCountryId,
         );
     if (success && mounted && !_navigating) {
-      _navigating = true;
+      _navigating = true; // one-shot guard — stays true since we leave this screen
       final authData = ref.read(authControllerProvider).data;
       // Short delay to let AppControlWrapper state updates settle and
       // release any navigator locks before we push.
@@ -494,8 +499,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             'otpReferenceId': authData?['otp_reference_id'] ?? '',
           },
         );
+      } else {
+        _navigating = false; // only reset if widget was disposed mid-flight
       }
-      _navigating = false;
     }
   }
 }

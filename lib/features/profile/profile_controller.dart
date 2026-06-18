@@ -19,6 +19,8 @@ class UserProfile {
   final String? photoUrl;
   final int kycStatus;
   final String referralMessage; // from API referral_message field
+  final String? lastLoginAt; // VAPT Finding 6: last login timestamp
+  final String? lastFailedLoginAt; // VAPT Finding 6: last failed login timestamp
 
   UserProfile({
     required this.id,
@@ -36,6 +38,8 @@ class UserProfile {
     this.photoUrl,
     this.kycStatus = 0,
     this.referralMessage = '',
+    this.lastLoginAt,
+    this.lastFailedLoginAt,
   });
 
   UserProfile copyWith({
@@ -53,6 +57,8 @@ class UserProfile {
     String? photoUrl,
     int? kycStatus,
     String? referralMessage,
+    String? lastLoginAt,
+    String? lastFailedLoginAt,
   }) {
     return UserProfile(
       id: this.id,
@@ -70,6 +76,8 @@ class UserProfile {
       photoUrl: photoUrl ?? this.photoUrl,
       kycStatus: kycStatus ?? this.kycStatus,
       referralMessage: referralMessage ?? this.referralMessage,
+      lastLoginAt: lastLoginAt ?? this.lastLoginAt,
+      lastFailedLoginAt: lastFailedLoginAt ?? this.lastFailedLoginAt,
     );
   }
 }
@@ -129,6 +137,15 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     fetchProfileDetails();
   }
 
+  /// Safely parse nullable API fields.
+  /// Returns null for: null, empty string, or literal "null" string.
+  static String? _parseNullableField(dynamic value) {
+    if (value == null) return null;
+    final str = value.toString().trim();
+    if (str.isEmpty || str == 'null') return null;
+    return str;
+  }
+
   Future<void> fetchProfileDetails() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -153,6 +170,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
                 ? int.tryParse(data['kyc_status'].toString()) ?? 0
                 : 0,
             referralMessage: data['referral_message']?.toString() ?? '',
+            lastLoginAt: _parseNullableField(data['last_login_at']),
+            lastFailedLoginAt: _parseNullableField(data['last_failed_login_at']),
           ),
           isLoading: false,
         );

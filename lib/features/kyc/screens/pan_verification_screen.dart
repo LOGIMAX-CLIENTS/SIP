@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/custom_button.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/app_toast.dart';
 
@@ -180,6 +181,7 @@ class _PanVerificationScreenState extends State<PanVerificationScreen> {
           keyboardType: type,
           textCapitalization: textCapitalization,
           inputFormatters: inputFormatters,
+          contextMenuBuilder: SecureClipboard.none,
           style:
               GoogleFonts.lora(fontSize: 18.sp, fontWeight: FontWeight.w600),
           decoration: InputDecoration(
