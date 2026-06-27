@@ -5,7 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../invoice/invoice_service.dart';
 
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/gradient_header.dart';
@@ -275,19 +275,41 @@ class _SipTransactionDetailsScreenState
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () async {
-                      final url = Uri.parse(details.invoiceUrl);
+                      // Show loading overlay
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => const Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF167525)),
+                          ),
+                        ),
+                      );
                       try {
-                        final launched = await launchUrl(
-                          url,
-                          mode: LaunchMode.externalApplication,
+                        final file = await InvoiceService.downloadInvoice(
+                          details.invoiceUrl,
                         );
-                        if (!launched && context.mounted) {
-                          AppToast.show(
-                              context, 'No app found to open the invoice',
-                              type: ToastType.warning);
+                        if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
+                          Navigator.pushNamed(
+                            context,
+                            AppRouter.invoiceViewer,
+                            arguments: {
+                              'file_path': file.path,
+                              'title': 'Invoice',
+                            },
+                          );
+                        }
+                      } on InvoiceException catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
+                          AppToast.show(context, e.message,
+                              type: ToastType.error);
                         }
                       } catch (e) {
                         if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
                           AppToast.show(context, 'Could not open invoice',
                               type: ToastType.error);
                         }

@@ -269,15 +269,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               data: (data) {
                                 if (userProfile?.isNewUser == true ||
                                     data.isNewCustomer) {
-                                  return _buildNewCustomerBanner(context,
-                                      selectedCommodity, isCurrentMarketClosed);
+                                  return KeyedSubtree(
+                                    key: const ValueKey('new_customer_banner'),
+                                    child: _buildNewCustomerBanner(context,
+                                        selectedCommodity, isCurrentMarketClosed),
+                                  );
                                 }
-                                return _buildPortfolioOverview(
-                                    isDark,
-                                    data,
-                                    selectedCommodity,
-                                    marketRates,
-                                    isCurrentMarketClosed);
+                                return KeyedSubtree(
+                                  key: const ValueKey('portfolio_overview'),
+                                  child: _buildPortfolioOverview(
+                                      isDark,
+                                      data,
+                                      selectedCommodity,
+                                      marketRates,
+                                      isCurrentMarketClosed),
+                                );
                               },
                               // On refresh: if we have previous data keep showing it
                               loading: () {
@@ -285,21 +291,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 if (prev != null) {
                                   if (userProfile?.isNewUser == true ||
                                       prev.isNewCustomer) {
-                                    return _buildNewCustomerBanner(
-                                        context,
-                                        selectedCommodity,
-                                        isCurrentMarketClosed);
+                                    return KeyedSubtree(
+                                      key: const ValueKey('new_customer_banner'),
+                                      child: _buildNewCustomerBanner(
+                                          context,
+                                          selectedCommodity,
+                                          isCurrentMarketClosed),
+                                    );
                                   }
-                                  return _buildPortfolioOverview(
-                                      isDark,
-                                      prev,
-                                      selectedCommodity,
-                                      marketRates,
-                                      isCurrentMarketClosed);
+                                  return KeyedSubtree(
+                                    key: const ValueKey('portfolio_overview'),
+                                    child: _buildPortfolioOverview(
+                                        isDark,
+                                        prev,
+                                        selectedCommodity,
+                                        marketRates,
+                                        isCurrentMarketClosed),
+                                  );
                                 }
-                                return _buildPortfolioSkeleton(isDark);
+                                return KeyedSubtree(
+                                  key: const ValueKey('portfolio_skeleton'),
+                                  child: _buildPortfolioSkeleton(isDark),
+                                );
                               },
-                              orElse: () => _buildPortfolioError(isDark),
+                              orElse: () => KeyedSubtree(
+                                key: const ValueKey('portfolio_error'),
+                                child: _buildPortfolioError(isDark),
+                              ),
                             ),
                           ),
                           SizedBox(height: 16.h),
@@ -1299,132 +1317,154 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 24.w),
       child: Column(
         children: [
-          Text(
-            selected == CommodityType.gold
-                ? 'Total Gold Savings'
-                : 'Total Silver Savings',
-            style: GoogleFonts.playfairDisplay(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 15.sp,
-              letterSpacing: 0.5,
-            ),
-          ),
-          SizedBox(height: 16.h),
-          // ── Balance + Growth pill — always centered as a stable unit ──
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Gradient gm text
-              ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  begin: const Alignment(-0.87, -0.5),
-                  end: const Alignment(0.87, 0.5),
-                  colors: selected == CommodityType.gold
-                      ? const [Color(0xFFFFB500), Color(0xFFFFCA49)]
-                      : const [Color(0xFFB6B6B6), Color(0xFFE5E5E5)],
-                ).createShader(bounds),
-                blendMode: BlendMode.srcIn,
-                child: Text(
-                  '${data.summary.balance.toStringAsFixed(6)} gm',
-                  style: GoogleFonts.lora(
-                    fontSize: 28.sp,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+          // ── Animated content swap when commodity changes ──
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
+            child: Column(
+              key: ValueKey('portfolio_content_${selected.name}'),
+              children: [
+                Text(
+                  selected == CommodityType.gold
+                      ? 'Total Gold Savings'
+                      : 'Total Silver Savings',
+                  style: GoogleFonts.playfairDisplay(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 15.sp,
+                    letterSpacing: 0.5,
                   ),
                 ),
-              ),
-              SizedBox(width: 10.w),
-              // Growth pill
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF023A17),
-                  borderRadius: BorderRadius.circular(20.r),
-                  border: Border.all(
-                    color: const Color(0xFF0B7F03),
-                    width: 0.6,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                SizedBox(height: 16.h),
+                // ── Balance + Growth pill — always centered as a stable unit ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Icon(
-                      isPositive ? Icons.arrow_upward : Icons.arrow_downward,
-                      size: 13.sp,
-                      color: isPositive
-                          ? const Color(0xFF0ED500)
-                          : const Color(0xFFFF1A1A),
+                    // Gradient gm text — Flexible + FittedBox auto-scales long balances
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: ShaderMask(
+                          shaderCallback: (bounds) => LinearGradient(
+                            begin: const Alignment(-0.87, -0.5),
+                            end: const Alignment(0.87, 0.5),
+                            colors: selected == CommodityType.gold
+                                ? const [Color(0xFFFFB500), Color(0xFFFFCA49)]
+                                : const [Color(0xFFB6B6B6), Color(0xFFE5E5E5)],
+                          ).createShader(bounds),
+                          blendMode: BlendMode.srcIn,
+                          child: Text(
+                            '${data.summary.balance.toStringAsFixed(6)} gm',
+                            style: GoogleFonts.lora(
+                              fontSize: 28.sp,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    SizedBox(width: 3.w),
-                    Text(
-                      '${returnsPct.toStringAsFixed(1)}%',
-                      style: GoogleFonts.lora(
-                        fontSize: 12.sp,
-                        fontWeight: FontWeight.bold,
-                        color: isPositive
-                            ? const Color(0xFF0ED500)
-                            : const Color(0xFFFF1A1A),
+                    SizedBox(width: 10.w),
+                    // Growth pill
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF023A17),
+                        borderRadius: BorderRadius.circular(20.r),
+                        border: Border.all(
+                          color: const Color(0xFF0B7F03),
+                          width: 0.6,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isPositive
+                                ? Icons.arrow_upward
+                                : Icons.arrow_downward,
+                            size: 13.sp,
+                            color: isPositive
+                                ? const Color(0xFF0ED500)
+                                : const Color(0xFFFF1A1A),
+                          ),
+                          SizedBox(width: 3.w),
+                          Text(
+                            '${returnsPct.toStringAsFixed(1)}%',
+                            style: GoogleFonts.lora(
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.bold,
+                              color: isPositive
+                                  ? const Color(0xFF0ED500)
+                                  : const Color(0xFFFF1A1A),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16.h),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () =>
-                      Navigator.pushNamed(context, AppRouter.withdrawal),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF335C41),
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: 15.h),
-                    minimumSize: Size(0, 36.h),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(100.r),
+                SizedBox(height: 16.h),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () =>
+                            Navigator.pushNamed(context, AppRouter.withdrawal),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF335C41),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(vertical: 15.h),
+                          minimumSize: Size(0, 36.h),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(100.r),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          'Withdrawal',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.sp,
+                          ),
+                        ),
+                      ),
                     ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Withdrawal',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.sp,
+                    SizedBox(width: 16.w),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () =>
+                            ref.read(selectedTabProvider.notifier).state = 1,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF064E3B),
+                          padding: EdgeInsets.symmetric(vertical: 15.h),
+                          minimumSize: Size(0, 36.h),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(100.r),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          'Invest More',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.sp,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-              SizedBox(width: 16.w),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () =>
-                      ref.read(selectedTabProvider.notifier).state = 1,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF064E3B),
-                    padding: EdgeInsets.symmetric(vertical: 15.h),
-                    minimumSize: Size(0, 36.h),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(100.r),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Invest More',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.sp,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           SizedBox(height: 12.h),
           _buildCommodityToggle(selected, isCurrentMarketClosed),

@@ -1,7 +1,7 @@
 name: startgold
 description: "A secure Fintech project."
 publish_to: 'none'
-version: 0.0.1+9
+version: 1.0.0+11
 
 environment:
   sdk: '>=3.4.1 <4.0.0'
@@ -30,7 +30,7 @@ dependencies:
   # Security & Identity
   flutter_secure_storage: ^9.0.0
   root_checker_plus: ^0.0.3
-  device_info_plus: ^10.1.0
+  device_info_plus: ^11.5.0
   screen_protector: ^1.5.1
   local_auth: ^3.0.1
   crypto: ^3.0.3
@@ -45,6 +45,7 @@ dependencies:
   shimmer: ^3.0.0
   confetti: ^0.8.0
   lottie: ^3.3.1
+  syncfusion_flutter_pdfviewer: ^28.2.7
 
   # Media & Files
   image_picker: ^1.2.1

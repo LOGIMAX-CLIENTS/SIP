@@ -51,7 +51,16 @@ class PortfolioNotifier extends StateNotifier<AsyncValue<PortfolioData>> {
   final String _idCustomer;
 
   PortfolioNotifier(this._portfolioService, this._idMetal, this._idCustomer)
-      : super(const AsyncValue.loading()) {
+      : super(
+          // Start with cached data if available to prevent flicker
+          // when switching between Gold and Silver tabs.
+          // 1st priority: exact metal cache, 2nd: any previous data
+          _portfolioCache.containsKey(_idMetal)
+              ? AsyncValue.data(_portfolioCache[_idMetal]!)
+              : _portfolioCache.isNotEmpty
+                  ? AsyncValue.data(_portfolioCache.values.last)
+                  : const AsyncValue.loading(),
+        ) {
     fetchPortfolio();
   }
 
@@ -60,16 +69,32 @@ class PortfolioNotifier extends StateNotifier<AsyncValue<PortfolioData>> {
       state = AsyncValue.data(PortfolioData.empty());
       return;
     }
-    state = const AsyncValue.loading();
+    // Preserve previous data during refresh to prevent card flicker
+    // when switching between Gold and Silver tabs.
+    final prev = state.valueOrNull;
+    if (prev == null) {
+      state = const AsyncValue.loading();
+    }
     try {
       final data =
           await _portfolioService.getPortfolioSummary(_idMetal, _idCustomer);
+      _portfolioCache[_idMetal] = data;
       state = AsyncValue.data(data);
     } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      // If we had previous data, keep it visible with the error
+      if (prev != null) {
+        state = AsyncValue.data(prev);
+      } else {
+        state = AsyncValue.error(e, st);
+      }
     }
   }
 }
+
+/// In-memory cache of portfolio data keyed by metal ID.
+/// Prevents loading-skeleton flicker when toggling Gold ↔ Silver
+/// because the autoDispose provider is re-created on each switch.
+final Map<String, PortfolioData> _portfolioCache = {};
 
 final portfolioProvider =
     StateNotifierProvider.autoDispose<PortfolioNotifier, AsyncValue<PortfolioData>>((ref) {

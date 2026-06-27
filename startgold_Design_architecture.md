@@ -1,5 +1,9 @@
 # StartGOLD — Project Architecture
 
+> **Version:** 1.0.0+11 | **Dart SDK:** >=3.4.1 <4.0.0 | **Last Updated:** June 2026
+
+---
+
 ## Overview
 
 **StartGOLD** is a fintech Flutter mobile app for gold/silver investment — supporting instant savings, SIP plans, KYC, withdrawals, and live market rates. It follows a **Feature-first + Clean Architecture hybrid** pattern with **Riverpod** for state management.
@@ -15,6 +19,8 @@
 | **Live Rates** | WebSocket (Socket.IO) |
 | **Localization** | English, Tamil, Telugu |
 | **Design Size** | 390×844 (iPhone 14 baseline) via `flutter_screenutil` |
+| **Payment Gateway** | Cashfree PG SDK |
+| **PDF Viewer** | Syncfusion (in-app invoice rendering) |
 
 ---
 
@@ -86,7 +92,7 @@ lib/
 │   │   ├── connectivity_provider.dart # Online/offline detection
 │   │   ├── commodity_provider.dart    # Gold/silver commodity data
 │   │   ├── market_provider.dart       # Live market rates state
-│   │   ├── portfolio_provider.dart    # User portfolio state
+│   │   ├── portfolio_provider.dart    # User portfolio state (with cache)
 │   │   ├── home_dashboard_provider.dart
 │   │   └── timer_provider.dart        # Rate refresh timer
 │   ├── security/                      # Fintech-grade security layer
@@ -118,7 +124,7 @@ lib/
 │       ├── validators.dart            # Generic input validators
 │       └── logger.dart                # Dev-mode logger
 │
-├── features/                          # Feature modules (21 modules)
+├── features/                          # Feature modules (22 modules)
 │   ├── auth/                          # Authentication flow
 │   │   ├── controller/               # Auth state notifier
 │   │   ├── login/                     # Login screen
@@ -167,6 +173,9 @@ lib/
 │   │   ├── services/
 │   │   └── screens/
 │   ├── history/                       # Transaction history
+│   ├── invoice/                       # In-app PDF invoice viewer
+│   │   ├── invoice_service.dart       # Download + cache service (Dio)
+│   │   └── invoice_viewer_screen.dart # SfPdfViewer.file() screen
 │   ├── notifications/                 # In-app notifications
 │   ├── nominee/                       # Nominee management
 │   ├── referral/                      # Referral program
@@ -277,7 +286,7 @@ class MyScreen extends ConsumerWidget {
 | `appControlProvider` | Force update & maintenance checks |
 | `marketProvider` | Live gold/silver rates |
 | `commodityProvider` | Commodity metadata |
-| `portfolioProvider` | User investment portfolio |
+| `portfolioProvider` | User investment portfolio (with in-memory cache) |
 | `languageProvider` | App locale (en/ta/te) |
 | `timerProvider` | Rate refresh timer |
 
@@ -333,6 +342,33 @@ graph TD
 | `withdrawal_amount`, `upi_id`, `transaction_pin` | `/withdraw` |
 | `amount`, `payment_pin`, `bank_details` | `/payment`, `/investment` |
 
+### Encryption Flow Detail
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Interceptor as ApiSecurityInterceptor
+    participant RSA as RSA Key Cache
+    participant AES as EncryptionService
+    participant Server
+
+    App->>Interceptor: POST /login {password: "xyz"}
+    Interceptor->>RSA: Has cached RSA key?
+    RSA-->>Interceptor: No
+    Interceptor->>Server: GET /auth/public-key
+    Server-->>Interceptor: RSA Public Key
+    Interceptor->>RSA: Cache key
+    Interceptor->>AES: Generate AES key
+    AES->>AES: Encrypt "password" field with AES-256
+    AES->>AES: Encrypt AES key with RSA public key
+    AES-->>Interceptor: {encrypted_data, encrypted_key, iv}
+    Interceptor->>Server: POST /login {encrypted payload}
+    Server-->>Interceptor: {encrypted response}
+    Interceptor->>AES: Decrypt response
+    AES-->>Interceptor: {success: true, token: "..."}
+    Interceptor-->>App: Decrypted response
+```
+
 ---
 
 ## Networking
@@ -353,13 +389,42 @@ ApiClient
     └── Other → ServerFailure (generic)
 ```
 
+### Server Environments
+
+| Environment | API Base URL | WebSocket URL |
+|-------------|-------------|---------------|
+| **Live** | `https://api.startgold.com/api/api/v1/` | `wss://sgbackoffice.startgold.com/ws/` |
+| **Staging** | `https://startgoldapi.logimaxindia.com/api/api/v1/` | `wss://startgoldapp.logimaxindia.com/ws/` |
+| **VAPT** | `https://vaptapi.startgold.com/api/api/v1/` | `wss://vaptbackoffice.startgold.com/ws/` |
+
 ### WebSocket (Live Rates)
+
+```mermaid
+sequenceDiagram
+    participant App as NativeSocketService
+    participant WS as WebSocket Server
+    participant Provider as MarketProvider
+    participant UI as Home Screen
+
+    App->>WS: Connect (wss://...)
+    WS-->>App: Connected
+    loop Every price update
+        WS-->>App: market_rates JSON
+        App->>Provider: Update MarketRates model
+        Provider->>UI: Rebuild rate cards
+    end
+    WS--xApp: Connection lost
+    App->>App: Auto-reconnect (backoff)
+    App->>WS: Reconnect
+```
 
 ```
 NativeSocketService
-├── Endpoint: ws://bullion_v4.logimaxindia.com/ratesocket/socket.io/
-├── Events: market_rates, gold_rate, silver_rate
-├── Auto-reconnect on failure
+├── Endpoint: wss://<env>/ws/
+├── Protocol: Custom token-authenticated WebSocket
+├── Events: market_rates (gold + silver combined)
+├── Auto-reconnect on failure with exponential backoff
+├── Streams: ratesStream, statusStream, marketStatusStream
 └── No sensitive data transmitted
 ```
 
@@ -393,10 +458,88 @@ graph LR
 
 ## Navigation
 
+```mermaid
+graph TD
+    subgraph "Route Registration"
+        Router["AppRouter"]
+        Router --> Named["Named Routes (35+ routes)"]
+        Router --> Generator["onGenerateRoute fallback"]
+    end
+
+    subgraph "Key Navigation Patterns"
+        Push["pushNamed"]
+        Replace["pushReplacementNamed"]
+        Clear["pushNamedAndRemoveUntil"]
+    end
+
+    subgraph "Security Navigation"
+        Session409["409 → Global dialog → Login"]
+        IdleTimeout["Idle → MPIN lock"]
+        BackBlock["PopScope on MPIN/PIN"]
+    end
+```
+
 - **Centralized** in `routes/app_router.dart` using `onGenerateRoute`
 - **Named routes** throughout (e.g., `AppRouter.splash`, `AppRouter.home`)
 - **Global navigator key** for dialogs from anywhere (session invalidation)
 - **PopScope** used on security-critical flows (MPIN lock, forgot PIN) to block back navigation
+- **Fallback route** — unknown routes redirect to MPIN (if authenticated) or Login
+
+### All Registered Routes
+
+| Route | Screen | Arguments |
+|-------|--------|-----------|
+| `/splash` | SplashScreen | — |
+| `/onboarding` | OnboardingScreen | — |
+| `/login` | LoginScreen | — |
+| `/otp` | OtpScreen | `{mobile, countryCode, idCountry, otpReferenceId}` |
+| `/mpin` | MpinScreen | — |
+| `/change-mpin` | ChangeMpinScreen | — |
+| `/kyc` | KycScreen | `{request_from}` |
+| `/kyc-dynamic` | KycScreen | `{request_from, ...extraData}` |
+| `/pan-verification` | PanVerificationScreen | — |
+| `/instant-saving` | InstantSavingScreen | — |
+| `/daily-savings` | DailySavingsScreen | — |
+| `/home` / `/main` | MainScreen | — |
+| `/profile` | ProfileScreen | — |
+| `/accountdetails` | AccountDetailsScreen | — |
+| `/transaction-history` | TransactionHistoryScreen | — |
+| `/transaction-details` | TransactionDetailsScreen | `{...transactionData}` |
+| `/support` | SupportScreen | — |
+| `/referral` | ReferralScreen | — |
+| `/referee-list` | RefereeListScreen | — |
+| `/settings` | SettingsScreen | — |
+| `/mpin-creation` | PinCreationScreen | `{mobile, fullName, email, dob, referralCode, tempToken}` |
+| `/pin-entry` | PinScreen | `{mobile}` |
+| `/registration` | RegistrationScreen | `{mobile, tempToken}` |
+| `/registration-success` | RegistrationSuccessScreen | `{fullName}` |
+| `/withdrawal` | WithdrawalScreen | — |
+| `/withdrawal-confirmation` | WithdrawalConfirmationScreen | — |
+| `/upi-selection` | UpiSelectionScreen | — |
+| `/withdrawal-success` | WithdrawalSuccessScreen | `{...data}` |
+| `/payment-methods` | PaymentMethodsScreen | `{amount, metal_id, rate, coupon_code, buy_type, weight}` |
+| `/terms` | ContentScreen | — |
+| `/privacy` | ContentScreen | — |
+| `/about` | ContentScreen | — |
+| `/refund-policy` | ContentScreen | — |
+| `/faq` | FaqScreen | — |
+| `/contact` | ContactUsScreen | — |
+| `/enquiry-form` | EnquiryFormScreen | `{initial_type}` |
+| `/enquiry-list` | EnquiryListScreen | — |
+| `/auto-savings` | AutoSavingsScreen | — |
+| `/sip-manage` | ManageSavingsScreen | `{subscription_id}` |
+| `/sip-cancel` | SipCancelScreen | `{subscription_id}` |
+| `/sip-payment` | SipPaymentScreen | `{...paymentData}` |
+| `/sip-success` | SipSuccessScreen | `{...data}` |
+| `/sip-failure` | SipFailureScreen | `{...data}` |
+| `/sip-transactions` | SipTransactionHistoryScreen | — |
+| `/sip-transaction-details` | SipTransactionDetailsScreen | `{...transactionData}` |
+| `/sip-overview` | SipOverviewScreen | — |
+| `/nominee` | NomineeScreen | — |
+| `/notifications` | NotificationsScreen | — |
+| `/delete-account` | DeleteAccountScreen | — |
+| `/maintenance` | MaintenanceScreen | `{resumeRoute}` |
+| `/invoice-viewer` | InvoiceViewerScreen | `{file_path, title}` |
 
 ---
 
@@ -421,7 +564,102 @@ graph TD
 
 ---
 
-## Feature Modules (21)
+## User Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant LoginScreen
+    participant OtpScreen
+    participant MpinScreen
+    participant Server
+
+    User->>LoginScreen: Enter mobile number
+    LoginScreen->>Server: POST /generate-otp {mobile}
+    Server-->>LoginScreen: {otpReferenceId}
+    LoginScreen->>OtpScreen: Navigate with mobile + refId
+    User->>OtpScreen: Enter OTP
+    OtpScreen->>Server: POST /verify-otp {otp, refId}
+    Server-->>OtpScreen: {token, isNewUser}
+    
+    alt New User
+        OtpScreen->>User: Navigate to Registration
+    else Existing User (MPIN enabled)
+        OtpScreen->>MpinScreen: Navigate
+        User->>MpinScreen: Enter MPIN
+        MpinScreen->>Server: POST /verify-mpin
+        Server-->>MpinScreen: {success}
+        MpinScreen->>User: Navigate to Home
+    else Existing User (no MPIN)
+        OtpScreen->>User: Navigate to MPIN Creation
+    end
+```
+
+---
+
+## Invoice Viewer Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant TxDetails as TransactionDetailsScreen
+    participant Service as InvoiceService
+    participant Cache as Temp Directory
+    participant Viewer as InvoiceViewerScreen
+
+    User->>TxDetails: Tap "Invoice" button
+    TxDetails->>TxDetails: Show loading overlay
+    TxDetails->>Service: downloadInvoice(url)
+    Service->>Cache: Check if PDF cached?
+    
+    alt Cached
+        Cache-->>Service: Return local File
+    else Not cached
+        Service->>Service: Download via Dio
+        Service->>Cache: Save to /invoices/
+        Cache-->>Service: Return local File
+    end
+    
+    Service-->>TxDetails: File path
+    TxDetails->>TxDetails: Dismiss loading
+    TxDetails->>Viewer: Navigate with file_path
+    Viewer->>Viewer: SfPdfViewer.file() renders PDF
+    
+    Note over Viewer: User can pinch-zoom,<br/>scroll, and download/share
+```
+
+---
+
+## Payment Flow (Cashfree)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant BuyScreen as InstantSavingScreen
+    participant Handler as PaymentHandler
+    participant Server
+    participant Cashfree as Cashfree SDK
+
+    User->>BuyScreen: Enter amount, select metal
+    BuyScreen->>Server: POST /create-order {amount, metal_id}
+    Server-->>BuyScreen: {order_id, cf_session_id}
+    BuyScreen->>Handler: initiatePayment(sessionId)
+    Handler->>Cashfree: Launch payment sheet
+    
+    alt Payment Success
+        Cashfree-->>Handler: {txn_id, status: SUCCESS}
+        Handler->>Server: POST /verify-payment
+        Server-->>Handler: {success, gold_weight}
+        Handler->>User: Navigate to Success Screen 🎉
+    else Payment Failed
+        Cashfree-->>Handler: {status: FAILED}
+        Handler->>User: Show error toast
+    end
+```
+
+---
+
+## Feature Modules (22)
 
 | Module | Description | Internal Structure |
 |--------|-------------|-------------------|
@@ -439,6 +677,7 @@ graph TD
 | **kyc** | KYC verification (Aadhaar/PAN) | controllers/, models/, providers/, repositories/, screens/ |
 | **withdrawal** | Gold/cash withdrawal | models/, providers/, services/, screens/ |
 | **history** | Transaction history list | screens |
+| **invoice** | In-app PDF invoice viewer | invoice_service.dart, invoice_viewer_screen.dart |
 | **notifications** | In-app notifications | screens |
 | **nominee** | Nominee CRUD | screens |
 | **referral** | Referral program | screens |
@@ -451,7 +690,7 @@ graph TD
 
 ## Dependencies & Packages
 
-> **Dart SDK:** `>=3.4.1 <4.0.0` | **App Version:** `1.0.0+7`
+> **Dart SDK:** `>=3.4.1 <4.0.0` | **App Version:** `1.0.0+11`
 
 ### Core Logic & Network
 
@@ -482,7 +721,7 @@ graph TD
 |---------|---------|---------|---------|
 | `flutter_secure_storage` | ^9.0.0 | Encrypted key-value storage (Keychain on iOS, EncryptedSharedPreferences on Android) | `core/security/secure_storage_service.dart` — auth tokens, MPIN hash, session data |
 | `root_checker_plus` | ^0.0.3 | Detects rooted (Android) / jailbroken (iOS) devices | `core/security/root_detection_service.dart` — blocks compromised devices at startup |
-| `device_info_plus` | ^10.1.0 | Reads device model, OS version, unique identifiers | `core/services/device_id_service.dart` — device fingerprint for API headers |
+| `device_info_plus` | ^11.5.0 | Reads device model, OS version, unique identifiers | `core/services/device_id_service.dart` — device fingerprint for API headers |
 | `screen_protector` | ^1.5.1 | Prevents screenshots & screen recording in sensitive flows | Security-critical screens (payment, KYC) |
 | `local_auth` | ^3.0.1 | Biometric authentication (fingerprint / FaceID) | `core/services/biometric_service.dart` — MPIN screen biometric unlock |
 | `crypto` | ^3.0.3 | Hashing utilities (SHA-256, HMAC) | `core/security/encryption_service.dart` — key derivation, hash verification |
@@ -500,6 +739,7 @@ graph TD
 | `shimmer` | ^3.0.0 | Shimmer loading placeholder animation | Skeleton loading states across screens |
 | `confetti` | ^0.8.0 | Confetti celebration animation | Success states (payment complete, KYC approved) |
 | `lottie` | ^3.3.1 | Lottie JSON animation player | Splash screen, loading animations, success/error states |
+| `syncfusion_flutter_pdfviewer` | ^28.2.7 | In-app PDF rendering (pinch-zoom, scroll, search) | `features/invoice/invoice_viewer_screen.dart` — invoice viewer |
 
 ### Media & Files
 
@@ -507,10 +747,10 @@ graph TD
 |---------|---------|---------|---------|
 | `image_picker` | ^1.2.1 | Pick images from camera or gallery | `features/profile/widgets/` — profile photo selection |
 | `image_cropper` | ^11.0.0 | Crop/resize picked images before upload | `features/profile/widgets/` — profile photo cropping |
-| `path_provider` | ^2.1.5 | Access platform-specific directories (temp, documents, cache) | File downloads, image caching |
+| `path_provider` | ^2.1.5 | Access platform-specific directories (temp, documents, cache) | File downloads, invoice caching |
 | `path` | ^1.9.1 | Cross-platform file path manipulation | File name extraction, extension parsing |
-| `url_launcher` | ^6.3.2 | Opens URLs in external browser, phone dialer, email client | Support screen (call, email), T&C links, payment redirects |
-| `share_plus` | ^10.0.3 | Native share sheet for text/links/files | `features/referral/` — share referral link |
+| `url_launcher` | ^6.3.2 | Opens URLs in external browser, phone dialer, email client | Support screen (call, email), T&C links |
+| `share_plus` | ^10.0.3 | Native share sheet for text/links/files | `features/referral/` — share referral link, invoice download |
 
 ### Payment
 
@@ -518,11 +758,14 @@ graph TD
 |---------|---------|---------|---------|
 | `flutter_cashfree_pg_sdk` | 2.3.3+50 | Cashfree payment gateway SDK — handles UPI, cards, net banking | `features/instant_saving/payment_handler.dart` — payment orchestration |
 
-### Content Rendering
+### Content Rendering & WebView
 
 | Package | Version | Purpose | Used In |
 |---------|---------|---------|---------|
 | `flutter_widget_from_html_core` | ^0.17.2 | Renders HTML content as Flutter widgets | `features/content/` — CMS pages (T&C, privacy policy, FAQs) |
+| `webview_flutter` | ^4.10.0 | In-app WebView for web content | Payment redirects, external web pages |
+| `webview_flutter_android` | ^4.3.0 | Android WebView platform implementation | Android-specific WebView support |
+| `webview_flutter_wkwebview` | ^3.16.0 | iOS WKWebView platform implementation | iOS-specific WebView support |
 
 ### Build & Splash
 
@@ -577,6 +820,7 @@ graph TB
         CONF["confetti"]
         LOT["lottie"]
         CAR["carousel_slider"]
+        PDF["syncfusion_flutter_pdfviewer"]
     end
 
     subgraph "Payment"
@@ -590,6 +834,26 @@ graph TB
     FCORE --> FMSG
     FMSG --> FLN
     CF --> DIO
+    PDF --> DIO
+```
+
+---
+
+## Assets Structure
+
+```
+assets/
+├── images/         # PNG/JPG images (logos, backgrounds)
+├── fonts/          # Custom font files (Lora, Playfair Display)
+├── sidemenu/       # Side menu icons
+├── resources/      # App icon, splash resources
+├── withdraw/       # Withdrawal flow illustrations
+├── footer/         # Bottom navigation icons
+├── home/           # Home dashboard assets
+├── lottie/         # Lottie JSON animation files
+├── sip/            # SIP feature illustrations
+├── buttons/        # SVG button icons
+└── offer/          # Offer/promotion assets
 ```
 
 ---
@@ -604,3 +868,27 @@ graph TB
 6. **Session invalidation handled globally** — 409 responses trigger a dialog + forced logout from the interceptor, not individual screens
 7. **Cashfree PG pinned to exact version** (`2.3.3+50`) — payment SDK versions are locked to avoid breaking changes in payment flows
 8. **`encrypt` + `crypto` dual usage** — `encrypt` handles AES/RSA operations while `crypto` provides hashing (SHA-256) for key derivation
+9. **In-app invoice rendering** — Syncfusion PDF Viewer replaces browser-based invoice opening for a premium UX; cached locally for instant re-opens
+10. **Portfolio caching** — `portfolioProvider` uses in-memory cache with `AnimatedSwitcher` to prevent UI flickering during rate refreshes
+
+---
+
+## Build & Release Configuration
+
+| File | Purpose |
+|------|---------|
+| `pubspec.yaml` | Dependencies, assets, fonts, version |
+| `release_config.json` | `{app_name, bundle_id, version, build_number}` |
+| `flutter_native_splash.yaml` | Native splash screen color (#FEF7E6) |
+| `flutter_launcher_icons` | App icon generation (in pubspec.yaml) |
+
+### Current Build Info
+
+```json
+{
+    "app_name": "startGOLD",
+    "bundle_id": "com.startgold.app",
+    "version": "1.0.0",
+    "build_number": 11
+}
+```

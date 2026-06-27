@@ -1,10 +1,8 @@
 {
     "java.configuration.updateBuildConfiguration": "interactive",
     "typescript.tsserver.useSyntaxServer": "always",
-
     // ── Enhanced Dart/Flutter Syntax Highlighting ──
     "editor.semanticHighlighting.enabled": true,
-
     "editor.semanticTokenColorCustomizations": {
         "enabled": true,
         "rules": {
@@ -23,11 +21,13 @@
             "keyword": "#C678DD",
             "number": "#D19A66",
             "string": "#98C379",
-            "comment": { "foreground": "#5C6370", "fontStyle": "italic" },
+            "comment": {
+                "foreground": "#5C6370",
+                "fontStyle": "italic"
+            },
             "annotation": "#56B6C2"
         }
     },
-
     "editor.tokenColorCustomizations": {
         "textMateRules": [
             {
@@ -39,7 +39,9 @@
                     "storage.modifier.dart",
                     "storage.type.primitive.dart"
                 ],
-                "settings": { "foreground": "#C678DD" }
+                "settings": {
+                    "foreground": "#C678DD"
+                }
             },
             {
                 "name": "Class/Type Names",
@@ -49,7 +51,9 @@
                     "support.class.dart",
                     "entity.other.inherited-class.dart"
                 ],
-                "settings": { "foreground": "#E5C07B" }
+                "settings": {
+                    "foreground": "#E5C07B"
+                }
             },
             {
                 "name": "Functions & Methods",
@@ -57,7 +61,9 @@
                     "entity.name.function.dart",
                     "support.function.dart"
                 ],
-                "settings": { "foreground": "#61AFEF" }
+                "settings": {
+                    "foreground": "#61AFEF"
+                }
             },
             {
                 "name": "Strings",
@@ -66,7 +72,9 @@
                     "string.quoted.single.dart",
                     "string.quoted.double.dart"
                 ],
-                "settings": { "foreground": "#98C379" }
+                "settings": {
+                    "foreground": "#98C379"
+                }
             },
             {
                 "name": "String Interpolation ($variable, ${expression})",
@@ -74,7 +82,9 @@
                     "variable.parameter.dart",
                     "meta.string-contents.interpolated.dart"
                 ],
-                "settings": { "foreground": "#E06C75" }
+                "settings": {
+                    "foreground": "#E06C75"
+                }
             },
             {
                 "name": "Numbers & Constants",
@@ -82,7 +92,9 @@
                     "constant.numeric.dart",
                     "constant.language.dart"
                 ],
-                "settings": { "foreground": "#D19A66" }
+                "settings": {
+                    "foreground": "#D19A66"
+                }
             },
             {
                 "name": "Comments (// and ///)",
@@ -90,12 +102,18 @@
                     "comment.line.double-slash.dart",
                     "comment.block.documentation.dart"
                 ],
-                "settings": { "foreground": "#5C6370", "fontStyle": "italic" }
+                "settings": {
+                    "foreground": "#5C6370",
+                    "fontStyle": "italic"
+                }
             },
             {
                 "name": "Doc Comment Keywords (@param, @return)",
                 "scope": "comment.block.documentation.dart storage.type.class.doc.dart",
-                "settings": { "foreground": "#7C8495", "fontStyle": "bold italic" }
+                "settings": {
+                    "foreground": "#7C8495",
+                    "fontStyle": "bold italic"
+                }
             },
             {
                 "name": "Annotations (@override, @required, etc.)",
@@ -103,12 +121,16 @@
                     "meta.declaration.annotation.dart",
                     "storage.type.annotation.dart"
                 ],
-                "settings": { "foreground": "#56B6C2" }
+                "settings": {
+                    "foreground": "#56B6C2"
+                }
             },
             {
                 "name": "Operators (=, ==, +, -, =>, etc.)",
                 "scope": "keyword.operator.dart",
-                "settings": { "foreground": "#56B6C2" }
+                "settings": {
+                    "foreground": "#56B6C2"
+                }
             },
             {
                 "name": "Punctuation (., ;, {, }, (, ))",
@@ -117,22 +139,31 @@
                     "punctuation.terminator.dart",
                     "punctuation.separator.dart"
                 ],
-                "settings": { "foreground": "#ABB2BF" }
+                "settings": {
+                    "foreground": "#ABB2BF"
+                }
             },
             {
                 "name": "Import/Export paths",
                 "scope": "keyword.control.import.dart",
-                "settings": { "foreground": "#C678DD" }
+                "settings": {
+                    "foreground": "#C678DD"
+                }
             },
             {
                 "name": "this keyword",
                 "scope": "variable.language.this.dart",
-                "settings": { "foreground": "#E06C75", "fontStyle": "italic" }
+                "settings": {
+                    "foreground": "#E06C75",
+                    "fontStyle": "italic"
+                }
             },
             {
                 "name": "Named Parameters",
                 "scope": "entity.name.named-parameter.dart",
-                "settings": { "foreground": "#ABB2BF" }
+                "settings": {
+                    "foreground": "#ABB2BF"
+                }
             }
         ]
     }

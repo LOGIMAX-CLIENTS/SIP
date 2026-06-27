@@ -49,6 +49,7 @@ import '../features/sip/screens/sip_transaction_history_screen.dart';
 import '../features/sip/screens/sip_transaction_details_screen.dart';
 import '../features/sip/screens/sip_overview_screen.dart';
 import '../features/nominee/screens/nominee_screen.dart';
+import '../features/invoice/invoice_viewer_screen.dart';
 
 class AppRouter {
   static const String splash = '/splash';
@@ -105,6 +106,7 @@ class AppRouter {
   static const String sipTransactions = '/sip-transactions';
   static const String sipTransactionDetails = '/sip-transaction-details';
   static const String sipOverview = '/sip-overview';
+  static const String invoiceViewer = '/invoice-viewer';
 
   static Map<String, WidgetBuilder> get routes => {
         splash: (context) => const SplashScreen(),
@@ -317,6 +319,14 @@ class AppRouter {
           return SipTransactionDetailsScreen(transactionData: tx);
         },
         sipOverview: (context) => const SipOverviewScreen(),
+        invoiceViewer: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return InvoiceViewerScreen(
+            filePath: args['file_path'] as String,
+            title: args['title'] as String? ?? 'Invoice',
+          );
+        },
       };
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {

@@ -484,13 +484,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _selectedCountryId,
         );
     if (success && mounted && !_navigating) {
-      _navigating = true; // one-shot guard — stays true since we leave this screen
+      _navigating = true;
       final authData = ref.read(authControllerProvider).data;
       // Short delay to let AppControlWrapper state updates settle and
       // release any navigator locks before we push.
       await Future.delayed(const Duration(milliseconds: 100));
       if (mounted) {
-        navigatorKey.currentState?.pushNamed(
+        await navigatorKey.currentState?.pushNamed(
           AppRouter.otp,
           arguments: {
             'mobile': _mobileController.text,
@@ -499,8 +499,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             'otpReferenceId': authData?['otp_reference_id'] ?? '',
           },
         );
+        // User navigated back from OTP screen — allow login again
+        _navigating = false;
       } else {
-        _navigating = false; // only reset if widget was disposed mid-flight
+        _navigating = false;
       }
     }
   }

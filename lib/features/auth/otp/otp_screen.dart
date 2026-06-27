@@ -86,7 +86,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
     if (success && mounted) {
       _startTimer();
-      AppToast.show(context, ref.tr('otpResendSuccess'),
+      AppToast.show(context, 'OTP Resend Successfully!',
           type: ToastType.success);
     }
   }
