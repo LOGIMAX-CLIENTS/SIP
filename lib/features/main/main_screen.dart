@@ -69,8 +69,15 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// !_doingMountOrUpdate assertion errors.
   void _onTabTapped(int index) {
     final current = ref.read(selectedTabProvider);
-    ref.read(selectedTabProvider.notifier).state = index;
     if (current == index) return; // same tab — no refresh needed
+
+    // Jewellery is a separate route, not in IndexedStack — navigate without changing tab index
+    if (index == 4) {
+      Navigator.of(context).pushNamed('/jewellery');
+      return;
+    }
+
+    ref.read(selectedTabProvider.notifier).state = index;
     switch (index) {
       case 0:
         ref.invalidate(homeDashboardProvider);
@@ -193,10 +200,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(ref, 'Home',   selectedIndex == 0, isDark, 0, 'assets/footer/home'),
-                _buildNavItem(ref, 'Invest', selectedIndex == 1, isDark, 1, 'assets/footer/invest'),
-                _buildNavItem(ref, 'History',selectedIndex == 2, isDark, 2, 'assets/footer/history'),
-                _buildNavItem(ref, 'Profile',selectedIndex == 3, isDark, 3, 'assets/footer/profile'),
+                _buildNavItem(ref, 'Home',      selectedIndex == 0, isDark, 0, 'assets/footer/home'),
+                _buildNavItem(ref, 'Invest',    selectedIndex == 1, isDark, 1, 'assets/footer/invest'),
+                _buildNavItem(ref, 'History',   selectedIndex == 2, isDark, 2, 'assets/footer/history'),
+                _buildNavItem(ref, 'Profile',   selectedIndex == 3, isDark, 3, 'assets/footer/profile'),
+                _buildNavItem(ref, 'Jewellery', selectedIndex == 4, isDark, 4, 'assets/footer/jewelley'),
               ],
             ),
           ),

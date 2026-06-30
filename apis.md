@@ -2905,149 +2905,54 @@ Fetches the refund policy content for the application.
                     }
                   },
                   "child": {
-                    "type": "text",
-                    "data": "Start Investing",
-                    "style": {"fontSize": 16, "fontWeight": "w700"}
-                  },
-                  "onPressed": {
-                    "actionType": "navigate",
-                    "request": {
-                      "routeName": "/instantSaving"
-                    }
-                  }
-                }
-              }
-            ]
-          }
-        }
-      }
-    }
-    ```
-
-*   **Response (Offer disabled):**
-    ```json
-    {
-      "success": true,
-      "data": {
-        "enabled": false
-      }
-    }
-    ```
-
-*   **Fields (New Customer Offer):**
-
-    | Field | Type | Required | Description |
-    |-------|------|----------|-------------|
-    | `offer_name` | String | Yes | Display name for the offer badge banner |
-    | `offer_start_date` | String | Yes | Formatted start date (e.g. `"MAY 15"`) |
-    | `offer_end_date` | String | Yes | Formatted end date (e.g. `"AUG 23"`) |
-    | `remaining_days` | Integer | Yes | Days remaining for countdown timer |
-    | `remaining_hours` | Integer | Yes | Hours remaining for countdown timer |
-    | `remaining_minutes` | Integer | Yes | Minutes remaining for countdown timer |
-    | `remaining_seconds` | Integer | Yes | Seconds remaining for countdown timer |
-    | `reward_percentage` | Integer | Yes | Current reward percentage (e.g. `78`) — used when input amount < `benchmark_amount` |
-    | `daily_penalty_percentage` | Integer | Yes | Penalty per missed day (e.g. `1`) |
-    | `benchmark_amount` | Number | Yes | Minimum investment amount (in ₹) to unlock `benchmark_percentage` (e.g. `50000`) |
-    | `benchmark_percentage` | Integer | Yes | Reward percentage when input ≥ `benchmark_amount` (e.g. `100`) |
-    | `cta_text` | String | Yes | CTA button label (e.g. `"Start Investing"`) |
-
-*   **Fields (Existing Customer Offer):**
-
-    | Field | Type | Required | Description |
-    |-------|------|----------|-------------|
-    | `offer_name` | String | Yes | Display name for the offer badge banner |
-    | `silver_earned` | String | Yes | Silver earned in grams (e.g. `"0.0063"`) |
-    | `invest_days` | Integer | Yes | Number of days the customer has invested |
-    | `days_remaining` | Integer | Yes | Days remaining in the offer period |
-    | `current_reward_percentage` | Integer | Yes | Current reward percentage based on invest streak |
-    | `offer_end_date` | String | Yes | Formatted end date (e.g. `"Aug 23"`) |
-    | `cta_text` | String | Yes | CTA button label (e.g. `"Add Investment"`) |
-
-*   **Fields (`know_more_bottom_sheet` â€” Server-Driven UI):**
-
-    | Field | Type | Required | Description |
-    |-------|------|----------|-------------|
-    | `know_more_bottom_sheet` | Object | **No** | LDUI (Layout-Driven UI) widget tree for the "Know More" bottom sheet. Sent as a **nested JSON object** (not an escaped string). When present, the app renders the bottom sheet dynamically using the Mirai framework. When absent (`null`), the app falls back to the hardcoded bottom sheet UI. |
-
-    **LDUI Widget Types Supported:**
-
-    | Widget `type` | Description | Key Properties |
-    |---------------|-------------|----------------|
-    | `container` | Box with decoration, padding, color | `decoration`, `padding`, `color`, `width`, `height`, `child` |
-    | `column` | Vertical layout | `children`, `mainAxisSize`, `crossAxisAlignment` |
-    | `row` | Horizontal layout | `children`, `mainAxisAlignment`, `crossAxisAlignment` |
-    | `text` | Text display | `data`, `style` (fontSize, fontWeight, color, height, fontFamily) |
-    | `richText` | Multi-styled text spans | `spans` (array of `{text, style}`) |
-    | `icon` | Material icon | `iconType`, `size`, `color` |
-    | `sizedBox` | Empty spacing | `height`, `width` |
-    | `padding` | Adds padding around child | `padding`, `child` |
-    | `flexible` | Flex child in Column/Row | `child` |
-    | `singleChildScrollView` | Scrollable content | `padding`, `child` |
-    | `align` | Alignment wrapper | `alignment`, `child` |
-    | `iconButton` | Tappable icon | `icon`, `onPressed` |
-    | `elevatedButton` | Material button | `style`, `child`, `onPressed` |
-    | `image` / `networkImage` | Network image | `url`, `width`, `height`, `fit`, `borderRadius` |
-    | `assetImage` | Local asset image | `asset`, `width`, `height`, `fit` |
-    | `card` | Material card | `elevation`, `color`, `borderRadius`, `child` |
-    | `clipRRect` | Rounded clip | `borderRadius`, `child` |
-    | `center` | Center wrapper | `child` |
-    | `stack` | Stack layout | `children`, `alignment` |
-    | `expanded` | Expand in flex | `child` |
-
-    **Supported `iconType` values:** `close`, `arrow_back`, `check`, `info`, `star`
-
-    **Supported `fontFamily` values:** `PlayfairDisplay`, `Lora`, `Poppins`, `Inter`
-
-    **Action Types (`onPressed`):**
-
-    | `actionType` | Description | Additional Fields |
-    |--------------|-------------|-------------------|
-    | `navigateBack` | Pops the current route (closes bottom sheet) | â€” |
-    | `navigate` | Pushes a named route | `request.routeName` (e.g. `"/instantSaving"`) |
-
-    **Color Format:** Hex ARGB string (e.g. `"#DE000000"` = black with 87% opacity, `"#1B882C"` = solid green)
-
-    **Decoration Properties:**
-
-    | Property | Type | Description |
-    |----------|------|-------------|
-    | `gradient` | Object | `gradientType`, `begin`, `end`, `colors[]` |
-    | `borderRadius` | Object | `topLeft`, `topRight`, `bottomLeft`, `bottomRight`, or `all` |
-    | `border` | Object | `color`, `width` |
-
-*   **Client Behaviour:**
-
-    | `enabled` | `customer_type` | Widget Rendered |
-    |-----------|----------------|-----------------|
-    | `false` | â€” | `SizedBox.shrink()` â€” zero visual presence |
-    | `true` | `NEW` | `CountdownOfferNew` â€” countdown timer + "Start Investing" CTA |
-    | `true` | `EXISTING` | `CountdownOfferExisting` â€” progress card + "Add Investment" CTA |
-    | â€” | unknown | `SizedBox.shrink()` â€” safety fallback |
-
-    | `know_more_bottom_sheet` | Behaviour |
-    |--------------------------|-----------|
-    | Present (non-null) | Bottom sheet rendered dynamically via Mirai LDUI parser |
-    | Absent (`null`) | Bottom sheet uses the hardcoded Flutter UI (fallback) |
-
-*   **Error Handling:**
-    - API failure â†’ returns `CountdownOfferResponse.disabled()` â†’ widget hidden
-    - Network error â†’ same as above â€” offer is non-critical, never breaks Home screen
-    - Timer reaches `0:0:0:0` â†’ widget hides automatically (offer expired)
-    - `know_more_bottom_sheet` parse error â†’ falls back to hardcoded bottom sheet
-
-*   **Refresh Triggers:**
-    - Home tab selected (via `selectedTabProvider` listener)
-    - Pull-to-refresh on Home screen
-    - Login/logout (via `userProvider` watch)
+  "status": true,
+  "message": "You will be notified when this service launches!"
+}
+```
 
 > [!NOTE]
-> The countdown timer runs client-side with `Timer.periodic(1 second)` â€” it decrements from the initial API values. The API provides the "current snapshot" of remaining time; the client takes over from there. On next refresh (tab switch, pull-to-refresh), fresh values are fetched from the server.
+> **Current Implementation:** Tapping "Notify Me" shows a local success toast. No API call is made. When the backend endpoint is ready, wire this to a `JewelleryService.registerNotify()` call.
 
 > [!IMPORTANT]
-> This is **public display data** â€” NO field-level encryption is required. Falls under the same security category as `GET /gold-rate`, `GET /schemes`, etc.
+> This is **non-sensitive data** — NO field-level encryption is required.
 
-> [!NOTE]
-> **Server-Driven UI (LDUI):** The `know_more_bottom_sheet` field is a **nested JSON object** (NOT an escaped string). The server can modify the bottom sheet content â€” text, colors, table rows, button labels, and navigation actions â€” without requiring an app update. The Flutter app parses this JSON and renders the widget tree dynamically using the Mirai framework.
+
+
+---
+
+## 13. JEWELLERY MODULE
+
+Display-only "Coming Soon" landing page. Card images fetched from API.
+
+---
+
+### 13.1 POST `/jewellery/jewellery-image`
+
+**Purpose:** Fetch category card images for the Jewellery screen.
+
+**When Called:** User taps Jewellery tab.
+
+**Authentication:** `Bearer <token>` (via interceptor)
+
+**Request Body:** _(empty)_
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Jewellery images fetched successfully",
+  "data": [
+    { "image_url": "https://startgoldapi.logimaxindia.com/api/media/images/jewellery_page/ecommerce.png" },
+    { "image_url": "https://startgoldapi.logimaxindia.com/api/media/images/jewellery_page/retail.png" },
+    { "image_url": "https://startgoldapi.logimaxindia.com/api/media/images/jewellery_page/direct_outlets.png" }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `image_url` | string | Full URL to the category card image |
 
 > [!IMPORTANT]
-> **Backward Compatibility:** The `know_more_bottom_sheet` field is **optional**. Existing API responses that don't include this field will continue to work â€” the app falls back to the hardcoded bottom sheet UI. This ensures zero downtime during the rollout.
+> This is **public display data** - NO field-level encryption is required.

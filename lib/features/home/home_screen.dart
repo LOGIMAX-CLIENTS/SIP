@@ -371,8 +371,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 switchInCurve: Curves.easeOut,
                 child: Builder(builder: (context) {
                   final dashAsync = ref.watch(homeDashboardProvider);
-                  // Show previous data immediately during refresh (no flicker)
-                  final dashboard = dashAsync.valueOrNull;
+                  // Keep previous data visible during commodity switch (no shimmer flash)
+                  final dashboard = dashAsync.valueOrNull ?? dashAsync.whenData((d) => d).valueOrNull;
                   if (dashAsync.isLoading && dashboard == null) {
                     return _buildHomeScreenSkeleton(isDark);
                   }

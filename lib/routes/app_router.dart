@@ -50,6 +50,7 @@ import '../features/sip/screens/sip_transaction_details_screen.dart';
 import '../features/sip/screens/sip_overview_screen.dart';
 import '../features/nominee/screens/nominee_screen.dart';
 import '../features/invoice/invoice_viewer_screen.dart';
+import '../features/jewellery/jewellery_screen.dart';
 
 class AppRouter {
   static const String splash = '/splash';
@@ -107,6 +108,7 @@ class AppRouter {
   static const String sipTransactionDetails = '/sip-transaction-details';
   static const String sipOverview = '/sip-overview';
   static const String invoiceViewer = '/invoice-viewer';
+  static const String jewellery = '/jewellery';
 
   static Map<String, WidgetBuilder> get routes => {
         splash: (context) => const SplashScreen(),
@@ -327,6 +329,7 @@ class AppRouter {
             title: args['title'] as String? ?? 'Invoice',
           );
         },
+        jewellery: (context) => const JewelleryScreen(),
       };
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
