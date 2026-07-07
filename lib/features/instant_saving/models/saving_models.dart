@@ -87,6 +87,17 @@ class PurchaseInitiateResponse {
   final String? amountInr;
   final String? weight;
   final String? ratePerGram;
+  // ── Gateway routing ──────────────────────────────────────────────────────
+  /// Which payment gateway the backend selected: "cashfree" or "hdfc".
+  /// Defaults to "cashfree" for backward compatibility.
+  final String paymentGateway;
+  // ── HDFC / Juspay HyperSDK fields ────────────────────────────────────────
+  /// Full Juspay sdkPayload JSON returned by backend after calling
+  /// Juspay's order.create API. Passed directly to hyperSDK.openPaymentPage().
+  final Map<String, dynamic>? sdkPayload;
+  final String? merchantId;
+  final String? clientId;
+  final String? hdfcEnvironment;
 
   PurchaseInitiateResponse({
     this.orderId,
@@ -96,6 +107,11 @@ class PurchaseInitiateResponse {
     this.amountInr,
     this.weight,
     this.ratePerGram,
+    this.paymentGateway = 'cashfree',
+    this.sdkPayload,
+    this.merchantId,
+    this.clientId,
+    this.hdfcEnvironment,
   });
 
   factory PurchaseInitiateResponse.fromJson(Map<String, dynamic> json) {
@@ -107,6 +123,13 @@ class PurchaseInitiateResponse {
       amountInr: json['amount_inr']?.toString(),
       weight: json['weight']?.toString(),
       ratePerGram: json['rate_per_gram']?.toString(),
+      paymentGateway: json['payment_gateway']?.toString() ?? 'cashfree',
+      sdkPayload: json['sdk_payload'] is Map<String, dynamic>
+          ? json['sdk_payload']
+          : null,
+      merchantId: json['merchant_id']?.toString(),
+      clientId: json['client_id']?.toString(),
+      hdfcEnvironment: json['hdfc_environment']?.toString(),
     );
   }
 }

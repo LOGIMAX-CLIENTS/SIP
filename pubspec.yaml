@@ -57,6 +57,7 @@ dependencies:
 
   # Payment
   flutter_cashfree_pg_sdk: 2.3.3+50
+  hypersdkflutter: ^4.0.57
 
   # Splash Screen (must be in dependencies for native integration)
   flutter_native_splash: ^2.4.7
