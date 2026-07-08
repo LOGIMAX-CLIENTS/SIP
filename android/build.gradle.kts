@@ -1,7 +1,13 @@
+// HDFC SmartGateway / Juspay HyperSDK — client ID for asset pre-fetching
+buildscript {
+    extra["clientId"] = "hdfcmaster"
+}
+
 allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://maven.juspay.in/jp-build-packages/hyper-sdk/") }
     }
 }
 

@@ -1,18 +1,21 @@
 // lib/features/instant_saving/payment_handler.dart
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// PaymentHandler — Centralized Cashfree Payment Orchestrator
+// PaymentHandler — Centralized Payment Orchestrator (Cashfree + HDFC)
 //
-// This class is the SINGLE source of truth for all Cashfree payment logic.
-// It replaces the inline Cashfree code that previously lived in
-// PaymentMethodsScreen, making the full payment flow reusable from any screen.
+// This class is the SINGLE source of truth for all payment logic.
+// It supports two gateways:
+//   • Cashfree — via flutter_cashfree_pg_sdk (Web Checkout)
+//   • HDFC SmartGateway — via Juspay HyperSDK (delegated to HdfcPaymentHandler)
+//
+// The backend decides which gateway to use and returns `payment_gateway`
+// in the savings/initiate response ("cashfree" or "hdfc").
 //
 // Responsibilities:
 //   1. Call savings/initiate API to create a server-side order
-//   2. Launch Cashfree Web Checkout using the returned session_id
-//   3. Handle Cashfree SUCCESS callback → call savings/confirm-payment
-//   4. Handle Cashfree FAILURE callback → call savings/confirm-payment (notify server)
-//   5. Navigate to PurchaseSuccessScreen with the correct result data
+//   2. Route to Cashfree or HDFC based on payment_gateway field
+//   3. Handle callbacks → call savings/confirm-payment
+//   4. Navigate to PurchaseSuccessScreen with the correct result data
 //
 // Usage (from InvestScreen OR after KYC completes):
 //
@@ -38,9 +41,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/error/failures.dart';
 import '../../core/providers/timer_provider.dart';
 import '../../core/providers/user_provider.dart';
+import '../../core/security/app_lifecycle_observer.dart';
 import '../../core/security/secure_logger.dart';
 import '../../shared/widgets/app_toast.dart';
 import 'controller/saving_controller.dart';
+import 'hdfc_payment_handler.dart';
 import 'models/saving_models.dart';
 import 'screens/purchase_success_screen.dart';
 
@@ -91,6 +96,11 @@ class PaymentHandler {
 
     _onLoadingStart?.call();
 
+    // Suppress app lock during payment — user may leave the app
+    // (e.g. UPI Intent opens GPay/PhonePe) and we must NOT trigger
+    // MPIN/session-check on resume before confirm-payment runs.
+    AppLifecycleObserver.suppressAppLock = true;
+
     try {
       await _initiatePurchase(
         amount: amount,
@@ -101,6 +111,7 @@ class PaymentHandler {
         couponCode: couponCode,
       );
     } catch (e) {
+      AppLifecycleObserver.suppressAppLock = false;
       _onLoadingEnd?.call();
       if (context.mounted) {
         final message = (e is Failure)
@@ -173,16 +184,36 @@ class PaymentHandler {
     _confirmedAmountInr = confirmedAmount;
 
     SecureLogger.d(
-        '[PaymentHandler] initiate OK → orderId=${purchase.orderId}');
+        '[PaymentHandler] initiate OK → orderId=${purchase.orderId}, gateway=${purchase.paymentGateway}');
 
-    // ── STEP 2: Launch Cashfree ─────────────────────────────────────────────
+    // ── STEP 2: Route to the correct payment gateway ────────────────────────
     if (context.mounted) {
-      _launchCashfree(purchase);
+      if (purchase.paymentGateway == 'hdfc') {
+        _launchHdfc(purchase, confirmedAmount);
+      } else {
+        _launchCashfree(purchase);
+      }
     }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STEP 2 — Launch Cashfree Web Checkout
+  // STEP 2a — Launch HDFC SmartGateway (Juspay HyperSDK)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  void _launchHdfc(PurchaseInitiateResponse purchase, double confirmedAmount) {
+    SecureLogger.d('[PaymentHandler] Routing to HDFC gateway...');
+
+    final hdfc = HdfcPaymentHandler(ref: ref, context: context);
+    hdfc.launchPayment(
+      purchase: purchase,
+      confirmedAmountInr: confirmedAmount,
+      onLoadingStart: _onLoadingStart,
+      onLoadingEnd: _onLoadingEnd,
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STEP 2b — Launch Cashfree Web Checkout
   // ─────────────────────────────────────────────────────────────────────────
 
   void _launchCashfree(PurchaseInitiateResponse purchase) {
@@ -231,6 +262,7 @@ class PaymentHandler {
 
   void _onCashfreeSuccess(String orderId) async {
     SecureLogger.d('[PaymentHandler] Cashfree SUCCESS → orderId=$orderId');
+    AppLifecycleObserver.suppressAppLock = false;
     _onLoadingEnd?.call();
     await _confirmAndNavigate(orderId);
   }
@@ -242,6 +274,7 @@ class PaymentHandler {
   void _onCashfreeError(CFErrorResponse errorResponse, String orderId) async {
     SecureLogger.e(
         '[PaymentHandler] Cashfree ERROR → orderId=$orderId | ${errorResponse.getMessage()}');
+    AppLifecycleObserver.suppressAppLock = false;
     _onLoadingEnd?.call();
 
     // Always notify the server even on failure so it can update order status.

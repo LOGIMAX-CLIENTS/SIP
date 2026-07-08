@@ -7,7 +7,7 @@ import '../../shared/theme/app_theme.dart';
 import 'jewellery_service.dart';
 
 // ── Provider ────────────────────────────────────────────────────────────
-final jewelleryImagesProvider = FutureProvider<List<String>>((ref) {
+final jewelleryImagesProvider = FutureProvider.autoDispose<List<String>>((ref) {
   return JewelleryService().getJewelleryImages();
 });
 
