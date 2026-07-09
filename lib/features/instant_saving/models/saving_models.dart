@@ -30,14 +30,22 @@ class SavingConfig {
 class PaymentMethod {
   final String id;
   final String name;
-  final String icon;
-  final String description;
+  final String icon;          // legacy: filename or icon key
+  final String description;   // legacy: same as subtitle
+
+  // ── New fields (API v2 — payment method icons) ───────────────────────
+  final String iconUrl;              // absolute URL to category icon
+  final String subtitle;             // e.g. "GPay, PhonePe, Paytm & more"
+  final List<String> badgeIcons;     // absolute URLs for sub-brand logos
 
   PaymentMethod({
     required this.id,
     required this.name,
     required this.icon,
     required this.description,
+    this.iconUrl = '',
+    this.subtitle = '',
+    this.badgeIcons = const [],
   });
 
   factory PaymentMethod.fromJson(Map<String, dynamic> json) {
@@ -46,9 +54,16 @@ class PaymentMethod {
       name: json['name'] ?? '',
       icon: json['icon'] ?? '',
       description: json['description'] ?? '',
+      iconUrl: json['icon_url'] ?? '',
+      subtitle: json['subtitle'] ?? json['description'] ?? '',
+      badgeIcons: (json['badge_icons'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
     );
   }
 }
+
 
 class PaymentOrder {
   final String paymentUrl;
