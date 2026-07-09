@@ -1,0 +1,457 @@
+// lib/features/instant_saving/widgets/payment_method_sheet.dart
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// PaymentMethodSheet — Bottom Sheet for Payment Method Selection
+//
+// Fetches payment method categories from the API (POST /payments/methods)
+// and renders each option with:
+//   • Network image icon (from server / S3)
+//   • Sub-brand badge row (e.g. GPay, Visa logos)
+//   • Radio-style selection
+//
+// Falls back to Material icons if icon_url is empty or image fails to load.
+//
+// Returns the selected payment method string ("upi", "card", "netbanking")
+// via the onProceed callback when user taps "Proceed to Pay".
+// ─────────────────────────────────────────────────────────────────────────────
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../controller/saving_controller.dart';
+import '../models/saving_models.dart';
+
+/// Fallback Material icons keyed by payment method id.
+const _fallbackIcons = <String, IconData>{
+  'upi': Icons.account_balance_wallet_rounded,
+  'card': Icons.credit_card_rounded,
+  'netbanking': Icons.account_balance_rounded,
+};
+
+class PaymentMethodSheet extends ConsumerStatefulWidget {
+  /// Callback when user taps "Proceed to Pay".
+  /// Receives the selected payment method id: "upi", "card", or "netbanking".
+  final void Function(String paymentMethod) onProceed;
+
+  const PaymentMethodSheet({super.key, required this.onProceed});
+
+  @override
+  ConsumerState<PaymentMethodSheet> createState() => _PaymentMethodSheetState();
+}
+
+class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
+  String _selected = 'upi'; // Default: UPI pre-selected
+
+  @override
+  Widget build(BuildContext context) {
+    final methodsAsync = ref.watch(paymentMethodsProvider);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 20.h),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Drag handle ────────────────────────────────────────────
+              Container(
+                width: 40.w,
+                height: 4.h,
+                margin: EdgeInsets.only(bottom: 16.h),
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(2.r),
+                ),
+              ),
+
+              // ── Header row ─────────────────────────────────────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Payment Methods',
+                    style: GoogleFonts.lora(
+                      fontSize: 20.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: EdgeInsets.all(6.w),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withOpacity(0.05),
+                      ),
+                      child: Icon(Icons.close,
+                          size: 18.sp, color: Colors.black54),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16.h),
+
+              // ── Payment options card ───────────────────────────────────
+              methodsAsync.when(
+                data: (methods) => _buildMethodsList(methods),
+                loading: () => _buildShimmerList(),
+                error: (err, stack) {
+                  debugPrint('PaymentMethodSheet API Error: $err\n$stack');
+                  return _buildMethodsList([]);
+                },
+              ),
+              SizedBox(height: 24.h),
+
+              // ── Proceed to Pay button ──────────────────────────────────
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(context); // close sheet
+                  widget.onProceed(_selected);
+                },
+                child: Container(
+                  width: double.infinity,
+                  height: 56.h,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1B882C), Color(0xFF003716)],
+                    ),
+                    borderRadius: BorderRadius.circular(50.r),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF1B882C).withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle,
+                          color: Colors.white, size: 22.sp),
+                      SizedBox(width: 10.w),
+                      Text(
+                        'Proceed to Pay',
+                        style: TextStyle(
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Methods list (API data or fallback) ──────────────────────────────────
+
+  Widget _buildMethodsList(List<PaymentMethod> methods) {
+    // If API returned data, use it; otherwise fall back to hardcoded defaults
+    final options = methods.isNotEmpty ? methods : _defaultMethods;
+
+    // Auto-select first if current selection not in list
+    if (!options.any((m) => m.id == _selected) && options.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _selected = options.first.id);
+      });
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Column(
+        children: options.asMap().entries.map((entry) {
+          final method = entry.value;
+          final isSelected = _selected == method.id;
+          final isLast = entry.key == options.length - 1;
+          return Column(
+            children: [
+              _buildOptionTile(method, isSelected),
+              if (!isLast)
+                Divider(
+                  height: 1,
+                  indent: 16.w,
+                  endIndent: 16.w,
+                  color: Colors.black.withOpacity(0.06),
+                ),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildOptionTile(PaymentMethod method, bool isSelected) {
+    return GestureDetector(
+      onTap: () => setState(() => _selected = method.id),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+        child: Row(
+          children: [
+            // ── Icon (network or fallback) ──
+            Container(
+              width: 44.r,
+              height: 44.r,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF1B882C).withOpacity(0.08)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(12.r),
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFF1B882C).withOpacity(0.2)
+                      : Colors.black.withOpacity(0.06),
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(11.r),
+                child: method.iconUrl.isNotEmpty
+                    ? Padding(
+                        padding: EdgeInsets.all(8.r),
+                        child: Image.network(
+                          method.iconUrl,
+                          width: 28.r,
+                          height: 28.r,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Icon(
+                            _fallbackIcons[method.id] ?? Icons.payment_rounded,
+                            color: isSelected
+                                ? const Color(0xFF1B882C)
+                                : Colors.black38,
+                            size: 22.sp,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        _fallbackIcons[method.id] ?? Icons.payment_rounded,
+                        color: isSelected
+                            ? const Color(0xFF1B882C)
+                            : Colors.black38,
+                        size: 22.sp,
+                      ),
+              ),
+            ),
+            SizedBox(width: 14.w),
+
+            // ── Title + badge row ──
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    method.name,
+                    style: TextStyle(
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                    ),
+                  ),
+                  SizedBox(height: 4.h),
+                  // Badge icons row (sub-brands) or subtitle text
+                  method.badgeIcons.isNotEmpty
+                      ? Row(
+                          children: [
+                            ...method.badgeIcons.take(4).map((url) => Padding(
+                                  padding: EdgeInsets.only(right: 6.w),
+                                  child: Container(
+                                    width: 24.r,
+                                    height: 18.r,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius:
+                                          BorderRadius.circular(4.r),
+                                      border: Border.all(
+                                        color: Colors.black.withOpacity(0.08),
+                                        width: 0.5,
+                                      ),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius:
+                                          BorderRadius.circular(3.r),
+                                      child: Image.network(
+                                        url,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) =>
+                                            Icon(Icons.image_not_supported,
+                                                size: 10.sp,
+                                                color: Colors.black12),
+                                      ),
+                                    ),
+                                  ),
+                                )),
+                            Text(
+                              '& more',
+                              style: TextStyle(
+                                fontSize: 11.sp,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black45,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text(
+                          method.subtitle.isNotEmpty
+                              ? method.subtitle
+                              : method.description,
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black45,
+                          ),
+                        ),
+                ],
+              ),
+            ),
+
+            // ── Radio indicator ──
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 24.r,
+              height: 24.r,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? const Color(0xFF1B882C) : Colors.transparent,
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFF1B882C)
+                      : Colors.black.withOpacity(0.2),
+                  width: isSelected ? 0 : 2,
+                ),
+              ),
+              child: isSelected
+                  ? Icon(Icons.check, size: 16.sp, color: Colors.white)
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Shimmer loading placeholder ──────────────────────────────────────────
+
+  Widget _buildShimmerList() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Column(
+        children: List.generate(3, (i) {
+          return Column(
+            children: [
+              _buildShimmerTile(),
+              if (i < 2)
+                Divider(
+                  height: 1,
+                  indent: 16.w,
+                  endIndent: 16.w,
+                  color: Colors.black.withOpacity(0.06),
+                ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildShimmerTile() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+      child: Row(
+        children: [
+          // Icon placeholder
+          Container(
+            width: 44.r,
+            height: 44.r,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12.r),
+            ),
+          ),
+          SizedBox(width: 14.w),
+          // Text placeholders
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 100.w,
+                  height: 14.h,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(4.r),
+                  ),
+                ),
+                SizedBox(height: 6.h),
+                Container(
+                  width: 160.w,
+                  height: 10.h,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(4.r),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Radio placeholder
+          Container(
+            width: 24.r,
+            height: 24.r,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.black.withOpacity(0.1), width: 2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Fallback defaults (used when API is unreachable) ─────────────────────
+
+  static final _defaultMethods = [
+    PaymentMethod(
+      id: 'upi',
+      name: 'UPI Apps',
+      icon: 'upi.png',
+      description: 'GPay, PhonePe, Paytm & more',
+      subtitle: 'GPay, PhonePe, Paytm & more',
+    ),
+    PaymentMethod(
+      id: 'card',
+      name: 'Cards',
+      icon: 'cards.png',
+      description: 'Visa, Mastercard, RuPay & more',
+      subtitle: 'Visa, Mastercard, RuPay & more',
+    ),
+    PaymentMethod(
+      id: 'netbanking',
+      name: 'Netbanking',
+      icon: 'bank.png',
+      description: 'All Indian banks',
+      subtitle: 'All Indian banks',
+    ),
+  ];
+}

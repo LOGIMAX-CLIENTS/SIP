@@ -84,6 +84,7 @@ class PaymentHandler {
     required int buyType, // 1 = AMOUNT, 2 = GRAMS
     required double weight,
     String? couponCode,
+    String? paymentMethod, // "upi" → HDFC, "card"/"netbanking" → Cashfree
     VoidCallback? onLoadingStart,
     VoidCallback? onLoadingEnd,
   }) async {
@@ -109,6 +110,7 @@ class PaymentHandler {
         buyType: buyType,
         weight: weight,
         couponCode: couponCode,
+        paymentMethod: paymentMethod,
       );
     } catch (e) {
       AppLifecycleObserver.suppressAppLock = false;
@@ -133,6 +135,7 @@ class PaymentHandler {
     required int buyType,
     required double weight,
     String? couponCode,
+    String? paymentMethod,
   }) async {
     final user = ref.read(userProvider);
     if (user == null) throw Exception('User not logged in');
@@ -160,7 +163,7 @@ class PaymentHandler {
     }
 
     SecureLogger.d(
-        '[PaymentHandler] savings/initiate → buyType=$buyType | weight=$weightForApi');
+        '[PaymentHandler] savings/initiate → buyType=$buyType | weight=$weightForApi | paymentMethod=$paymentMethod');
 
     final PurchaseInitiateResponse purchase =
         await ref.read(savingServiceProvider).initiatePurchase(
@@ -172,6 +175,7 @@ class PaymentHandler {
               rate: activeRate,
               weight: weightForApi,
               couponCode: couponCode,
+              paymentMethod: paymentMethod,
             );
 
     // Use the server-confirmed amount_inr (authoritative for the gateway).
