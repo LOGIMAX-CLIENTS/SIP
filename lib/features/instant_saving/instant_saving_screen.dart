@@ -24,6 +24,7 @@ import '../../shared/widgets/loaders.dart';
 import '../../core/security/secure_logger.dart';
 import '../../core/error/failures.dart';
 import '../../shared/utils/no_leading_zeros_formatter.dart';
+import '../../shared/widgets/secure_clipboard.dart';
 import 'payment_handler.dart';
 import 'widgets/payment_method_sheet.dart';
 import '../../core/providers/countdown_offer_provider.dart';
@@ -802,6 +803,9 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                   Expanded(
                     child: TextField(
                       controller: _amountController,
+                      contextMenuBuilder: SecureClipboard.none,
+                      enableSuggestions: false,
+                      autocorrect: false,
                       onChanged: (v) => setState(() => _selectedAmount = v),
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),

@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "189914935405",
-    "project_id": "startgold-prod",
-    "storage_bucket": "startgold-prod.firebasestorage.app"
+    "project_number": "59838381405",
+    "project_id": "startgold-31299",
+    "storage_bucket": "startgold-31299.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:189914935405:android:b9937123c3005c9114cf64",
+        "mobilesdk_app_id": "1:59838381405:android:327f59581da618af047cb4",
         "android_client_info": {
           "package_name": "com.startgold.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyA0oJRz6rb_Ctx8mHEPBag_H08vxb9i54k"
+          "current_key": "AIzaSyBwhVihBwXEMeHsXy3QmAjMCqz5IjzKtl0"
         }
       ],
       "services": {

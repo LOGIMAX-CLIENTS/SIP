@@ -13,6 +13,7 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/loaders.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/utils/no_leading_zeros_formatter.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/security/secure_logger.dart';
 import '../../../routes/app_router.dart';
 import '../controller/sip_controller.dart';
@@ -839,6 +840,9 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           Expanded(
             child: TextField(
               controller: _amountController,
+              contextMenuBuilder: SecureClipboard.none,
+              enableSuggestions: false,
+              autocorrect: false,
               onChanged: (v) {
                 final val = double.tryParse(v) ?? 0;
                 ref.read(sipControllerProvider.notifier).setAmount(val);

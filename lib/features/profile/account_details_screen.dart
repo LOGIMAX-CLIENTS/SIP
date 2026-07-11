@@ -242,7 +242,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
 
           // â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           Expanded(
-            child: profileState.isLoading && user.name == 'Investor'
+            child: profileState.isLoading && user.name.isEmpty
                 ? const Center(child: CircularProgressIndicator(color: AppTheme.arcticBlue))
                 : SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),

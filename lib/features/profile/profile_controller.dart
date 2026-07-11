@@ -122,7 +122,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       : super(ProfileState(
           user: UserProfile(
             id: _customerId,
-            name: 'Investor',
+            name: '',
             phone: '',
             dob: '',
             pincode: '',
@@ -154,7 +154,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         state = state.copyWith(
           user: UserProfile(
             id: _customerId,
-            name: data['name'] ?? data['full_name'] ?? 'Investor',
+            name: data['name'] ?? data['full_name'] ?? '',
             email: data['email'] ?? '',
             phone: data['mobile'] ?? data['phone'] ?? '',
             dob: data['dob'] ?? '',

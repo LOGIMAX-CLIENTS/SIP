@@ -43,7 +43,7 @@ final userProvider = Provider<UserProfile?>((ref) {
       final userData = data['user'] ?? {};
       return UserProfile(
         id: userData['id_customer']?.toString() ?? '',
-        name: userData['name'] ?? userData['full_name'] ?? 'Investor',
+        name: userData['name'] ?? userData['full_name'] ?? '',
         mobile: userData['mobile'] ?? data['mobile'] ?? '',
         email: userData['email'] ?? '',
         photoUrl: userData['photo_url'] ?? data['photo_url'],

@@ -17,6 +17,7 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/localization/language_provider.dart';
 import '../../../core/utils/masking_utils.dart';
 import '../../../core/utils/navigation_utils.dart';
+import '../../../core/security/secure_storage_service.dart';
 
 class OtpScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -57,7 +58,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   Future<void> _releaseScreen() async {
-    await ScreenProtector.preventScreenshotOff();
+    // Only remove the iOS blur overlay on dispose.
+    // Do NOT call preventScreenshotOff() — it removes FLAG_SECURE on
+    // Android, making app content visible in the recent-apps switcher.
     await ScreenProtector.protectDataLeakageWithBlurOff();
   }
 
@@ -201,18 +204,33 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                                     color: primaryTextColor,
                                   ),
                                 ),
-                                if (!isFromAppLock)
-                                  GestureDetector(
-                                    onTap: () => NavigationUtils.safePop(context),
-                                    child: Text(
-                                      'Edit',
-                                      style: GoogleFonts.playfairDisplay(
-                                        fontSize: 16.sp,
-                                        fontWeight: FontWeight.bold,
-                                        color: accentOrange,
-                                      ),
+                                GestureDetector(
+                                  onTap: () {
+                                    if (isFromAppLock) {
+                                      // From Forgot PIN flow → clear everything & go to login
+                                      SecureStorageService.logout().then((_) {
+                                        if (mounted) {
+                                          Navigator.pushNamedAndRemoveUntil(
+                                            context,
+                                            AppRouter.login,
+                                            (route) => false,
+                                          );
+                                        }
+                                      });
+                                    } else {
+                                      // Normal flow → pop back to login/previous screen
+                                      NavigationUtils.safePop(context);
+                                    }
+                                  },
+                                  child: Text(
+                                    'Edit',
+                                    style: GoogleFonts.playfairDisplay(
+                                      fontSize: 16.sp,
+                                      fontWeight: FontWeight.bold,
+                                      color: accentOrange,
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ],

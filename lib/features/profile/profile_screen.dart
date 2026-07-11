@@ -122,7 +122,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final profileState = ref.watch(pc.profileProvider);
 
-    if (profileState.isLoading && profileState.user.name == 'Investor') {
+    if (profileState.isLoading && profileState.user.name.isEmpty) {
       return _buildSkeleton(isDark);
     }
 

@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'clipboard_security_service.dart';
 import '../providers/market_provider.dart';
 import '../security/session_manager.dart';
 import '../security/secure_storage_service.dart';
 import '../security/secure_logger.dart';
 import '../services/biometric_service.dart';
-import '../network/api_client.dart';
 import '../../routes/app_router.dart';
 
 /// Observes app lifecycle to manage:
 ///   1. Socket connection (pause/resume)
-///   2. Session validation on resume (409 detection)
-///   3. App Lock re-authentication on resume (MPIN/Biometric)
+///   2. App Lock re-authentication on resume (MPIN/Biometric)
 ///
 /// App Lock triggers when:
 ///   - MPIN is enabled
@@ -61,11 +61,13 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
       // Pause socket when app goes to background
       ref.read(socketIOServiceProvider).disconnect();
     } else if (state == AppLifecycleState.resumed) {
+      // ── Clear clipboard on resume (VAPT: Clipboard Leakage) ────────────
+      // Clears both system clipboard AND keyboard clipboard strip (Gboard)
+      // using native Android ClipboardManager.
+      ClipboardSecurityService.clearClipboard();
+
       // Reconnect socket when app comes back to foreground
       ref.read(socketIOServiceProvider).connect();
-
-      // ── Session validation on resume (409 detection) ──────────────────
-      _validateSessionOnResume();
 
       // ── App Lock on resume (INSTANT — uses pre-cached values) ─────────
       _checkAppLockOnResume();
@@ -85,31 +87,6 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     }
   }
 
-  // ── Session Validation (409 Detection) ────────────────────────────────────
-  /// Validates the current session by making a lightweight API call.
-  /// If the session was invalidated while the app was in the background
-  /// (e.g. user logged in on another device), the interceptor's 409
-  /// handler will trigger the force-logout dialog automatically.
-  Future<void> _validateSessionOnResume() async {
-    // Skip if already force-logged-out or not authenticated
-    if (SessionManager.isForceLoggedOut) return;
-
-    final isAuth = await SessionManager.isAuthenticated();
-    if (!isAuth) return;
-
-    try {
-      // Use a lightweight endpoint to validate session.
-      // The interceptor will handle 409 automatically.
-      final apiClient = ApiClient();
-      await apiClient.get('users/auth/session-check');
-      SecureLogger.d('SESSION CHECK: Session is valid (resume).');
-    } catch (e) {
-      // Errors are handled by the interceptor (409 → force logout).
-      // Other errors (network, 500, etc.) are silently ignored here
-      // since they don't indicate session invalidation.
-      SecureLogger.d('SESSION CHECK: Validation skipped or failed ($e).');
-    }
-  }
 
   // ── App Lock (Re-auth on Resume) ──────────────────────────────────────────
   /// Checks whether re-authentication is needed after app resume.
