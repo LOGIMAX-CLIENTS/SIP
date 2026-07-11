@@ -71,6 +71,7 @@ class HdfcPaymentHandler {
   Future<void> launchPayment({
     required PurchaseInitiateResponse purchase,
     required double confirmedAmountInr,
+    String? paymentMethod,
     VoidCallback? onLoadingStart,
     VoidCallback? onLoadingEnd,
   }) async {
@@ -104,7 +105,7 @@ class HdfcPaymentHandler {
       }
 
       // Step 2: Open payment page with backend's sdkPayload
-      await _openPaymentPage(purchase);
+      await _openPaymentPage(purchase, paymentMethod);
     } catch (e) {
       AppLifecycleObserver.suppressAppLock = false;
       _onLoadingEnd?.call();
@@ -154,9 +155,9 @@ class HdfcPaymentHandler {
   // STEP 2 — Open Payment Page
   // ─────────────────────────────────────────────────────────────────────────
 
-  Future<void> _openPaymentPage(PurchaseInitiateResponse purchase) async {
+  Future<void> _openPaymentPage(PurchaseInitiateResponse purchase, String? paymentMethod) async {
     SecureLogger.d(
-        '[_openPaymentPage] Opening HDFC payment page for order ${purchase.orderId}');
+        '[_openPaymentPage] Opening HDFC payment page for order ${purchase.orderId} with paymentMethod=$paymentMethod');
     SecureLogger.d(
         '[_openPaymentPage] sdkPayload keys: ${purchase.sdkPayload?.keys.toList()}');
 
@@ -171,11 +172,43 @@ class HdfcPaymentHandler {
       if (sdkPayload['payload'] is Map) {
         final payload = Map<String, dynamic>.from(sdkPayload['payload']);
         payload['returnUrl'] = 'about:blank';
+        
+        // Dynamically configure payment restrictions based on SavingConfig.
+        final config = ref.read(savingConfigProvider).valueOrNull;
+        if (paymentMethod != null && config != null && config.paymentMethods[paymentMethod] == 'hdfc') {
+          // Map to Juspay's paymentMethodType (case sensitive)
+          String? juspayMethodType;
+          if (paymentMethod == 'upi') {
+            juspayMethodType = 'UPI';
+          } else if (paymentMethod == 'card') {
+            juspayMethodType = 'CARD';
+          } else if (paymentMethod == 'netbanking') {
+            juspayMethodType = 'NB';
+          }
+
+          if (juspayMethodType != null) {
+            // Apply Juspay Payment Locking payload filter to restrict UI
+            payload['payment_filter'] = {
+              'allowDefaultOptions': false,
+              'options': [
+                {
+                  'enable': true,
+                  'paymentMethodType': juspayMethodType,
+                }
+              ]
+            };
+          }
+
+          final juspayMethod = paymentMethod.toUpperCase();
+          payload['paymentMethod'] = juspayMethod;
+          payload['paymentMethodList'] = juspayMethod;
+          SecureLogger.d('[HdfcPaymentHandler] Configured sdkPayload payload for $juspayMethod restriction based on config.');
+        }
+
         sdkPayload['payload'] = payload;
         SecureLogger.d(
             '[HdfcPaymentHandler] returnUrl overridden to about:blank');
       }
-
 
       final result = await _hyperSDK.openPaymentPage(
         sdkPayload,
@@ -254,13 +287,26 @@ class HdfcPaymentHandler {
       switch (status) {
         case 'backpressed':
         case 'user_aborted':
-          // User cancelled — just dismiss, no server call needed.
           SecureLogger.d(
               '[HdfcPaymentHandler] User cancelled payment (status=$status)');
           AppLifecycleObserver.suppressAppLock = false;
-          if (context.mounted) {
-            AppToast.show(context, 'Payment cancelled.',
-                type: ToastType.warning);
+          if (orderId.isEmpty) {
+            if (context.mounted) {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PurchaseSuccessScreen(
+                    data: {
+                      'isSuccess': false,
+                      'orderId': 'N/A',
+                      'message': 'Sorry! Your order could not be processed. Please try again.',
+                    },
+                  ),
+                ),
+              );
+            }
+          } else {
+            _confirmAndNavigate(orderId, sdkStatus: status);
           }
           break;
 

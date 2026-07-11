@@ -192,8 +192,15 @@ class PaymentHandler {
 
     // ── STEP 2: Route to the correct payment gateway ────────────────────────
     if (context.mounted) {
-      if (purchase.paymentGateway == 'hdfc') {
-        _launchHdfc(purchase, confirmedAmount);
+      final config = ref.read(savingConfigProvider).valueOrNull;
+      String gateway = purchase.paymentGateway;
+      if (paymentMethod != null && config != null && config.paymentMethods.containsKey(paymentMethod)) {
+        gateway = config.paymentMethods[paymentMethod]!;
+        SecureLogger.d('[PaymentHandler] Gateway resolved from config: $paymentMethod -> $gateway');
+      }
+
+      if (gateway == 'hdfc') {
+        _launchHdfc(purchase, confirmedAmount, paymentMethod);
       } else {
         _launchCashfree(purchase);
       }
@@ -204,13 +211,14 @@ class PaymentHandler {
   // STEP 2a — Launch HDFC SmartGateway (Juspay HyperSDK)
   // ─────────────────────────────────────────────────────────────────────────
 
-  void _launchHdfc(PurchaseInitiateResponse purchase, double confirmedAmount) {
+  void _launchHdfc(PurchaseInitiateResponse purchase, double confirmedAmount, String? paymentMethod) {
     SecureLogger.d('[PaymentHandler] Routing to HDFC gateway...');
 
     final hdfc = HdfcPaymentHandler(ref: ref, context: context);
     hdfc.launchPayment(
       purchase: purchase,
       confirmedAmountInr: confirmedAmount,
+      paymentMethod: paymentMethod,
       onLoadingStart: _onLoadingStart,
       onLoadingEnd: _onLoadingEnd,
     );
