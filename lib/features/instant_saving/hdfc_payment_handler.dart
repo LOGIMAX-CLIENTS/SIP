@@ -173,9 +173,8 @@ class HdfcPaymentHandler {
         final payload = Map<String, dynamic>.from(sdkPayload['payload']);
         payload['returnUrl'] = 'about:blank';
         
-        // Dynamically configure payment restrictions based on SavingConfig.
-        final config = ref.read(savingConfigProvider).valueOrNull;
-        if (paymentMethod != null && config != null && config.paymentMethods[paymentMethod] == 'hdfc') {
+        // Dynamically configure payment restrictions based on selected paymentMethod.
+        if (paymentMethod != null) {
           // Map to Juspay's paymentMethodType (case sensitive)
           String? juspayMethodType;
           if (paymentMethod == 'upi') {
@@ -197,12 +196,11 @@ class HdfcPaymentHandler {
                 }
               ]
             };
-          }
 
-          final juspayMethod = paymentMethod.toUpperCase();
-          payload['paymentMethod'] = juspayMethod;
-          payload['paymentMethodList'] = juspayMethod;
-          SecureLogger.d('[HdfcPaymentHandler] Configured sdkPayload payload for $juspayMethod restriction based on config.');
+            payload['paymentMethod'] = juspayMethodType;
+            payload['paymentMethodList'] = juspayMethodType;
+            SecureLogger.d('[HdfcPaymentHandler] Configured sdkPayload payload for $juspayMethodType restriction.');
+          }
         }
 
         sdkPayload['payload'] = payload;
