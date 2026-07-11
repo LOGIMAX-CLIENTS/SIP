@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import '../../core/config/app_config.dart';
@@ -9,7 +10,17 @@ import '../security/certificate_pinning.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../shared/widgets/session_invalidated_dialog.dart';
 
-class ApiSecurityInterceptor extends Interceptor {
+class ApiSecurityInterceptor extends QueuedInterceptor {
+  // ── Token Refresh Lock ──────────────────────────────────────────────────
+  /// Prevents concurrent 401 handlers from each firing a separate refresh.
+  /// The first 401 sets this Completer and performs the refresh; subsequent
+  /// 401s await it and retry with the already-refreshed token.
+  static Completer<bool>? _refreshLock;
+
+  /// Timestamp of the last successful token refresh.
+  /// Used to prevent re-refreshing when multiple 401s arrive sequentially
+  /// (with QueuedInterceptor, they are processed one after another).
+  static DateTime? _lastRefreshTime;
   // ── Public Key Bootstrap ─────────────────────────────────────────────────
   /// Fetches the RSA public key from the server and caches it.
   /// Safe to call multiple times – skips fetch if already loaded.
@@ -115,8 +126,23 @@ class ApiSecurityInterceptor extends Interceptor {
       await fetchAndCachePublicKey();
     }
 
-    // 2. Attach Authorization token (except auth and public endpoints)
-    if (!path.contains('/auth/') && !path.contains('shared/country-codes')) {
+    // 2. Attach Authorization token (except unauthenticated endpoints)
+    // NOTE: Use an explicit list of public endpoints instead of a broad
+    // path.contains('/auth/') check. Endpoints like 'users/auth/referral/details'
+    // and 'auth/has-mpin' contain 'auth' in the path but ARE authenticated.
+    const unauthenticatedEndpoints = [
+      'auth/generate-otp',
+      'auth/verify-otp',
+      'auth/register-check',
+      'auth/register',
+      'auth/token/refresh',
+      'shared/country-codes',
+      'app/control',
+      'crypto/public-key',
+    ];
+    final isPublicEndpoint =
+        unauthenticatedEndpoints.any((e) => path.contains(e));
+    if (!isPublicEndpoint) {
       String? token = await SecureStorageService.getToken();
       if (token != null) {
         options.headers['Authorization'] = 'Bearer $token';
@@ -219,12 +245,73 @@ class ApiSecurityInterceptor extends Interceptor {
       }
     }
 
-    // 4. Silent Token Refresh on 401
+    // 4. Silent Token Refresh on 401 (with concurrency lock)
     if (err.response?.statusCode == 401) {
       // Skip token refresh if session is already force-invalidated
       if (SessionManager.isForceLoggedOut) {
         return handler.next(err);
       }
+
+      // ── If another 401 handler is already refreshing, wait for it ──
+      if (_refreshLock != null) {
+        SecureLogger.d('TOKEN REFRESH: Waiting for in-flight refresh...');
+        final success = await _refreshLock!.future;
+        if (success) {
+          // Refresh succeeded — retry with the new token
+          final newToken = await SecureStorageService.getToken();
+          if (newToken != null) {
+            final retryOptions = err.requestOptions;
+            retryOptions.headers['Authorization'] = 'Bearer $newToken';
+            try {
+              final retryDio = Dio(BaseOptions(
+                baseUrl: AppConfig.baseUrl,
+                connectTimeout:
+                    const Duration(milliseconds: AppConfig.connectTimeout),
+                receiveTimeout:
+                    const Duration(milliseconds: AppConfig.receiveTimeout),
+              ));
+              CertificatePinning.setup(retryDio);
+              final retryResponse = await retryDio.fetch(retryOptions);
+              return handler.resolve(retryResponse);
+            } catch (e) {
+              SecureLogger.e('TOKEN REFRESH: Retry after wait failed: $e');
+              return handler.next(err);
+            }
+          }
+        }
+        // Refresh failed — fall through to handler.next(err)
+        return handler.next(err);
+      }
+
+      // ── Token was JUST refreshed (within 30s) — skip re-refresh, just retry ──
+      if (_lastRefreshTime != null &&
+          DateTime.now().difference(_lastRefreshTime!).inSeconds < 30) {
+        SecureLogger.d('TOKEN REFRESH: Recently refreshed, retrying with current token...');
+        final currentToken = await SecureStorageService.getToken();
+        if (currentToken != null) {
+          final retryOptions = err.requestOptions;
+          retryOptions.headers['Authorization'] = 'Bearer $currentToken';
+          try {
+            final retryDio = Dio(BaseOptions(
+              baseUrl: AppConfig.baseUrl,
+              connectTimeout:
+                  const Duration(milliseconds: AppConfig.connectTimeout),
+              receiveTimeout:
+                  const Duration(milliseconds: AppConfig.receiveTimeout),
+            ));
+            CertificatePinning.setup(retryDio);
+            final retryResponse = await retryDio.fetch(retryOptions);
+            return handler.resolve(retryResponse);
+          } catch (e) {
+            SecureLogger.e('TOKEN REFRESH: Retry with recent token failed: $e');
+            // Token truly expired — clear timestamp and fall through to full refresh
+            _lastRefreshTime = null;
+          }
+        }
+      }
+
+      // ── First 401 — acquire lock and perform refresh ──
+      _refreshLock = Completer<bool>();
 
       final refreshToken = await SecureStorageService.getRefreshToken();
 
@@ -251,32 +338,63 @@ class ApiSecurityInterceptor extends Interceptor {
             data: {'refresh': refreshToken},
           );
 
-          if (refreshResponse.statusCode == 200 &&
-              refreshResponse.data['success'] == true) {
-            final newAccess = refreshResponse.data['data']['access'];
-            final newRefresh = refreshResponse.data['data']['refresh'];
+          if (refreshResponse.statusCode == 200) {
+            final respData = refreshResponse.data;
 
-            await SecureStorageService.saveToken(newAccess);
-            await SecureStorageService.saveRefreshToken(newRefresh);
-            SecureLogger.d(
-                'TOKEN REFRESH: Success. Retrying original request.');
+            // Server response format:
+            //   {"success": true, "data": {"access_token": "...", "refresh_token": "..."}}
+            // Also handle flat format or "access"/"refresh" keys for flexibility.
+            final nested = respData is Map ? respData['data'] : null;
+            final newAccess =
+                (nested is Map ? (nested['access_token'] ?? nested['access']) : null) ??
+                (respData is Map ? (respData['access_token'] ?? respData['access']) : null);
+            final newRefresh =
+                (nested is Map ? (nested['refresh_token'] ?? nested['refresh']) : null) ??
+                (respData is Map ? (respData['refresh_token'] ?? respData['refresh']) : null);
 
-            final retryOptions = err.requestOptions;
-            retryOptions.headers['Authorization'] = 'Bearer $newAccess';
+            if (newAccess != null && newAccess.toString().isNotEmpty) {
+              await SecureStorageService.saveToken(newAccess);
+              if (newRefresh != null && newRefresh.toString().isNotEmpty) {
+                await SecureStorageService.saveRefreshToken(newRefresh);
+              }
+              _lastRefreshTime = DateTime.now();
+              SecureLogger.d(
+                  'TOKEN REFRESH: Success. Retrying original request.');
 
-            final retryResponse = await refreshDio.fetch(retryOptions);
-            return handler.resolve(retryResponse);
+              // Unlock waiting 401s — they can now retry with new token
+              _refreshLock!.complete(true);
+              _refreshLock = null;
+
+              final retryOptions = err.requestOptions;
+              retryOptions.headers['Authorization'] = 'Bearer $newAccess';
+
+              final retryResponse = await refreshDio.fetch(retryOptions);
+              return handler.resolve(retryResponse);
+            } else {
+              // Refresh returned 200 but no access token in response
+              SecureLogger.e(
+                  'TOKEN REFRESH: No access token in refresh response. Logging out.');
+              _refreshLock!.complete(false);
+              _refreshLock = null;
+              await SessionManager.logout();
+            }
           } else {
             SecureLogger.e(
-                'TOKEN REFRESH: Server rejected refresh. Logging out.');
+                'TOKEN REFRESH: Server rejected refresh (${refreshResponse.statusCode}). Logging out.');
+            _refreshLock!.complete(false);
+            _refreshLock = null;
             await SessionManager.logout();
           }
         } catch (e) {
           SecureLogger.e('TOKEN REFRESH: Failed with error: $e. Logging out.');
+          _refreshLock!.complete(false);
+          _refreshLock = null;
           await SessionManager.logout();
         }
       } else {
         SecureLogger.e('TOKEN REFRESH: No refresh token found. Logging out.');
+        _refreshLock!.complete(false);
+        _refreshLock = null;
         await SessionManager.logout();
       }
     }

@@ -182,7 +182,10 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
 
   Future<void> _releaseScreen() async {
     if (!kIsWeb) {
-      await ScreenProtector.preventScreenshotOff();
+      // Only remove the iOS blur overlay on dispose.
+      // Do NOT call preventScreenshotOff() — it removes FLAG_SECURE on
+      // Android, making app content visible in the recent-apps switcher.
+      // FLAG_SECURE is set permanently in MainActivity.kt.
       await ScreenProtector.protectDataLeakageWithBlurOff();
     }
   }

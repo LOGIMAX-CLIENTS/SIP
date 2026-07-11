@@ -165,10 +165,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Never block render with full-screen spinner.
     // Header shows immediately; content shimmer-loads below.
 
-    final String customerName = profileState.user.name.isNotEmpty &&
-            profileState.user.name != 'Investor'
-        ? profileState.user.name
-        : (userProfile?.name ?? ref.tr('investorLabel', fallback: 'Investor'));
+    final String customerName = profileState.user.name.isNotEmpty
+            ? profileState.user.name
+            : (userProfile?.name ?? '');
 
     final String? photoUrl =
         profileState.user.photoUrl ?? userProfile?.photoUrl;
@@ -1887,7 +1886,9 @@ class PremiumHomeHeader extends SliverPersistentHeaderDelegate {
                 children: [
                   Flexible(
                     child: Text(
-                      'Hello, $customerName',
+                      customerName.isNotEmpty
+                          ? 'Hello, $customerName'
+                          : 'Welcome',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.playfairDisplay(

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/features/support/enquiry_service.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
+import 'package:startgold/shared/widgets/secure_clipboard.dart';
 
 class EnquiryFormScreen extends ConsumerStatefulWidget {
   /// Optional: pre-select a ticket type when navigating from a specific screen.
@@ -338,6 +339,9 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
       controller: controller,
       maxLines: maxLines,
       validator: validator,
+      contextMenuBuilder: SecureClipboard.none,
+      enableSuggestions: false,
+      autocorrect: false,
       style: GoogleFonts.playfairDisplay(
         fontSize: 15.sp,
         color: const Color(0xFF1A2332),

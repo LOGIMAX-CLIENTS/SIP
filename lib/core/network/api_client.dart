@@ -6,9 +6,12 @@ import '../security/api_interceptor.dart';
 import '../error/failures.dart';
 
 class ApiClient {
-  late Dio _dio;
+  static final ApiClient _instance = ApiClient._internal();
+  late final Dio _dio;
 
-  ApiClient() {
+  factory ApiClient() => _instance;
+
+  ApiClient._internal() {
     _dio = Dio(
       BaseOptions(
         baseUrl: AppConfig.baseUrl,

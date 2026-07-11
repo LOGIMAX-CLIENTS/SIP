@@ -28,7 +28,7 @@ final sipSilverDenominationsProvider =
 
 // ─── Active Plans ───────────────────────────────────────────────────────────
 final sipDetailsProvider =
-    FutureProvider.autoDispose<List<SipPlanDetail>>((ref) async {
+    FutureProvider<List<SipPlanDetail>>((ref) async {
   final service = ref.watch(sipServiceProvider);
   return service.getSipDetails();
 });
