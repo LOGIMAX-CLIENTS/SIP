@@ -5,6 +5,7 @@ class SavingConfig {
   final String type; // inclusive / exclusive
   final int sellRateLockSeconds;
   final int buyRateLockSeconds;
+  final Map<String, String> paymentMethods;
 
   SavingConfig({
     required this.minAmount,
@@ -13,9 +14,17 @@ class SavingConfig {
     required this.type,
     required this.sellRateLockSeconds,
     required this.buyRateLockSeconds,
+    this.paymentMethods = const {},
   });
 
   factory SavingConfig.fromJson(Map<String, dynamic> json) {
+    final methodsMap = <String, String>{};
+    if (json['payment_methods'] is Map) {
+      (json['payment_methods'] as Map).forEach((key, value) {
+        methodsMap[key.toString()] = value.toString();
+      });
+    }
+
     return SavingConfig(
       minAmount: (json['min_amount'] ?? 0).toDouble(),
       maxAmount: (json['max_amount'] ?? 0).toDouble(),
@@ -23,6 +32,7 @@ class SavingConfig {
       type: json['type'] ?? '',
       sellRateLockSeconds: json['sell_rate_lock_seconds'] ?? 0,
       buyRateLockSeconds: json['buy_rate_lock_seconds'] ?? 0,
+      paymentMethods: methodsMap,
     );
   }
 }
