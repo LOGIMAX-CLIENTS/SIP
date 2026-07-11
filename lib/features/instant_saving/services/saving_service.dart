@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 import '../../../core/network/api_client.dart';
 import '../models/saving_models.dart';
 import '../../../core/security/secure_logger.dart';
@@ -45,6 +43,7 @@ class SavingService {
     required double rate,
     required double weight,
     String? couponCode,
+    String? paymentMethod, // "upi", "card", "netbanking" — gateway routing hint
   }) async {
     SecureLogger.d(
         '[INITIATE] buy_type → $buyType (${buyType == 1 ? 'AMOUNT' : 'GRAMS'})');
@@ -59,6 +58,7 @@ class SavingService {
       'device_id': 'device-id-placeholder',
       'coupon_code': couponCode,
       'request_from': 'instant',
+      if (paymentMethod != null) 'payment_method': paymentMethod,
     });
     return PurchaseInitiateResponse.fromJson(response.data['data']);
   }

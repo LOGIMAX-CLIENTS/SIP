@@ -26,6 +26,7 @@ import '../../core/error/failures.dart';
 import '../../shared/utils/no_leading_zeros_formatter.dart';
 import '../../shared/widgets/secure_clipboard.dart';
 import 'payment_handler.dart';
+import 'widgets/payment_method_sheet.dart';
 import '../../core/providers/countdown_offer_provider.dart';
 
 class InstantSavingScreen extends ConsumerStatefulWidget {
@@ -1255,9 +1256,10 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 (configAsync.valueOrNull?.maxAmount ?? double.infinity),
         isProcessing: _isProcessing,
         onPayNow: () {
-          Navigator.pop(context); // close sheet
-          final config = configAsync.valueOrNull!;
-          _handleConfirmOrder(market, type, b['total']!, config, b['grams']!);
+          Navigator.pop(context); // close breakdown sheet
+          // Show payment method selection before proceeding
+          _showPaymentMethodSheet(
+            market, type, b['total']!, configAsync.valueOrNull!, b['grams']!);
         },
       ),
     );
@@ -1361,7 +1363,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 GestureDetector(
                   onTap: (isInvalid || _isProcessing)
                       ? null
-                      : () => _handleConfirmOrder(
+                      : () => _showPaymentMethodSheet(
                           market, type, totalPayable, config, grams),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
@@ -1424,9 +1426,31 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     );
   }
 
+  /// Shows the payment method bottom sheet and then calls _handleConfirmOrder
+  /// with the selected method once the user taps "Proceed to Pay".
+  void _showPaymentMethodSheet(
+    AsyncValue<dynamic> market,
+    CommodityType type,
+    double totalPayable,
+    SavingConfig config,
+    double grams,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => PaymentMethodSheet(
+        onProceed: (String paymentMethod) {
+          _handleConfirmOrder(
+              market, type, totalPayable, config, grams, paymentMethod);
+        },
+      ),
+    );
+  }
+
   Future<void> _handleConfirmOrder(AsyncValue<dynamic> market,
       CommodityType type, double totalPayable, SavingConfig config,
-      [double grams = 0.0]) async {
+      [double grams = 0.0, String? paymentMethod]) async {
     SecureLogger.d(
         'ORDER FLOW: Starting confirmation for $type - total: $totalPayable');
     setState(() => _isProcessing = true);
@@ -1502,6 +1526,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
             rate: rate,
             buyType: _isAmountMode ? 1 : 2,
             weight: grams,
+            paymentMethod: paymentMethod,
             onLoadingStart: () => setState(() => _isProcessing = true),
             onLoadingEnd: () {
               if (mounted) setState(() => _isProcessing = false);
@@ -1522,6 +1547,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           rate: rate,
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
+          paymentMethod: paymentMethod,
           onLoadingStart: () => setState(() => _isProcessing = true),
           onLoadingEnd: () {
             if (mounted) setState(() => _isProcessing = false);
@@ -1550,6 +1576,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           rate: rate,
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
+          paymentMethod: paymentMethod,
           onLoadingStart: () => setState(() => _isProcessing = true),
           onLoadingEnd: () {
             if (mounted) setState(() => _isProcessing = false);

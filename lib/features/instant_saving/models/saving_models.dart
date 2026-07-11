@@ -5,6 +5,7 @@ class SavingConfig {
   final String type; // inclusive / exclusive
   final int sellRateLockSeconds;
   final int buyRateLockSeconds;
+  final Map<String, String> paymentMethods;
 
   SavingConfig({
     required this.minAmount,
@@ -13,9 +14,17 @@ class SavingConfig {
     required this.type,
     required this.sellRateLockSeconds,
     required this.buyRateLockSeconds,
+    this.paymentMethods = const {},
   });
 
   factory SavingConfig.fromJson(Map<String, dynamic> json) {
+    final methodsMap = <String, String>{};
+    if (json['payment_methods'] is Map) {
+      (json['payment_methods'] as Map).forEach((key, value) {
+        methodsMap[key.toString()] = value.toString();
+      });
+    }
+
     return SavingConfig(
       minAmount: (json['min_amount'] ?? 0).toDouble(),
       maxAmount: (json['max_amount'] ?? 0).toDouble(),
@@ -23,6 +32,7 @@ class SavingConfig {
       type: json['type'] ?? '',
       sellRateLockSeconds: json['sell_rate_lock_seconds'] ?? 0,
       buyRateLockSeconds: json['buy_rate_lock_seconds'] ?? 0,
+      paymentMethods: methodsMap,
     );
   }
 }
@@ -30,14 +40,22 @@ class SavingConfig {
 class PaymentMethod {
   final String id;
   final String name;
-  final String icon;
-  final String description;
+  final String icon;          // legacy: filename or icon key
+  final String description;   // legacy: same as subtitle
+
+  // ── New fields (API v2 — payment method icons) ───────────────────────
+  final String iconUrl;              // absolute URL to category icon
+  final String subtitle;             // e.g. "GPay, PhonePe, Paytm & more"
+  final List<String> badgeIcons;     // absolute URLs for sub-brand logos
 
   PaymentMethod({
     required this.id,
     required this.name,
     required this.icon,
     required this.description,
+    this.iconUrl = '',
+    this.subtitle = '',
+    this.badgeIcons = const [],
   });
 
   factory PaymentMethod.fromJson(Map<String, dynamic> json) {
@@ -46,9 +64,16 @@ class PaymentMethod {
       name: json['name'] ?? '',
       icon: json['icon'] ?? '',
       description: json['description'] ?? '',
+      iconUrl: json['icon_url'] ?? '',
+      subtitle: json['subtitle'] ?? json['description'] ?? '',
+      badgeIcons: (json['badge_icons'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
     );
   }
 }
+
 
 class PaymentOrder {
   final String paymentUrl;
@@ -87,6 +112,17 @@ class PurchaseInitiateResponse {
   final String? amountInr;
   final String? weight;
   final String? ratePerGram;
+  // ── Gateway routing ──────────────────────────────────────────────────────
+  /// Which payment gateway the backend selected: "cashfree" or "hdfc".
+  /// Defaults to "cashfree" for backward compatibility.
+  final String paymentGateway;
+  // ── HDFC / Juspay HyperSDK fields ────────────────────────────────────────
+  /// Full Juspay sdkPayload JSON returned by backend after calling
+  /// Juspay's order.create API. Passed directly to hyperSDK.openPaymentPage().
+  final Map<String, dynamic>? sdkPayload;
+  final String? merchantId;
+  final String? clientId;
+  final String? hdfcEnvironment;
 
   PurchaseInitiateResponse({
     this.orderId,
@@ -96,6 +132,11 @@ class PurchaseInitiateResponse {
     this.amountInr,
     this.weight,
     this.ratePerGram,
+    this.paymentGateway = 'cashfree',
+    this.sdkPayload,
+    this.merchantId,
+    this.clientId,
+    this.hdfcEnvironment,
   });
 
   factory PurchaseInitiateResponse.fromJson(Map<String, dynamic> json) {
@@ -107,6 +148,13 @@ class PurchaseInitiateResponse {
       amountInr: json['amount_inr']?.toString(),
       weight: json['weight']?.toString(),
       ratePerGram: json['rate_per_gram']?.toString(),
+      paymentGateway: json['payment_gateway']?.toString() ?? 'cashfree',
+      sdkPayload: json['sdk_payload'] is Map<String, dynamic>
+          ? json['sdk_payload']
+          : null,
+      merchantId: json['merchant_id']?.toString(),
+      clientId: json['client_id']?.toString(),
+      hdfcEnvironment: json['hdfc_environment']?.toString(),
     );
   }
 }
