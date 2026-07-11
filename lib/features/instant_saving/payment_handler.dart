@@ -192,11 +192,16 @@ class PaymentHandler {
 
     // ── STEP 2: Route to the correct payment gateway ────────────────────────
     if (context.mounted) {
-      final config = ref.read(savingConfigProvider).valueOrNull;
+      // Trust the gateway returned by the backend initiate API first because it matches
+      // the order's specific payment provider and payload (e.g. sdkPayload or sessionId).
+      // Fall back to config-resolved gateway only if the API returned gateway is empty or unrecognized.
       String gateway = purchase.paymentGateway;
-      if (paymentMethod != null && config != null && config.paymentMethods.containsKey(paymentMethod)) {
-        gateway = config.paymentMethods[paymentMethod]!;
-        SecureLogger.d('[PaymentHandler] Gateway resolved from config: $paymentMethod -> $gateway');
+      if (gateway.isEmpty || (gateway != 'hdfc' && gateway != 'cashfree')) {
+        final config = ref.read(savingConfigProvider).valueOrNull;
+        if (paymentMethod != null && config != null && config.paymentMethods.containsKey(paymentMethod)) {
+          gateway = config.paymentMethods[paymentMethod]!;
+          SecureLogger.d('[PaymentHandler] Gateway resolved from config fallback: $paymentMethod -> $gateway');
+        }
       }
 
       if (gateway == 'hdfc') {
