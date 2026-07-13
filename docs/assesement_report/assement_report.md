@@ -114,3 +114,66 @@
 8. REGRESSIONS — 0
 
 ---
+
+---
+
+# AI-Assisted Development Report — 11 July 2026
+
+---
+
+## Tasks Completed with AI Agent (Antigravity)
+
+---
+
+### Task 1: Enforce HDFC SmartGateway Payment Method Locking and SDK Filtering (Backend)
+
+1. TASK NAME — Enforce HDFC SmartGateway Payment Method Locking and SDK Filtering (Backend)
+2. TASK TYPE — 🔧 Change Request / Refactor
+3. DATE — 2026-07-11
+4. TIME SPENT — 1.5
+5. FILES MODIFIED — 3 (`backend/services/api_service/domains/transactions/services/savings.py`, `backend/services/api_service/tests/test_gateway_pluggable.py`, `shared/utils/gateway.py` [Backend])
+6. TEST CASES — Yes (Updated `test_gateway_pluggable.py` to assert that default routing fallback points to Cashfree (`cashfree`) for UPI, Card, and Netbanking. Verified HDFC checkout restrictions map Netbanking selection to 'NB' and apply payment method filtering constraints in the SDK payload.)
+7. BRAIN/RECIPE — Yes: Consulted `Transactions/BUSINESS_RULES.md` and `Transactions/MODULE_BRAIN.md` to align method-level routing logic and checkout filtering constraints.
+8. REGRESSIONS — 0
+
+---
+
+### Task 2: Enforce HDFC SmartGateway Payment Method Locking and SDK Filtering (Mobile App)
+
+1. TASK NAME — Enforce HDFC SmartGateway Payment Method Locking and SDK Filtering (Mobile App)
+2. TASK TYPE — 🔧 Feature Implementation / Refactor
+3. DATE — 2026-07-11
+4. TIME SPENT — 1.5
+5. FILES MODIFIED — 1 (`lib/features/instant_saving/hdfc_payment_handler.dart` [Mobile])
+6. TEST CASES — No (Manual verification: Selected UPI, Card, and Netbanking options on the Payment Method Sheet, verified that Juspay HyperSDK payment sheet only allowed the selected payment method and locked out others. Confirmed Netbanking mapped successfully to the 'NB' option in the SDK payload, and verified the flow handles checkout cancellation without getting stuck.)
+7. BRAIN/RECIPE — Yes: Aligned with client-side payment routing and HyperSDK configuration flow.
+8. REGRESSIONS — 0
+
+---
+
+### Task 3: Prefer backend gateway; use config as fallback (Mobile App)
+
+1. TASK NAME — Prefer backend gateway; use config as fallback
+2. TASK TYPE — 🔧 Change Request / Refactor
+3. DATE — 2026-07-11
+4. TIME SPENT — 1.5
+5. FILES MODIFIED — 1 (`lib/features/instant_saving/payment_handler.dart` [Mobile])
+6. TEST CASES — No (Verified manually: Refactored the Flutter `PaymentHandler` to prioritize the gateway returned from the backend initiate API response (`purchase.paymentGateway`). If this is empty or unrecognized, it falls back to resolving the gateway locally via `savingConfigProvider` config fallback.)
+7. BRAIN/RECIPE — Yes: Aligned with payment initialization flow in `Transactions/MODULE_BRAIN.md` where backend acts as the single source of truth for active provider.
+8. REGRESSIONS — 0
+
+---
+
+### Task 4: Switch API endpoint to staging environment (Mobile App)
+
+1. TASK NAME — Switch API endpoint to staging environment
+2. TASK TYPE — 🔧 Configuration / Refactor
+3. DATE — 2026-07-11
+4. TIME SPENT — 0.5
+5. FILES MODIFIED — 1 (`lib/core/config/app_config.dart` [Mobile])
+6. TEST CASES — No (Manual verification: Switched the default API base URL from production (`api.startgold.com`) to staging (`startgoldapi.logimaxindia.com`) to facilitate end-to-end integration testing of payment routing flows against the sandbox gateway env.)
+7. BRAIN/RECIPE — No
+8. REGRESSIONS — 0
+
+---
+
