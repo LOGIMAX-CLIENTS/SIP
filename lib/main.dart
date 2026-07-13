@@ -14,7 +14,7 @@ import 'shared/theme/app_theme.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/localization/language_provider.dart';
 import 'core/services/fcm_service.dart';
-import 'package:screen_protector/screen_protector.dart';
+import 'core/security/screenshot_security_service.dart';
 import 'core/security/clipboard_security_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -45,16 +45,10 @@ void main() async {
       return;
     }
 
-    // 2. FLAG_SECURE — prevent content from appearing in recent apps (Android)
-    //    and enable iOS blur overlay. Also blocks screenshots/screen recording.
-    //    MainActivity.kt sets this natively; this ensures it persists after
-    //    hot restarts and engine recreations.
-    try {
-      await ScreenProtector.preventScreenshotOn();
-      await ScreenProtector.protectDataLeakageWithBlur();
-    } catch (e) {
-      debugPrint('Screen protection init error: $e');
-    }
+    // 2. Screenshot & Screen Recording Protection
+    //    Initializes and sets FLAG_SECURE on Android and blur overlay on iOS
+    //    based on configuration.
+    await ScreenshotSecurityService.initialize();
     // 3. Clear clipboard on launch (VAPT: Clipboard Leakage)
     //    Clears both system clipboard AND keyboard clipboard strip (Gboard).
     await ClipboardSecurityService.clearClipboard();

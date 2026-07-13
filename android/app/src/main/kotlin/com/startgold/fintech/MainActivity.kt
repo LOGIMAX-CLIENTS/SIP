@@ -33,9 +33,24 @@ class MainActivity : FlutterFragmentActivity() {
                         clearClipboard()
                         result.success(true)
                     }
+                    "setScreenshotProtection" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        setScreenshotProtection(enabled)
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun setScreenshotProtection(enabled: Boolean) {
+        runOnUiThread {
+            if (enabled) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
     }
 
     /**

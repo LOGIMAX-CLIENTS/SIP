@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
-import 'package:screen_protector/screen_protector.dart';
+import '../../../core/security/screenshot_security_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../controller/auth_controller.dart';
 import '../../../routes/app_router.dart';
@@ -53,15 +53,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   Future<void> _secureScreen() async {
-    await ScreenProtector.preventScreenshotOn();
-    await ScreenProtector.protectDataLeakageWithBlur();
+    await ScreenshotSecurityService.secureScreen();
   }
 
   Future<void> _releaseScreen() async {
-    // Only remove the iOS blur overlay on dispose.
-    // Do NOT call preventScreenshotOff() — it removes FLAG_SECURE on
-    // Android, making app content visible in the recent-apps switcher.
-    await ScreenProtector.protectDataLeakageWithBlurOff();
+    await ScreenshotSecurityService.releaseScreen();
   }
 
   void _startTimer() {
