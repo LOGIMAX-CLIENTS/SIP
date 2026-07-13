@@ -280,6 +280,103 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         ? AsyncData<MarketRates>(displayRates)
         : liveMarket; // still loading on first open
 
+    if (_isProcessing) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment(-0.87, -0.5),
+                  end: Alignment(0.87, 0.5),
+                  colors: [Color(0xFF003716), Color(0xFF167525)],
+                  stops: [0.0223, 0.9399],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(24.w, 16.h, 24.w, 16.h),
+                  child: Text(
+                    ref.tr('Secure Payment'),
+                    textAlign: TextAlign.left,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 32.w),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 50.w,
+                        height: 50.w,
+                        child: const CircularProgressIndicator(
+                          color: Color(0xFF1B882C),
+                          strokeWidth: 4,
+                        ),
+                      ),
+                      SizedBox(height: 32.h),
+                      Text(
+                        ref.tr('Processing Payment...'),
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 20.sp,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF003716),
+                        ),
+                      ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        ref.tr('Please do not press back or close the app while we secure your transaction.'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13.sp,
+                          color: Colors.black45,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 24.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.shield_outlined,
+                        color: const Color(0xFF91411D), size: 14.sp),
+                    SizedBox(width: 6.w),
+                    Text(
+                      ref.tr('100% Secure Transaction'),
+                      style: TextStyle(
+                        fontSize: 11.sp,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF91411D).withOpacity(0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
