@@ -280,7 +280,6 @@ class PaymentHandler {
   void _onCashfreeSuccess(String orderId) async {
     SecureLogger.d('[PaymentHandler] Cashfree SUCCESS → orderId=$orderId');
     AppLifecycleObserver.suppressAppLock = false;
-    _onLoadingEnd?.call();
     await _confirmAndNavigate(orderId);
   }
 
@@ -292,7 +291,6 @@ class PaymentHandler {
     SecureLogger.e(
         '[PaymentHandler] Cashfree ERROR → orderId=$orderId | ${errorResponse.getMessage()}');
     AppLifecycleObserver.suppressAppLock = false;
-    _onLoadingEnd?.call();
 
     // Always notify the server even on failure so it can update order status.
     final fallbackMsg =
@@ -320,6 +318,8 @@ class PaymentHandler {
       // Server error during confirm — still navigate to result screen.
       SecureLogger.e('[PaymentHandler] confirm-payment threw: $e');
     }
+
+    _onLoadingEnd?.call();
 
     if (!context.mounted) return;
 

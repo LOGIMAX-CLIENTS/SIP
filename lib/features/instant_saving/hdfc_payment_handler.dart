@@ -238,8 +238,8 @@ class HdfcPaymentHandler {
 
     switch (methodCall.method) {
       case 'hide_loader':
-        // SDK has rendered its own UI — hide our loading indicator.
-        _onLoadingEnd?.call();
+        // SDK has rendered its own UI — keep loader active in background.
+        // _onLoadingEnd?.call();
         break;
 
       case 'process_result':
@@ -267,7 +267,6 @@ class HdfcPaymentHandler {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _handleProcessResult(MethodCall methodCall) {
-    _onLoadingEnd?.call();
     AppLifecycleObserver.suppressAppLock = false;
 
     try {
@@ -289,6 +288,7 @@ class HdfcPaymentHandler {
               '[HdfcPaymentHandler] User cancelled payment (status=$status)');
           AppLifecycleObserver.suppressAppLock = false;
           if (orderId.isEmpty) {
+            _onLoadingEnd?.call();
             if (context.mounted) {
               Navigator.pushReplacement(
                 context,
@@ -349,6 +349,8 @@ class HdfcPaymentHandler {
     } catch (e) {
       SecureLogger.e('[HdfcPaymentHandler] confirm-payment threw: $e');
     }
+
+    _onLoadingEnd?.call();
 
     if (!context.mounted) return;
 
