@@ -177,3 +177,59 @@
 
 ---
 
+---
+
+# AI-Assisted Development Report — 13 July 2026
+
+---
+
+## Tasks Completed with AI Agent (Antigravity)
+
+---
+
+### Task 1: Centralize Screenshot and Screen Recording Protection Logic
+
+1. TASK NAME — Centralize Screenshot and Screen Recording Protection Logic
+2. TASK TYPE — 🔧 Feature Implementation / Refactor
+3. DATE — 2026-07-13
+4. TIME SPENT — 2.0
+5. FILES MODIFIED — 6 (`android/app/src/main/kotlin/com/startgold/fintech/MainActivity.kt`, `lib/core/config/app_config.dart`, `lib/core/security/screenshot_security_service.dart` [NEW], `lib/features/auth/otp/otp_screen.dart`, `lib/features/mpin/mpin_screen.dart`, `lib/main.dart`)
+6. TEST CASES — No (Manual verification: Extracted screenshot and screen recording protection into a dedicated `ScreenshotSecurityService` class, removing duplicate `ScreenProtector` calls. Integrated native Android screenshot protection via method channel. Consolidated global configuration control.)
+7. BRAIN/RECIPE — No
+8. REGRESSIONS — 0
+
+---
+
+### Task 2: Implement Custom Payment Processing UI and Defer Loader Dismissal
+
+1. TASK NAME — Implement Custom Payment Processing UI and Defer Loader Dismissal
+2. TASK TYPE — 🔧 Feature Implementation / Refactor
+3. DATE — 2026-07-13
+4. TIME SPENT — 1.5
+5. FILES MODIFIED — 3 (`lib/features/instant_saving/hdfc_payment_handler.dart`, `lib/features/instant_saving/instant_saving_screen.dart`, `lib/features/instant_saving/payment_handler.dart`)
+6. TEST CASES — No (Manual verification: Introduced a custom payment processing screen overlay in `InstantSavingScreen` and deferred loading indicator dismissal until the entire payment flow (both HDFC and Cashfree) completes to prevent flickering or premature close of user feedback state.)
+7. BRAIN/RECIPE — No
+8. REGRESSIONS — 0
+
+---
+
+# AI-Assisted Development Report — 14 July 2026
+
+---
+
+## Tasks Completed with AI Agent (Antigravity)
+
+---
+
+### Task 1: Enable Dynamic Remote Configuration for Screenshot Protection
+
+1. TASK NAME — Enable Dynamic Remote Configuration for Screenshot Protection
+2. TASK TYPE — 🔧 Feature Implementation / Refactor
+3. DATE — 2026-07-14
+4. TIME SPENT — 1.0
+5. FILES MODIFIED — 2 (`lib/core/config/app_config.dart`, `lib/core/providers/app_control_provider.dart`)
+6. TEST CASES — No (Manual verification: Updated `AppConfig` to make `enableScreenshotProtection` mutable. Integrated check in `AppControlNotifier` to dynamically update screenshot protection and reinitialize `ScreenshotSecurityService` when `enable_screenshot_protection` config received from app control API changes at runtime.)
+7. BRAIN/RECIPE — No
+8. REGRESSIONS — 0
+
+---
