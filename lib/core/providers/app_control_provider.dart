@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../config/app_config.dart';
 import '../models/app_control_model.dart';
 import '../services/app_control_service.dart';
 import '../security/certificate_pinning.dart';
+import '../security/screenshot_security_service.dart';
 
 // ─── Intervals ────────────────────────────────────────────────────────────────
 const _kAlertPollInterval = Duration(minutes: 1); // check every 1 min globally
@@ -121,6 +123,18 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
       if (rawPins is List && rawPins.isNotEmpty) {
         final pins = rawPins.cast<String>();
         await CertificatePinning.updatePins(pins);
+      }
+
+      // ── Dynamic Screenshot Protection Update ──
+      final security = dataMap is Map ? dataMap['security'] : null;
+      if (security is Map) {
+        final enableSec = security['enable_screenshot_protection'];
+        if (enableSec is bool) {
+          if (AppConfig.enableScreenshotProtection != enableSec) {
+            AppConfig.enableScreenshotProtection = enableSec;
+            await ScreenshotSecurityService.initialize();
+          }
+        }
       }
 
       if (kDebugMode) {
