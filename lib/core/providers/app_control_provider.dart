@@ -7,6 +7,7 @@ import '../models/app_control_model.dart';
 import '../services/app_control_service.dart';
 import '../security/certificate_pinning.dart';
 import '../security/screenshot_security_service.dart';
+import 'environment_provider.dart';
 
 // ─── Intervals ────────────────────────────────────────────────────────────────
 const _kAlertPollInterval = Duration(minutes: 1); // check every 1 min globally
@@ -309,12 +310,17 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
   }
 }
 
-final _appControlServiceProvider =
-    Provider<AppControlService>((ref) => AppControlService());
+final _appControlServiceProvider = Provider<AppControlService>((ref) {
+  ref.watch(environmentProvider);
+  return AppControlService();
+});
 
 final appControlProvider =
     StateNotifierProvider<AppControlNotifier, AppControlState>(
-  (ref) => AppControlNotifier(ref.read(_appControlServiceProvider)),
+  (ref) {
+    ref.watch(environmentProvider);
+    return AppControlNotifier(ref.read(_appControlServiceProvider));
+  },
 );
 
 /// Result of a [checkBeforeAction] call.

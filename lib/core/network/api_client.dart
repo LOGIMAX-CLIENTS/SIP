@@ -33,6 +33,10 @@ class ApiClient {
     ApiSecurityInterceptor.fetchAndCachePublicKey();
   }
 
+  void updateBaseUrl(String newUrl) {
+    _dio.options.baseUrl = newUrl;
+  }
+
   Future<Response> get(
     String path, {
     Map<String, dynamic>? queryParameters,

@@ -16,11 +16,13 @@ import 'core/localization/language_provider.dart';
 import 'core/services/fcm_service.dart';
 import 'core/security/screenshot_security_service.dart';
 import 'core/security/clipboard_security_service.dart';
+import 'core/services/environment_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await EnvironmentService.initialize();
 
   // Firebase + FCM — mobile only (Android / iOS).
   // Web does not support firebase_messaging or flutter_local_notifications.

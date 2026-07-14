@@ -17,6 +17,8 @@ import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/shared_service.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../core/services/environment_service.dart';
+import '../../../core/providers/environment_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -217,12 +219,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         SizedBox(height: 80.h),
                         FadeInAnimation(
                           delay: const Duration(milliseconds: 200),
-                          child: Text(
-                            'Phone Number*',
-                            style: TextStyle(
-                              fontSize: 20.sp,
-                              fontWeight: FontWeight.bold,
-                              color: primaryTextColor,
+                          child: GestureDetector(
+                            onLongPress: _showSecretCodeDialog,
+                            behavior: HitTestBehavior.opaque,
+                            child: Text(
+                              'Phone Number*',
+                              style: TextStyle(
+                                fontSize: 20.sp,
+                                fontWeight: FontWeight.bold,
+                                color: primaryTextColor,
+                              ),
                             ),
                           ),
                         ),
@@ -505,5 +511,270 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _navigating = false;
       }
     }
+  }
+
+  void _showSecretCodeDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final primaryTextColor = isDark ? Colors.white : const Color(0xFF333333);
+    final secondaryTextColor = isDark ? Colors.white70 : const Color(0xFF666666);
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        final codeController = TextEditingController();
+        return Dialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20.r),
+            side: BorderSide(color: primaryTextColor.withOpacity(0.08)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 24.h),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Developer Access',
+                  style: TextStyle(
+                    fontFamily: 'PlayfairDisplay',
+                    fontSize: 18.sp,
+                    fontWeight: FontWeight.bold,
+                    color: primaryTextColor,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 8.h),
+                Text(
+                  'Enter environment code to proceed.',
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    color: secondaryTextColor,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 20.h),
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12.r),
+                    border: Border.all(color: primaryTextColor.withOpacity(0.1)),
+                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 16.w),
+                  child: TextField(
+                    controller: codeController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    autofocus: true,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 8,
+                      color: primaryTextColor,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(4),
+                    ],
+                    onChanged: (val) {
+                      if (val.trim() == '7') {
+                        Navigator.of(context).pop();
+                        _showEnvironmentSelectionDialog();
+                      }
+                    },
+                    decoration: const InputDecoration(
+                      hintText: '••••',
+                      border: InputBorder.none,
+                      counterText: '',
+                    ),
+                  ),
+                ),
+                SizedBox(height: 20.h),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: secondaryTextColor,
+                      fontSize: 14.sp,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEnvironmentSelectionDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final primaryTextColor = isDark ? Colors.white : const Color(0xFF333333);
+    final secondaryTextColor = isDark ? Colors.white70 : const Color(0xFF666666);
+    final currentEnv = ref.read(environmentProvider);
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20.r),
+            side: BorderSide(color: primaryTextColor.withOpacity(0.08)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 24.h),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Select Environment',
+                  style: TextStyle(
+                    fontFamily: 'PlayfairDisplay',
+                    fontSize: 18.sp,
+                    fontWeight: FontWeight.bold,
+                    color: primaryTextColor,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 8.h),
+                Text(
+                  'Choose the target API and WebSocket server.',
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    color: secondaryTextColor,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 24.h),
+
+                // Staging Button
+                _buildEnvOption(
+                  label: 'Staging',
+                  envValue: EnvironmentService.envStaging,
+                  isActive: currentEnv == EnvironmentService.envStaging,
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await EnvironmentService.setEnvironment(EnvironmentService.envStaging);
+                    ref.read(environmentProvider.notifier).state = EnvironmentService.envStaging;
+                    if (context.mounted) {
+                      AppToast.show(
+                        context,
+                        'Switched to Staging environment',
+                        type: ToastType.success,
+                      );
+                    }
+                  },
+                ),
+                SizedBox(height: 12.h),
+
+                // Production Button
+                _buildEnvOption(
+                  label: 'Production',
+                  envValue: EnvironmentService.envProduction,
+                  isActive: currentEnv == EnvironmentService.envProduction,
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await EnvironmentService.setEnvironment(EnvironmentService.envProduction);
+                    ref.read(environmentProvider.notifier).state = EnvironmentService.envProduction;
+                    if (context.mounted) {
+                      AppToast.show(
+                        context,
+                        'Switched to Production environment',
+                        type: ToastType.success,
+                      );
+                    }
+                  },
+                ),
+                SizedBox(height: 16.h),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: secondaryTextColor,
+                      fontSize: 14.sp,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEnvOption({
+    required String label,
+    required String envValue,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryTextColor = isDark ? Colors.white : const Color(0xFF333333);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 54.h,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12.r),
+          border: Border.all(
+            color: isActive
+                ? const Color(0xFF1B882C)
+                : (isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1)),
+            width: isActive ? 2 : 1,
+          ),
+          color: isActive
+              ? const Color(0xFF1B882C).withOpacity(0.08)
+              : (isDark ? Colors.white.withOpacity(0.02) : Colors.transparent),
+        ),
+        padding: EdgeInsets.symmetric(horizontal: 16.w),
+        child: Row(
+          children: [
+            Icon(
+              isActive ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: isActive ? const Color(0xFF1B882C) : Colors.grey,
+              size: 20.sp,
+            ),
+            SizedBox(width: 12.w),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 16.sp,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                color: primaryTextColor,
+              ),
+            ),
+            if (isActive) ...[
+              const Spacer(),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B882C),
+                  borderRadius: BorderRadius.circular(20.r),
+                ),
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                child: Text(
+                  'Active',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
