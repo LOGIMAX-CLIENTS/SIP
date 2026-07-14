@@ -163,12 +163,16 @@ class AppControlData {
   final AppAlert? alert;
   final MaintenanceInfo maintenance;
   final String responsePlatform; // platform field from API response
+  final bool dynamicSwitching;
+  final int? dynamicSwitchingPassword;
 
   const AppControlData({
     this.versionInfo,
     this.alert,
     this.maintenance = MaintenanceInfo.off,
     this.responsePlatform = '',
+    this.dynamicSwitching = false,
+    this.dynamicSwitchingPassword,
   });
 
   /// Whether the response platform matches the running device platform.
@@ -198,6 +202,10 @@ class AppControlData {
               ? MaintenanceInfo.fromJson(data['maintenance'])
               : MaintenanceInfo.off,
       responsePlatform: (data['platform'] as String?) ?? '',
+      dynamicSwitching: data['dynamic_switching'] == true,
+      dynamicSwitchingPassword: data['dynamic_switching_password'] != null 
+          ? int.tryParse(data['dynamic_switching_password'].toString()) 
+          : null,
     );
   }
 }
