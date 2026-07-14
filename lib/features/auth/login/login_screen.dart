@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
+import 'dart:async';
 
 import '../controller/auth_controller.dart';
 import '../../../core/utils/validators.dart';
@@ -19,6 +20,7 @@ import '../../../core/services/shared_service.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/providers/environment_provider.dart';
+import '../../../core/providers/app_control_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -35,6 +37,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final TapGestureRecognizer _privacyRecognizer = TapGestureRecognizer();
   DateTime? _lastBackPressTime; // tracks double-tap-to-exit timing
   bool _navigating = false; // guards against double-tap navigation
+  Timer? _longPressTimer;
 
   @override
   void initState() {
@@ -52,6 +55,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   void dispose() {
+    _longPressTimer?.cancel();
     _termsRecognizer.dispose();
     _privacyRecognizer.dispose();
     _mobileController.dispose();
@@ -220,7 +224,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         FadeInAnimation(
                           delay: const Duration(milliseconds: 200),
                           child: GestureDetector(
-                            onLongPress: _showSecretCodeDialog,
+                            onTapDown: (_) {
+                              final appControl = ref.read(appControlProvider).data;
+                              if (appControl?.dynamicSwitching == true) {
+                                _longPressTimer?.cancel();
+                                _longPressTimer = Timer(const Duration(seconds: 5), () {
+                                  final pw = appControl?.dynamicSwitchingPassword?.toString() ?? '0998';
+                                  _showSecretCodeDialog(pw);
+                                });
+                              }
+                            },
+                            onTapUp: (_) => _longPressTimer?.cancel(),
+                            onTapCancel: () => _longPressTimer?.cancel(),
                             behavior: HitTestBehavior.opaque,
                             child: Text(
                               'Phone Number*',
@@ -513,7 +528,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  void _showSecretCodeDialog() {
+  void _showSecretCodeDialog(String requiredPassword) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF1E293B) : Colors.white;
     final primaryTextColor = isDark ? Colors.white : const Color(0xFF333333);
@@ -580,7 +595,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       LengthLimitingTextInputFormatter(4),
                     ],
                     onChanged: (val) {
-                      if (val.trim() == '7') {
+                      if (val.trim() == requiredPassword) {
                         Navigator.of(context).pop();
                         _showEnvironmentSelectionDialog();
                       }
