@@ -63,9 +63,17 @@ class SavingService {
     return PurchaseInitiateResponse.fromJson(response.data['data']);
   }
 
-  Future<Map<String, dynamic>> confirmPayment(String orderId) async {
+  Future<Map<String, dynamic>> confirmPayment(
+    String orderId, {
+    String? razorpayPaymentId,
+    String? razorpaySignature,
+    String? razorpayOrderId,
+  }) async {
     final response = await _apiClient.post('savings/confirm-payment', data: {
       'order_id': orderId,
+      if (razorpayPaymentId != null) 'razorpay_payment_id': razorpayPaymentId,
+      if (razorpaySignature != null) 'razorpay_signature': razorpaySignature,
+      if (razorpayOrderId != null) 'razorpay_order_id': razorpayOrderId,
     });
     return response.data;
   }
