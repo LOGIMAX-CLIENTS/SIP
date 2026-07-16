@@ -46,6 +46,7 @@ import '../../core/security/secure_logger.dart';
 import '../../shared/widgets/app_toast.dart';
 import 'controller/saving_controller.dart';
 import 'hdfc_payment_handler.dart';
+import 'razorpay_payment_handler.dart';
 import 'models/saving_models.dart';
 import 'screens/purchase_success_screen.dart';
 
@@ -196,7 +197,7 @@ class PaymentHandler {
       // the order's specific payment provider and payload (e.g. sdkPayload or sessionId).
       // Fall back to config-resolved gateway only if the API returned gateway is empty or unrecognized.
       String gateway = purchase.paymentGateway;
-      if (gateway.isEmpty || (gateway != 'hdfc' && gateway != 'cashfree')) {
+      if (gateway.isEmpty || (gateway != 'hdfc' && gateway != 'cashfree' && gateway != 'razorpay')) {
         final config = ref.read(savingConfigProvider).valueOrNull;
         if (paymentMethod != null && config != null && config.paymentMethods.containsKey(paymentMethod)) {
           gateway = config.paymentMethods[paymentMethod]!;
@@ -206,6 +207,8 @@ class PaymentHandler {
 
       if (gateway == 'hdfc') {
         _launchHdfc(purchase, confirmedAmount, paymentMethod);
+      } else if (gateway == 'razorpay') {
+        _launchRazorpay(purchase, confirmedAmount, paymentMethod);
       } else {
         _launchCashfree(purchase);
       }
@@ -221,6 +224,23 @@ class PaymentHandler {
 
     final hdfc = HdfcPaymentHandler(ref: ref, context: context);
     hdfc.launchPayment(
+      purchase: purchase,
+      confirmedAmountInr: confirmedAmount,
+      paymentMethod: paymentMethod,
+      onLoadingStart: _onLoadingStart,
+      onLoadingEnd: _onLoadingEnd,
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STEP 2b — Launch Razorpay Checkout
+  // ─────────────────────────────────────────────────────────────────────────
+
+  void _launchRazorpay(PurchaseInitiateResponse purchase, double confirmedAmount, String? paymentMethod) {
+    SecureLogger.d('[PaymentHandler] Routing to Razorpay gateway...');
+
+    final razorpay = RazorpayPaymentHandler(ref: ref, context: context);
+    razorpay.launchPayment(
       purchase: purchase,
       confirmedAmountInr: confirmedAmount,
       paymentMethod: paymentMethod,
