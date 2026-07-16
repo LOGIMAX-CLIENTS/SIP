@@ -123,6 +123,9 @@ class PurchaseInitiateResponse {
   final String? merchantId;
   final String? clientId;
   final String? hdfcEnvironment;
+  // ── Razorpay fields ──────────────────────────────────────────────────────
+  final String? rzOrderId;
+  final String? keyId;
 
   PurchaseInitiateResponse({
     this.orderId,
@@ -137,6 +140,8 @@ class PurchaseInitiateResponse {
     this.merchantId,
     this.clientId,
     this.hdfcEnvironment,
+    this.rzOrderId,
+    this.keyId,
   });
 
   factory PurchaseInitiateResponse.fromJson(Map<String, dynamic> json) {
@@ -155,6 +160,8 @@ class PurchaseInitiateResponse {
       merchantId: json['merchant_id']?.toString(),
       clientId: json['client_id']?.toString(),
       hdfcEnvironment: json['hdfc_environment']?.toString(),
+      rzOrderId: json['rz_order_id']?.toString() ?? json['session_id']?.toString(),
+      keyId: json['key_id']?.toString(),
     );
   }
 }

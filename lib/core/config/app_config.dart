@@ -3,11 +3,11 @@ class AppConfig {
 
   /// Current environment name (dev | staging | production).
   /// Override at build time: --dart-define=ENV=dev
-  static const String environment =
-      String.fromEnvironment('ENV', defaultValue: 'production');
+  static String environment =
+      const String.fromEnvironment('ENV', defaultValue: 'production');
 
   /// If no flag is passed the production URL is used as default.
-  static const String baseUrl = String.fromEnvironment(
+  static String baseUrl = const String.fromEnvironment(
     'BASE_URL',
    // defaultValue: 'https://api.startgold.com/api/api/v1/', //  Live
    defaultValue:'https://startgoldapi.logimaxindia.com/api/api/v1/', // Staging

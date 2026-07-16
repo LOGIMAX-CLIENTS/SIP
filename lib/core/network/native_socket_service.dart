@@ -2,13 +2,12 @@ import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../features/market/models/market_rates.dart';
 import '../security/secure_logger.dart';
+import '../services/environment_service.dart';
 
 enum SocketStatus { connecting, connected, disconnected, error }
 
 class NativeSocketService {
-//  final String _wsUrl = 'wss://sgbackoffice.startgold.com/ws/'; //  Live
- final String _wsUrl = 'wss://startgoldapp.logimaxindia.com/ws/'; //  Staging
-//  final String _wsUrl = 'wss://vaptbackoffice.startgold.com/ws/'; //  VAPT Server
+  String get _wsUrl => EnvironmentService.wsUrl;
   final List<String> _protocols = [
     '0b286a8b1100f097e7c8e879dbd4174e468a9e92f888e6e289595efdd4747b89'
   ];
