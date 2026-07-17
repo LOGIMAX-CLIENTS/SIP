@@ -1,10 +1,15 @@
 class HistoryResponse {
   final List<TransactionItem> transactions;
   final Map<String, List<TransactionItem>> groupedData;
+  /// From the backend `pagination.has_next` flag — true while more pages
+  /// remain to be lazy-loaded. Defaults to false for any response that
+  /// omits `pagination` (keeps older/other callers safe).
+  final bool hasMore;
 
   HistoryResponse({
     required this.transactions,
     required this.groupedData,
+    this.hasMore = false,
   });
 
   factory HistoryResponse.fromJson(Map<String, dynamic> json) {
@@ -14,6 +19,7 @@ class HistoryResponse {
         : json;
     final groupedJson =
         data['grouped_transactions'] as Map<String, dynamic>? ?? {};
+    final pagination = data['pagination'] as Map<String, dynamic>?;
 
     final List<TransactionItem> flatList = [];
     final Map<String, List<TransactionItem>> groupedMap = {};
@@ -30,6 +36,7 @@ class HistoryResponse {
     return HistoryResponse(
       transactions: flatList,
       groupedData: groupedMap,
+      hasMore: pagination?['has_next'] == true,
     );
   }
 

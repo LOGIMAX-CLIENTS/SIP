@@ -1443,13 +1443,14 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ### 15.2 Fetch Transaction History
 - **Endpoint:** `POST transactions/history`
+- **Description:** Supports lazy-loading pagination for the Transaction History screen. The mobile app requests `limit: 5` on initial load, then `page: 2, 3, …` (still `limit: 5`) as the user scrolls, stopping once `pagination.has_next` is `false`. `page`/`limit` are clamped server-side (`limit` capped at 100; `page` clamped into `[1, total_pages]`).
 - **Request Body:**
 ```json
 {
   "id_customer": "C101",
   "metal_type": "1", // General filter
   "page": 1,
-  "limit": 20
+  "limit": 5
 }
 ```
 - **Response:**
@@ -1493,6 +1494,14 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
           "display_date": "05 Feb '25, 11:03am"
         }
       ]
+    },
+    "pagination": {
+      "page": 1,
+      "limit": 5,
+      "total_count": 42,
+      "total_pages": 9,
+      "has_next": true,
+      "has_prev": false
     }
   }
 }
