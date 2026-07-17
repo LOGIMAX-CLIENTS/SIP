@@ -1,29 +1,45 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import 'package:intl/intl.dart';
 import '../models/transaction_filter.dart';
+import '../models/history_filter_options_model.dart';
+
+/// Resolves a backend-supplied hex color (e.g. `"#10B981"`) to a [Color],
+/// falling back to [fallback] when absent or malformed.
+Color resolveHexColor(String? hex, Color fallback) {
+  if (hex == null || hex.isEmpty) return fallback;
+  var h = hex.replaceAll('#', '');
+  if (h.length == 6) h = 'FF$h';
+  final value = int.tryParse(h, radix: 16);
+  return value != null ? Color(value) : fallback;
+}
 
 /// Full-featured filter bottom sheet for Transaction History.
+///
+/// Commodity/Type/Status options come entirely from the backend
+/// (`POST transactions/filter-options` — see [HistoryFilterOptions]); the
+/// sheet never derives them from locally-loaded transactions. New
+/// commodities/types/statuses on the backend show up here without a mobile
+/// app release. While [filterOptions] is loading or errored, each dynamic
+/// section shows its own loading/error state — Date Range stays usable
+/// regardless since it doesn't depend on backend options.
 ///
 /// Usage:
 /// ```dart
 /// final result = await showTransactionFilterSheet(
 ///   context: context,
 ///   current: _filter,
-///   metalOptions: [...],
-///   typeOptions:  [...],
-///   statusOptions: [...],
+///   filterOptions: ref.watch(historyFilterOptionsProvider),
 /// );
 /// if (result != null) setState(() => _filter = result);
 /// ```
 Future<TransactionFilter?> showTransactionFilterSheet({
   required BuildContext context,
   required TransactionFilter current,
-  required List<String> metalOptions,
-  required List<String> typeOptions,
-  required List<String> statusOptions,
+  required AsyncValue<HistoryFilterOptions> filterOptions,
 }) {
   return showModalBottomSheet<TransactionFilter>(
     context: context,
@@ -31,24 +47,18 @@ Future<TransactionFilter?> showTransactionFilterSheet({
     backgroundColor: Colors.transparent,
     builder: (_) => _TransactionFilterSheet(
       current: current,
-      metalOptions: metalOptions,
-      typeOptions: typeOptions,
-      statusOptions: statusOptions,
+      filterOptions: filterOptions,
     ),
   );
 }
 
 class _TransactionFilterSheet extends StatefulWidget {
   final TransactionFilter current;
-  final List<String> metalOptions;
-  final List<String> typeOptions;
-  final List<String> statusOptions;
+  final AsyncValue<HistoryFilterOptions> filterOptions;
 
   const _TransactionFilterSheet({
     required this.current,
-    required this.metalOptions,
-    required this.typeOptions,
-    required this.statusOptions,
+    required this.filterOptions,
   });
 
   @override
@@ -207,8 +217,8 @@ class _TransactionFilterSheetState extends State<_TransactionFilterSheet> {
                     card: card,
                     border: border,
                     labelColor: label,
-                    child: _buildChipGroup(
-                      options: widget.metalOptions,
+                    child: _buildDynamicChipGroup(
+                      selector: (o) => o.commodities,
                       selected: _metal,
                       onTap: (val) =>
                           setState(() => _metal = val == _metal ? null : val),
@@ -224,12 +234,11 @@ class _TransactionFilterSheetState extends State<_TransactionFilterSheet> {
                     card: card,
                     border: border,
                     labelColor: label,
-                    child: _buildChipGroup(
-                      options: widget.typeOptions,
+                    child: _buildDynamicChipGroup(
+                      selector: (o) => o.transactionTypes,
                       selected: _type,
                       onTap: (val) =>
                           setState(() => _type = val == _type ? null : val),
-                      labelMapper: _typeLabel,
                     ),
                   ),
                   SizedBox(height: 16.h),
@@ -242,12 +251,11 @@ class _TransactionFilterSheetState extends State<_TransactionFilterSheet> {
                     card: card,
                     border: border,
                     labelColor: label,
-                    child: _buildChipGroup(
-                      options: widget.statusOptions,
+                    child: _buildDynamicChipGroup(
+                      selector: (o) => o.statuses,
                       selected: _status,
                       onTap: (val) =>
                           setState(() => _status = val == _status ? null : val),
-                      colorMapper: _statusColor,
                     ),
                   ),
                 ],
@@ -509,23 +517,62 @@ class _TransactionFilterSheetState extends State<_TransactionFilterSheet> {
     );
   }
 
-  // ── Chip group ────────────────────────────────────────────────────────
-  Widget _buildChipGroup({
-    required List<String> options,
+  // ── Dynamic (backend-driven) chip section ───────────────────────────────
+  /// Renders a chip group sourced entirely from [widget.filterOptions]
+  /// (the `transactions/filter-options` API response) — never derived from
+  /// locally-loaded transactions.
+  Widget _buildDynamicChipGroup({
+    required List<FilterOption> Function(HistoryFilterOptions) selector,
     required String? selected,
     required ValueChanged<String> onTap,
-    String Function(String)? labelMapper,
-    Color Function(String)? colorMapper,
+  }) {
+    return widget.filterOptions.when(
+      data: (options) {
+        final list = selector(options);
+        if (list.isEmpty) return _buildOptionsMessage('No options available');
+        return _buildChipGroup(options: list, selected: selected, onTap: onTap);
+      },
+      loading: () => Row(
+        children: [
+          SizedBox(
+            width: 14.w,
+            height: 14.w,
+            child: const CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 8.w),
+          _buildOptionsMessage('Loading options…'),
+        ],
+      ),
+      error: (_, __) => _buildOptionsMessage('Unable to load options'),
+    );
+  }
+
+  Widget _buildOptionsMessage(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.playfairDisplay(
+        fontSize: 12.sp,
+        fontWeight: FontWeight.w600,
+        color: Colors.grey.shade500,
+      ),
+    );
+  }
+
+  // ── Chip group ────────────────────────────────────────────────────────
+  Widget _buildChipGroup({
+    required List<FilterOption> options,
+    required String? selected,
+    required ValueChanged<String> onTap,
   }) {
     return Wrap(
       spacing: 8.w,
       runSpacing: 8.h,
       children: options.map((opt) {
-        final isSelected = opt == selected;
-        final displayLabel = labelMapper != null ? labelMapper(opt) : opt;
-        final color = colorMapper != null ? colorMapper(opt) : _green;
+        final isSelected = opt.value == selected;
+        final displayLabel = opt.label;
+        final color = resolveHexColor(opt.colorHex, _green);
         return GestureDetector(
-          onTap: () => onTap(opt),
+          onTap: () => onTap(opt.value),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 8.h),
@@ -671,33 +718,4 @@ class _TransactionFilterSheetState extends State<_TransactionFilterSheet> {
   // ── Helpers ────────────────────────────────────────────────────────────
   String _capitalise(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
-
-  String _typeLabel(String raw) {
-    switch (raw.toLowerCase()) {
-      case 'purchase':
-        return 'Purchase';
-      case 'withdrawal':
-        return 'Withdrawal';
-      case 'referral':
-        return 'Referral';
-      case 'sip':
-        return 'SIP Autopay';
-      default:
-        return _capitalise(raw);
-    }
-  }
-
-  Color _statusColor(String raw) {
-    switch (raw.toLowerCase()) {
-      case 'success':
-        return const Color(0xFF10B981);
-      case 'pending':
-        return const Color(0xFFF59E0B);
-      case 'cancelled':
-      case 'failed':
-        return const Color(0xFFDC2626);
-      default:
-        return _green;
-    }
-  }
 }

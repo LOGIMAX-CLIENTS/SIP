@@ -127,30 +127,4 @@ class TransactionFilter {
     return grouped;
   }
 
-  /// Extract unique metal names from history for filter options.
-  static List<String> metalOptions(HistoryResponse history) {
-    final Set<String> set = {};
-    for (final tx in history.transactions) {
-      if (tx.metalName.isNotEmpty) set.add(tx.metalName);
-    }
-    return set.toList()..sort();
-  }
-
-  /// Extract unique types from history.
-  static List<String> typeOptions(HistoryResponse history) {
-    final Set<String> set = {};
-    for (final tx in history.transactions) {
-      if (tx.type.isNotEmpty) set.add(tx.type);
-    }
-    return set.toList()..sort();
-  }
-
-  /// Extract unique statuses from history.
-  static List<String> statusOptions(HistoryResponse history) {
-    final Set<String> set = {};
-    for (final tx in history.transactions) {
-      if (tx.status.isNotEmpty) set.add(tx.status);
-    }
-    return set.toList()..sort();
-  }
 }
