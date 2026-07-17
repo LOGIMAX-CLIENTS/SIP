@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../controller/history_controller.dart';
 import '../models/history_models.dart';
 import '../models/transaction_filter.dart';
+import '../models/history_filter_options_model.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import './transaction_filter_sheet.dart';
 
@@ -31,13 +32,16 @@ class _TransactionHistoryScreenState
   static const _darkGreen = Color(0xFF003716);
 
   // ── Open filter sheet ─────────────────────────────────────────────
-  Future<void> _openFilterSheet(HistoryResponse history) async {
+  /// Commodity/Type/Status options are sourced entirely from
+  /// [historyFilterOptionsProvider] (`transactions/filter-options`) — never
+  /// derived from the locally-loaded transaction list.
+  Future<void> _openFilterSheet(
+    AsyncValue<HistoryFilterOptions> filterOptionsAsync,
+  ) async {
     final result = await showTransactionFilterSheet(
       context: context,
       current: _filter,
-      metalOptions: TransactionFilter.metalOptions(history),
-      typeOptions: TransactionFilter.typeOptions(history),
-      statusOptions: TransactionFilter.statusOptions(history),
+      filterOptions: filterOptionsAsync,
     );
     if (result != null && mounted) {
       setState(() => _filter = result);
@@ -68,6 +72,7 @@ class _TransactionHistoryScreenState
   @override
   Widget build(BuildContext context) {
     final historyAsync = ref.watch(historyProvider);
+    final filterOptionsAsync = ref.watch(historyFilterOptionsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -85,14 +90,15 @@ class _TransactionHistoryScreenState
               }
             },
             trailing: historyAsync.when(
-              data: (history) => _buildFilterButton(history, isDark),
+              data: (_) => _buildFilterButton(filterOptionsAsync, isDark),
               loading: () => const SizedBox.shrink(),
               error: (_, __) => const SizedBox.shrink(),
             ),
           ),
           Expanded(
             child: historyAsync.when(
-              data: (history) => _buildBody(context, history, isDark),
+              data: (history) =>
+                  _buildBody(context, history, filterOptionsAsync, isDark),
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (err, _) => Center(child: Text('Error: $err')),
             ),
@@ -103,10 +109,11 @@ class _TransactionHistoryScreenState
   }
 
   // ── Header filter button ─────────────────────────────────────────
-  Widget _buildFilterButton(HistoryResponse history, bool isDark) {
+  Widget _buildFilterButton(
+      AsyncValue<HistoryFilterOptions> filterOptionsAsync, bool isDark) {
     final count = _filter.activeCount;
     return GestureDetector(
-      onTap: () => _openFilterSheet(history),
+      onTap: () => _openFilterSheet(filterOptionsAsync),
       child: Container(
         margin: EdgeInsets.only(right: 16.w),
         padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
@@ -137,27 +144,32 @@ class _TransactionHistoryScreenState
   }
 
   // ── Body ──────────────────────────────────────────────────────────
-  Widget _buildBody(
-      BuildContext context, HistoryResponse history, bool isDark) {
+  Widget _buildBody(BuildContext context, HistoryResponse history,
+      AsyncValue<HistoryFilterOptions> filterOptionsAsync, bool isDark) {
     final filtered = _filter.applyTo(history);
+    // Status color lookup is backend-driven (filterOptionsAsync); while it's
+    // loading/erroring, _statusColor falls back to a built-in color for
+    // already-known statuses — it never invents new status values.
+    final statusOptions = filterOptionsAsync.valueOrNull?.statuses ?? const [];
 
     return Column(
       children: [
         // ── Active filter chips row ──────────────────────────────
-        if (!_filter.isEmpty) _buildActiveChipsRow(isDark),
+        if (!_filter.isEmpty) _buildActiveChipsRow(isDark, statusOptions),
 
         // ── Transactions list ────────────────────────────────────
         Expanded(
           child: filtered.isEmpty
               ? _buildEmptyState(isDark)
-              : _buildList(context, filtered, history.transactions.length, isDark),
+              : _buildList(context, filtered, history.transactions.length,
+                  statusOptions, isDark),
         ),
       ],
     );
   }
 
   // ── Active chips row ──────────────────────────────────────────────
-  Widget _buildActiveChipsRow(bool isDark) {
+  Widget _buildActiveChipsRow(bool isDark, List<FilterOption> statusOptions) {
     final chips = <Widget>[];
 
     // Date chip
@@ -205,7 +217,7 @@ class _TransactionHistoryScreenState
       chips.add(_buildActiveChip(
         label: _capitalise(_filter.status!),
         icon: Icons.verified_rounded,
-        color: _statusColor(_filter.status!),
+        color: _statusColor(_filter.status!, statusOptions),
         onRemove: () => _removeChip('status'),
       ));
     }
@@ -341,22 +353,27 @@ class _TransactionHistoryScreenState
   }
 
   // ── Transaction list ──────────────────────────────────────────────
-  Widget _buildList(BuildContext context,
-      Map<String, List<TransactionItem>> filtered, int total, bool isDark) {
+  Widget _buildList(
+      BuildContext context,
+      Map<String, List<TransactionItem>> filtered,
+      int total,
+      List<FilterOption> statusOptions,
+      bool isDark) {
     return ListView.builder(
       padding: EdgeInsets.only(top: 4.h, bottom: 120.h),
       itemCount: filtered.keys.length,
       itemBuilder: (context, index) {
         final dateKey = filtered.keys.elementAt(index);
         final items = filtered[dateKey]!;
-        return _buildDateGroup(context, dateKey, items, isDark);
+        return _buildDateGroup(context, dateKey, items, statusOptions, isDark);
       },
     );
   }
 
   // ── Date group ────────────────────────────────────────────────────
   Widget _buildDateGroup(BuildContext context, String date,
-      List<TransactionItem> transactions, bool isDark) {
+      List<TransactionItem> transactions,
+      List<FilterOption> statusOptions, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -402,15 +419,16 @@ class _TransactionHistoryScreenState
           ),
         ),
         ...transactions
-            .map((tx) => _buildTransactionCard(context, tx, isDark))
+            .map((tx) =>
+                _buildTransactionCard(context, tx, statusOptions, isDark))
             .toList(),
       ],
     );
   }
 
   // ── Transaction card ──────────────────────────────────────────────
-  Widget _buildTransactionCard(
-      BuildContext context, TransactionItem tx, bool isDark) {
+  Widget _buildTransactionCard(BuildContext context, TransactionItem tx,
+      List<FilterOption> statusOptions, bool isDark) {
     final isSaving = tx.type == 'purchase';
     final isReferral = tx.type == 'referral';
     final isSip = tx.type == 'sip';
@@ -441,7 +459,7 @@ class _TransactionHistoryScreenState
                     ? const Color(0xFF0D9488) // teal — Offer Reward (same as SIP)
                     : const Color(0xFFDC2626); // red — Withdrawal
 
-    final statusColor = _statusColor(tx.status);
+    final statusColor = _statusColor(tx.status, statusOptions);
 
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 5.h),
@@ -637,20 +655,19 @@ class _TransactionHistoryScreenState
   String _capitalise(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
-  Color _statusColor(String raw) {
-    switch (raw.toLowerCase()) {
-      case 'success':
-        return const Color(0xFF10B981);
-      case 'pending':
-        return const Color(0xFFF59E0B);
-      case 'on hold':
-        return const Color(0xFFD97706);
-      case 'cancelled':
-      case 'failed':
-        return const Color(0xFFDC2626);
-      default:
-        return const Color(0xFF64748B);
+  /// Resolves a status's display color from the backend-driven
+  /// [statusOptions] (`transactions/filter-options`), falling back to
+  /// [defaultStatusColorHex] for a status not present there.
+  Color _statusColor(String raw, List<FilterOption> statusOptions) {
+    String? hex;
+    for (final option in statusOptions) {
+      if (option.value.toLowerCase() == raw.toLowerCase()) {
+        hex = option.colorHex;
+        break;
+      }
     }
+    hex ??= defaultStatusColorHex(raw);
+    return resolveHexColor(hex, const Color(0xFF64748B));
   }
 
   String _getTransactionIcon(String type, String metalName) {

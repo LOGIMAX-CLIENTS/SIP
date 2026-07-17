@@ -1401,7 +1401,47 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ## 15. Transaction History & Details
 
-### 15.1 Fetch Transaction History
+### 15.1 Fetch Filter Options
+- **Endpoint:** `POST transactions/filter-options`
+- **Authorization:** `Bearer Token`
+- **Description:** Returns the dynamic set of commodities, transaction types, and statuses available for the Transaction History filter sheet. `commodities` is sourced live from the active-commodities master table; `transaction_types` and `statuses` are a backend-maintained constant (`TransactionService._TRANSACTION_TYPE_OPTIONS` / `_STATUS_OPTIONS`). New values on either side show up in the app without a mobile release. `color` is optional per status and is a hex string (e.g. `"#10B981"`); the app falls back to a built-in color for a known status/type when a color/label is omitted. `value` is the exact string the app matches against each transaction's `type` / `metal_name` / `status` field (case-insensitive) — it must stay in sync with the literal values emitted by `transactions/history`.
+- **Request Body:** `{}` (empty — user identified from token)
+- **Response:**
+```json
+{
+  "success": true,
+  "message": "Filter options retrieved successfully",
+  "data": {
+    "commodities": [
+      { "value": "Gold 24K", "label": "Gold 24K" },
+      { "value": "Silver", "label": "Silver" }
+    ],
+    "transaction_types": [
+      { "value": "purchase", "label": "Instant Saving" },
+      { "value": "sip", "label": "SIP Autopay" },
+      { "value": "withdrawal", "label": "Withdrawal" },
+      { "value": "referral", "label": "Referral Reward" },
+      { "value": "offer", "label": "Offer Reward" }
+    ],
+    "statuses": [
+      { "value": "Success", "label": "Success", "color": "#10B981" },
+      { "value": "Pending", "label": "Pending", "color": "#F59E0B" },
+      { "value": "Processing", "label": "Processing", "color": "#3B82F6" },
+      { "value": "Cancelled", "label": "Cancelled", "color": "#DC2626" },
+      { "value": "Failed", "label": "Failed", "color": "#DC2626" },
+      { "value": "Reversed", "label": "Reversed", "color": "#DC2626" },
+      { "value": "Hold", "label": "On Hold", "color": "#D97706" },
+      { "value": "On Hold", "label": "On Hold", "color": "#D97706" },
+      { "value": "Released", "label": "Released", "color": "#10B981" },
+      { "value": "Credited", "label": "Credited", "color": "#10B981" }
+    ]
+  }
+}
+```
+
+---
+
+### 15.2 Fetch Transaction History
 - **Endpoint:** `POST transactions/history`
 - **Request Body:**
 ```json
@@ -1460,7 +1500,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ---
 
-### 15.2 Fetch Transaction Details
+### 15.3 Fetch Transaction Details
 - **Endpoint:** `POST transactions/details`
 - **Request Body:**
 ```json
@@ -1518,7 +1558,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ---
 
-### 15.3 Fetch SIP Transaction History
+### 15.4 Fetch SIP Transaction History
 - **Page Name:** `SipTransactionHistoryScreen`
 - **Endpoint:** `POST sip/transactions`
 - **Authorization:** `Bearer Token`
@@ -1551,7 +1591,7 @@ Lists all saved UPI handles and bank accounts. First item is auto-selected in UI
 
 ---
 
-### 15.4 Fetch SIP Transaction Details
+### 15.5 Fetch SIP Transaction Details
 - **Page Name:** `SipTransactionDetailsScreen`
 - **Endpoint:** `POST sip/transaction-details`
 - **Authorization:** `Bearer Token`
