@@ -31,10 +31,44 @@ class _TransactionHistoryScreenState
   static const _green = Color(0xFF1B882C);
   static const _darkGreen = Color(0xFF003716);
 
+  // ── Lazy-load scroll trigger ────────────────────────────────────────
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController()..addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Fires ~300px before the physical bottom so the next batch is ready
+  /// before the user actually hits the end (smooth, no visible pause).
+  /// [HistoryNotifier.loadMore] itself guards against duplicate in-flight
+  /// requests and stops once the backend reports no more pages, so calling
+  /// it repeatedly while inside the threshold zone is safe.
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 300) {
+      ref.read(historyProvider.notifier).loadMore();
+    }
+  }
+
   // ── Open filter sheet ─────────────────────────────────────────────
   /// Commodity/Type/Status options are sourced entirely from
   /// [historyFilterOptionsProvider] (`transactions/filter-options`) — never
   /// derived from the locally-loaded transaction list.
+  ///
+  /// Tapping "Apply" *or* "Show All" both flow through here — "Show All"
+  /// just pops an empty [TransactionFilter] — and either way
+  /// [_applyFilter] fetches page 1 fresh from the backend with those
+  /// criteria, so the button always reflects the customer's full history,
+  /// not just whatever page is already cached locally.
   Future<void> _openFilterSheet(
     AsyncValue<HistoryFilterOptions> filterOptionsAsync,
   ) async {
@@ -44,36 +78,54 @@ class _TransactionHistoryScreenState
       filterOptions: filterOptionsAsync,
     );
     if (result != null && mounted) {
-      setState(() => _filter = result);
+      _applyFilter(result);
     }
+  }
+
+  /// Updates local UI state (active chips, badge count) and triggers a
+  /// fresh server-side fetch for the new filter criteria.
+  void _applyFilter(TransactionFilter filter) {
+    setState(() => _filter = filter);
+    ref.read(historyProvider.notifier).applyFilter(filter);
   }
 
   // ── Remove individual chip ────────────────────────────────────────
   void _removeChip(String chipType) {
-    setState(() {
-      switch (chipType) {
-        case 'date':
-          _filter = _filter.copyWith(clearDates: true);
-          break;
-        case 'metal':
-          _filter = _filter.copyWith(clearMetal: true);
-          break;
-        case 'type':
-          _filter = _filter.copyWith(clearType: true);
-          break;
-        case 'status':
-          _filter = _filter.copyWith(clearStatus: true);
-          break;
-      }
-    });
+    late final TransactionFilter next;
+    switch (chipType) {
+      case 'date':
+        next = _filter.copyWith(clearDates: true);
+        break;
+      case 'metal':
+        next = _filter.copyWith(clearMetal: true);
+        break;
+      case 'type':
+        next = _filter.copyWith(clearType: true);
+        break;
+      case 'status':
+        next = _filter.copyWith(clearStatus: true);
+        break;
+      default:
+        next = _filter;
+    }
+    _applyFilter(next);
   }
 
   // ── Build ─────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final historyAsync = ref.watch(historyProvider);
+    final historyState = ref.watch(historyProvider);
     final filterOptionsAsync = ref.watch(historyFilterOptionsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    Widget body;
+    if (historyState.error != null) {
+      body = Center(child: Text('Error: ${historyState.error}'));
+    } else if (historyState.isLoading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else {
+      body = _buildBody(context, historyState, filterOptionsAsync, isDark);
+    }
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -89,20 +141,11 @@ class _TransactionHistoryScreenState
                 ref.read(selectedTabProvider.notifier).state = 0;
               }
             },
-            trailing: historyAsync.when(
-              data: (_) => _buildFilterButton(filterOptionsAsync, isDark),
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
+            trailing: (historyState.isLoading || historyState.error != null)
+                ? const SizedBox.shrink()
+                : _buildFilterButton(filterOptionsAsync, isDark),
           ),
-          Expanded(
-            child: historyAsync.when(
-              data: (history) =>
-                  _buildBody(context, history, filterOptionsAsync, isDark),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, _) => Center(child: Text('Error: $err')),
-            ),
-          ),
+          Expanded(child: body),
         ],
       ),
     );
@@ -144,9 +187,12 @@ class _TransactionHistoryScreenState
   }
 
   // ── Body ──────────────────────────────────────────────────────────
-  Widget _buildBody(BuildContext context, HistoryResponse history,
+  Widget _buildBody(BuildContext context, HistoryPageState historyState,
       AsyncValue<HistoryFilterOptions> filterOptionsAsync, bool isDark) {
-    final filtered = _filter.applyTo(history);
+    // Filtering is applied server-side (see HistoryNotifier.applyFilter) —
+    // groupedData already reflects the currently-active filter, so it's
+    // rendered as-is rather than re-filtered locally.
+    final filtered = historyState.groupedData;
     // Status color lookup is backend-driven (filterOptionsAsync); while it's
     // loading/erroring, _statusColor falls back to a built-in color for
     // already-known statuses — it never invents new status values.
@@ -161,8 +207,8 @@ class _TransactionHistoryScreenState
         Expanded(
           child: filtered.isEmpty
               ? _buildEmptyState(isDark)
-              : _buildList(context, filtered, history.transactions.length,
-                  statusOptions, isDark),
+              : _buildList(context, filtered, statusOptions,
+                  historyState.isLoadingMore, isDark),
         ),
       ],
     );
@@ -248,7 +294,7 @@ class _TransactionHistoryScreenState
               )),
           // Clear all
           GestureDetector(
-            onTap: () => setState(() => _filter = TransactionFilter.empty),
+            onTap: () => _applyFilter(TransactionFilter.empty),
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
               decoration: BoxDecoration(
@@ -356,17 +402,40 @@ class _TransactionHistoryScreenState
   Widget _buildList(
       BuildContext context,
       Map<String, List<TransactionItem>> filtered,
-      int total,
       List<FilterOption> statusOptions,
+      bool isLoadingMore,
       bool isDark) {
+    final dateKeys = filtered.keys.toList();
+    final itemCount = dateKeys.length + (isLoadingMore ? 1 : 0);
     return ListView.builder(
+      controller: _scrollController,
       padding: EdgeInsets.only(top: 4.h, bottom: 120.h),
-      itemCount: filtered.keys.length,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
-        final dateKey = filtered.keys.elementAt(index);
+        if (index >= dateKeys.length) {
+          return _buildBottomLoader();
+        }
+        final dateKey = dateKeys[index];
         final items = filtered[dateKey]!;
         return _buildDateGroup(context, dateKey, items, statusOptions, isDark);
       },
+    );
+  }
+
+  // ── Bottom "loading next batch" indicator ──────────────────────────
+  Widget _buildBottomLoader() {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 20.h),
+      child: Center(
+        child: SizedBox(
+          width: 22.w,
+          height: 22.w,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.2,
+            color: _green,
+          ),
+        ),
+      ),
     );
   }
 
@@ -612,7 +681,7 @@ class _TransactionHistoryScreenState
           ),
           SizedBox(height: 20.h),
           GestureDetector(
-            onTap: () => setState(() => _filter = TransactionFilter.empty),
+            onTap: () => _applyFilter(TransactionFilter.empty),
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
               decoration: BoxDecoration(

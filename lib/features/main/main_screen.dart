@@ -89,7 +89,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         ref.invalidate(savingConfigProvider);
         break;
       case 2:
-        ref.invalidate(historyProvider);
+        // historyProvider is intentionally NOT invalidated here — Transaction
+        // History lazy-loads in pages and must preserve already-loaded pages
+        // (and effective scroll position, since the tab widget stays mounted
+        // via IndexedStack) across tab switches instead of refetching page 1
+        // every time the user returns to this tab.
         ref.invalidate(portfolioProvider);
         break;
       case 3:
