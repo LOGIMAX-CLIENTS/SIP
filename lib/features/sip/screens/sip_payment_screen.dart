@@ -10,17 +10,21 @@ import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsubssession.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cftheme/cftheme.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../core/security/secure_logger.dart';
 import '../../../core/error/failures.dart';
+import '../../../core/security/app_lifecycle_observer.dart';
+import '../../../core/providers/user_provider.dart';
 import '../../../routes/app_router.dart';
 import '../controller/sip_controller.dart';
 
-/// SIP Payment screen – opens Cashfree **Subscription Checkout** for mandate auth.
+/// SIP Payment screen – opens the active gateway's mandate-authorization
+/// checkout, selected via `paymentData['payment_gateway']` ('cashfree' | 'razorpay').
 ///
-/// Uses the Cashfree Flutter SDK's **Subscription flow**:
+/// Cashfree path uses the Cashfree Flutter SDK's **Subscription flow**:
 ///   • `CFSubscriptionSessionBuilder` — builds a subscription session
 ///   • `CFSubscriptionPaymentBuilder` — builds the payment object
 ///   • `CFPaymentGatewayService.doPayment()` — launches the checkout
@@ -29,6 +33,13 @@ import '../controller/sip_controller.dart';
 /// which only supports one-time payments.
 ///
 /// Ref: https://www.cashfree.com/docs/payments/subscription/subscription_checkout_flutter_sdk
+///
+/// Razorpay path uses Razorpay Standard Checkout with `subscription_id` in
+/// place of `order_id` — the same SDK/pattern already used for one-time
+/// purchases in lib/features/instant_saving/razorpay_payment_handler.dart,
+/// adapted here for AutoPay/eMandate registration. Both paths converge on
+/// the same `_verifyMandateStatus()` call — the backend's `sip/confirm`
+/// endpoint is already gateway-agnostic.
 class SipPaymentScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> paymentData;
 
@@ -41,29 +52,44 @@ class SipPaymentScreen extends ConsumerStatefulWidget {
 class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     with WidgetsBindingObserver {
   final _cfPaymentGatewayService = CFPaymentGatewayService();
+  Razorpay? _razorpay;
   bool _isProcessing = true;
   bool _isVerifying = false;
   bool _sdkCallbackReceived = false;
   String? _error;
 
+  /// Which checkout to launch: 'cashfree' (default) or 'razorpay'.
+  String get _gateway =>
+      (widget.paymentData['payment_gateway'] as String?)?.toLowerCase() ??
+      'cashfree';
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Register subscription-specific callbacks
-    _cfPaymentGatewayService.setCallback(
-      _onSubscriptionVerify,
-      _onSubscriptionFailure,
-    );
-    // Launch checkout after frame renders
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _launchSubscriptionCheckout();
-    });
+
+    if (_gateway == 'razorpay') {
+      // Launch checkout after frame renders
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _launchRazorpayAutoPay();
+      });
+    } else {
+      // Register subscription-specific callbacks
+      _cfPaymentGatewayService.setCallback(
+        _onSubscriptionVerify,
+        _onSubscriptionFailure,
+      );
+      // Launch checkout after frame renders
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _launchSubscriptionCheckout();
+      });
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _razorpay?.clear();
     super.dispose();
   }
 
@@ -207,6 +233,140 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
         'order_id': orderId ?? '',
       },
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RAZORPAY AUTOPAY CHECKOUT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Launches Razorpay Standard Checkout for AutoPay/eMandate registration.
+  /// Same SDK/pattern as the one-time purchase flow
+  /// (instant_saving/razorpay_payment_handler.dart), but passes
+  /// `subscription_id` instead of `order_id`/`amount` — Razorpay's
+  /// documented mechanism for mandate authorization via Checkout.
+  Future<void> _launchRazorpayAutoPay() async {
+    try {
+      // Backend maps its gateway subscription id into the same 'order_id'
+      // slot Cashfree's cf_subscription_id occupies (see
+      // gateway/providers/razorpay/subscription.py) — this is Razorpay's
+      // real sub_xxx id, required by Checkout.
+      final razorpaySubscriptionId =
+          widget.paymentData['order_id']?.toString() ?? '';
+      final keyId = widget.paymentData['key_id']?.toString() ?? '';
+
+      SecureLogger.d('SIP PAYMENT: Razorpay paymentData received:');
+      SecureLogger.d('  razorpay_subscription_id: $razorpaySubscriptionId');
+      SecureLogger.d('  key_id set: ${keyId.isNotEmpty}');
+
+      if (razorpaySubscriptionId.isEmpty || keyId.isEmpty) {
+        SecureLogger.e('SIP PAYMENT: Missing Razorpay subscription id or key_id!');
+        setState(() {
+          _isProcessing = false;
+          _error = 'Invalid payment session. Please try again.';
+        });
+        return;
+      }
+
+      _razorpay = Razorpay();
+      _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onRazorpaySuccess);
+      _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onRazorpayError);
+      _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onRazorpayExternalWallet);
+
+      final user = ref.read(userProvider);
+
+      // Suppress app lock — the user may leave the app to authorize via a
+      // UPI app (Google Pay / PhonePe / etc.) and resume shortly after;
+      // an MPIN/session-check must not fire mid-authorization.
+      AppLifecycleObserver.suppressAppLock = true;
+
+      final options = {
+        'key': keyId,
+        'subscription_id': razorpaySubscriptionId,
+        'name': 'startGOLD',
+        'description': 'Auto Savings Plan Authorization',
+        'prefill': {
+          'contact': user?.mobile ?? '',
+          'email': user?.email ?? '',
+        },
+      };
+
+      SecureLogger.d('SIP PAYMENT: Opening Razorpay AutoPay checkout...');
+      _razorpay!.open(options);
+    } catch (e) {
+      AppLifecycleObserver.suppressAppLock = false;
+      SecureLogger.e('SIP PAYMENT: Razorpay launch error: $e');
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _error = (e is Failure)
+              ? e.message
+              : 'Failed to start payment. Please try again.';
+        });
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RAZORPAY CALLBACKS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  void _onRazorpaySuccess(PaymentSuccessResponse response) {
+    _sdkCallbackReceived = true;
+    AppLifecycleObserver.suppressAppLock = false;
+    SecureLogger.d(
+        'SIP PAYMENT: ✅ Razorpay mandate authorized — paymentId=${response.paymentId}');
+    _verifyMandateStatus();
+  }
+
+  /// Maps a Razorpay failure to a user-friendly message.
+  ///
+  /// `response.message` is unreliable — the SDK sometimes returns the
+  /// literal string "undefined" (not null) instead of a real description,
+  /// which bypasses a plain `?? fallback`. Known error codes are mapped
+  /// first; free-text messages are only used when they look genuine.
+  String _friendlyRazorpayErrorMessage(PaymentFailureResponse response) {
+    switch (response.code) {
+      case Razorpay.NETWORK_ERROR:
+        return 'Network error. Please check your internet connection and try again.';
+      case Razorpay.INVALID_OPTIONS:
+        return 'This payment could not be started. Please try again or contact support.';
+      case Razorpay.PAYMENT_CANCELLED:
+        return 'Payment was cancelled.';
+      case Razorpay.TLS_ERROR:
+        return "A secure connection could not be established. Please update your device's security settings and try again.";
+    }
+    final msg = response.message?.trim();
+    if (msg == null ||
+        msg.isEmpty ||
+        msg.toLowerCase() == 'undefined' ||
+        msg.toLowerCase() == 'null') {
+      return 'Your payment could not be completed. Please try again.';
+    }
+    return msg;
+  }
+
+  void _onRazorpayError(PaymentFailureResponse response) {
+    _sdkCallbackReceived = true;
+    AppLifecycleObserver.suppressAppLock = false;
+    final errorMsg = _friendlyRazorpayErrorMessage(response);
+    SecureLogger.e(
+        'SIP PAYMENT: ❌ Razorpay FAILURE → code=${response.code} rawMessage=${response.message}');
+
+    if (!mounted) return;
+
+    final orderId = widget.paymentData['order_id']?.toString();
+    Navigator.pushReplacementNamed(
+      context,
+      AppRouter.sipFailure,
+      arguments: {
+        'message': errorMsg,
+        'order_id': orderId ?? '',
+      },
+    );
+  }
+
+  void _onRazorpayExternalWallet(ExternalWalletResponse response) {
+    SecureLogger.d('SIP PAYMENT: Razorpay external wallet: ${response.walletName}');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -446,7 +606,11 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
                   _isProcessing = true;
                   _error = null;
                 });
-                _launchSubscriptionCheckout();
+                if (_gateway == 'razorpay') {
+                  _launchRazorpayAutoPay();
+                } else {
+                  _launchSubscriptionCheckout();
+                }
               },
               gradient: const LinearGradient(
                 colors: [Color(0xFF003716), Color(0xFF167525)],

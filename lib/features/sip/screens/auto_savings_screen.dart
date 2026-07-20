@@ -1599,6 +1599,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'environment': response.environment ?? 'SANDBOX',
                 'subscription_id': response.subscriptionId,
                 'amount': sipState.amount,
+                'payment_gateway': response.paymentGateway,
+                'key_id': response.keyId,
               },
             );
           } else {
