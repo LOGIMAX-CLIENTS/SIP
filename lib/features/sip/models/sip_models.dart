@@ -95,6 +95,14 @@ class SipCreateResponse {
   /// Full Cashfree subscription checkout URL.
   /// Backend obtains this from Cashfree's mandate creation response.
   final String? authorizationLink;
+  /// Which gateway/SDK the client should launch: 'cashfree' or 'razorpay'.
+  /// Defaults to 'cashfree' for backward compatibility with older backend
+  /// responses that predate this field.
+  final String paymentGateway;
+  /// Razorpay Checkout publishable key (rzp_test_xxx / rzp_live_xxx).
+  /// Empty when paymentGateway == 'cashfree' — the Cashfree subscription
+  /// SDK does not need a client-side key.
+  final String? keyId;
 
   SipCreateResponse({
     required this.success,
@@ -105,6 +113,8 @@ class SipCreateResponse {
     this.sessionId,
     this.environment,
     this.authorizationLink,
+    this.paymentGateway = 'cashfree',
+    this.keyId,
   });
 
   factory SipCreateResponse.fromJson(Map<String, dynamic> json) {
@@ -126,6 +136,9 @@ class SipCreateResponse {
       sessionId: data['session_id']?.toString(),
       environment: data['environment']?.toString(),
       authorizationLink: data['authorization_link']?.toString(),
+      paymentGateway:
+          data['payment_gateway']?.toString().toLowerCase() ?? 'cashfree',
+      keyId: data['key_id']?.toString(),
     );
   }
 }
