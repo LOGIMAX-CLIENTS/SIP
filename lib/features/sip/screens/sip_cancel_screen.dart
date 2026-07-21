@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:intl/intl.dart';
 
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/custom_button.dart';
@@ -11,13 +12,24 @@ import '../models/sip_models.dart';
 
 /// Cancel Savings screen â€“ reason selection + confirmation.
 ///
-/// â€¢ Cannot cancel within 24 hours of creation (enforced server-side;
-///   an info banner is shown if the API returns an error hinting at this).
-/// â€¢ Reason is mandatory.
+/// â€¢ Cannot cancel within 24 hours of creation. [cancelEligibleAt] is
+///   computed server-side (SIPSchemeService.get_manage_details) from the
+///   same creation timestamp cancel_by_subscription_id() enforces, so the
+///   displayed date/time can never drift from the actual rule. Re-checked
+///   dynamically against DateTime.now() on every build, not just once at
+///   navigation time.
+/// â€¢ Reason is mandatory (only relevant once cancellation is allowed).
 class SipCancelScreen extends ConsumerStatefulWidget {
   final String subscriptionId;
+  final DateTime? cancelEligibleAt;
+  final bool canCancelNow;
 
-  const SipCancelScreen({super.key, required this.subscriptionId});
+  const SipCancelScreen({
+    super.key,
+    required this.subscriptionId,
+    this.cancelEligibleAt,
+    this.canCancelNow = true,
+  });
 
   @override
   ConsumerState<SipCancelScreen> createState() => _SipCancelScreenState();
@@ -27,8 +39,29 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
   String? _selectedReason;
   bool _isCancelling = false;
 
+  /// Re-derived from the live clock on every build (not cached), so if the
+  /// user sits on this screen across the eligibility boundary, the UI
+  /// updates on next rebuild without needing a fresh API call.
+  bool get _isBlocked =>
+      !widget.canCancelNow ||
+      (widget.cancelEligibleAt != null &&
+          DateTime.now().isBefore(widget.cancelEligibleAt!));
+
+  String get _blockedMessage {
+    final eligible = widget.cancelEligibleAt;
+    if (eligible == null) {
+      return 'You cannot cancel a plan within 24 hours of creation. '
+          'Please try again later.';
+    }
+    final formatted = DateFormat('d MMM yyyy, h:mm a').format(eligible);
+    return 'You cannot cancel this SIP before $formatted.';
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isBlocked) {
+      return _buildBlockedState(context);
+    }
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
@@ -45,41 +78,6 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(height: 24.h),
-
-                    // â”€â”€ 24-hour info banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                    Container(
-                      padding: EdgeInsets.all(14.w),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(12.r),
-                        border: Border.all(
-                          color: const Color(0xFFD97706).withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.info_outline_rounded,
-                              size: 18.sp,
-                              color: const Color(0xFFD97706)),
-                          SizedBox(width: 10.w),
-                          Expanded(
-                            child: Text(
-                              'You cannot cancel a plan within 24 hours of creation. '
-                              'If your plan was created less than 24 hours ago, the cancellation will not be processed.',
-                              style: TextStyle(
-                                fontSize: 12.sp,
-                                fontWeight: FontWeight.w500,
-                                color: const Color(0xFF92400E),
-                                height: 1.4,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                     SizedBox(height: 24.h),
 
                     Text(
@@ -193,6 +191,104 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
                     ? _executeCancelConfirmation
                     : null,
                 backgroundColor: const Color(0xFFDC2626),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shown instead of the reason-selection flow while cancellation is
+  /// blocked by the 24-hour creation guard — cancellation is fully disabled
+  /// here rather than merely greyed out, since attempting it would only
+  /// fail server-side anyway.
+  Widget _buildBlockedState(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          GradientHeader(
+            title: 'Cancel Savings',
+            onBack: () => Navigator.pop(context),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24.w),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(height: 24.h),
+
+                    // ── Error box: cancellation not yet allowed ──────────
+                    Container(
+                      padding: EdgeInsets.all(16.w),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(12.r),
+                        border: Border.all(
+                          color: const Color(0xFFDC2626).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: EdgeInsets.all(4.w),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFDC2626),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.priority_high_rounded,
+                                size: 14.sp, color: Colors.white),
+                          ),
+                          SizedBox(width: 12.w),
+                          Expanded(
+                            child: Text(
+                              _blockedMessage,
+                              style: TextStyle(
+                                fontSize: 13.5.sp,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF991B1B),
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    SizedBox(height: 32.h),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(24.w, 12.h, 24.w, 16.h),
+              color: Colors.transparent,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF064E3B),
+                  side: const BorderSide(color: Color(0xFF064E3B), width: 1.5),
+                  minimumSize: Size(double.infinity, 52.h),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(100.r),
+                  ),
+                ),
+                child: Text(
+                  'Back',
+                  style: TextStyle(
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF064E3B),
+                  ),
+                ),
               ),
             ),
           ),

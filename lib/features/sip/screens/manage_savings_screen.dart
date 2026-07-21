@@ -209,6 +209,9 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
                     AppRouter.sipCancel,
                     arguments: {
                       'subscription_id': details.subscriptionId,
+                      'cancel_eligible_at':
+                          details.cancelEligibleAt?.toIso8601String(),
+                      'can_cancel_now': details.canCancelNow,
                     },
                   ).then((_) => _loadDetails());
                 },
