@@ -296,6 +296,12 @@ class AppRouter {
               {};
           return SipCancelScreen(
             subscriptionId: args['subscription_id'] ?? '',
+            cancelEligibleAt:
+                DateTime.tryParse(args['cancel_eligible_at']?.toString() ?? '')
+                    ?.toLocal(),
+            canCancelNow: args['can_cancel_now'] == null
+                ? true
+                : args['can_cancel_now'] == true,
           );
         },
         sipPayment: (context) {

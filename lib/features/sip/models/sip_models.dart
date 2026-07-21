@@ -213,6 +213,14 @@ class SipManageDetails {
   final String commodityName;
   final String? day;
   final int? date;
+  /// When this SIP becomes eligible for cancellation (creation + 24h),
+  /// computed server-side so the client never has to re-derive the rule.
+  /// Null if the creation timestamp wasn't available.
+  final DateTime? cancelEligibleAt;
+  /// Server's authoritative answer to "can this be cancelled right now".
+  /// Defaults to true when unknown, so an outdated app build fails open
+  /// (server-side cancel still enforces the real rule either way).
+  final bool canCancelNow;
 
   SipManageDetails({
     required this.subscriptionId,
@@ -223,6 +231,8 @@ class SipManageDetails {
     required this.commodityName,
     this.day,
     this.date,
+    this.cancelEligibleAt,
+    this.canCancelNow = true,
   });
 
   factory SipManageDetails.fromJson(Map<String, dynamic> json) {
@@ -235,6 +245,12 @@ class SipManageDetails {
       commodityName: json['commodity_name']?.toString() ?? '',
       day: json['day']?.toString(),
       date: int.tryParse(json['date']?.toString() ?? ''),
+      cancelEligibleAt: DateTime.tryParse(
+              json['cancel_eligible_at']?.toString() ?? '')
+          ?.toLocal(),
+      canCancelNow: json['can_cancel_now'] == null
+          ? true
+          : json['can_cancel_now'] == true,
     );
   }
 }
