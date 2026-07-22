@@ -34,12 +34,14 @@ import '../controller/sip_controller.dart';
 ///
 /// Ref: https://www.cashfree.com/docs/payments/subscription/subscription_checkout_flutter_sdk
 ///
-/// Razorpay path uses Razorpay Standard Checkout with `subscription_id` in
-/// place of `order_id` — the same SDK/pattern already used for one-time
-/// purchases in lib/features/instant_saving/razorpay_payment_handler.dart,
-/// adapted here for AutoPay/eMandate registration. Both paths converge on
-/// the same `_verifyMandateStatus()` call — the backend's `sip/confirm`
-/// endpoint is already gateway-agnostic.
+/// Razorpay path uses Razorpay Standard Checkout, same SDK/pattern already
+/// used for one-time purchases in
+/// lib/features/instant_saving/razorpay_payment_handler.dart, adapted here
+/// for AutoPay/eMandate registration. `paymentData['mode']` selects which
+/// Checkout option shape to use — 'subscriptions' (`subscription_id`) or
+/// 'recurring' (`order_id` + `recurring: '1'`) — see _launchRazorpayAutoPay.
+/// Both paths converge on the same `_verifyMandateStatus()` call — the
+/// backend's `sip/confirm` endpoint is already gateway-agnostic.
 class SipPaymentScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> paymentData;
 
@@ -241,25 +243,34 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
 
   /// Launches Razorpay Standard Checkout for AutoPay/eMandate registration.
   /// Same SDK/pattern as the one-time purchase flow
-  /// (instant_saving/razorpay_payment_handler.dart), but passes
-  /// `subscription_id` instead of `order_id`/`amount` — Razorpay's
-  /// documented mechanism for mandate authorization via Checkout.
+  /// (instant_saving/razorpay_payment_handler.dart).
+  ///
+  /// Two distinct Razorpay Checkout invocations exist depending on
+  /// `paymentData['mode']` (see shared/services/sip.py create_scheme):
+  ///   'subscriptions' (default) → order_id is a real sub_xxx id; Checkout
+  ///                               takes `subscription_id`.
+  ///   'recurring'               → order_id is a real order_xxx id (a UPI
+  ///                               Autopay token registration order);
+  ///                               Checkout takes `order_id` + `recurring: '1'`
+  ///                               instead. Passing the wrong shape to the
+  ///                               wrong option is rejected by Checkout.
   Future<void> _launchRazorpayAutoPay() async {
     try {
-      // Backend maps its gateway subscription id into the same 'order_id'
-      // slot Cashfree's cf_subscription_id occupies (see
-      // gateway/providers/razorpay/subscription.py) — this is Razorpay's
-      // real sub_xxx id, required by Checkout.
-      final razorpaySubscriptionId =
+      final razorpayOrderOrSubId =
           widget.paymentData['order_id']?.toString() ?? '';
       final keyId = widget.paymentData['key_id']?.toString() ?? '';
+      final mode =
+          (widget.paymentData['mode'] as String?)?.toLowerCase() ??
+          'subscriptions';
+      final isRecurring = mode == 'recurring';
 
       SecureLogger.d('SIP PAYMENT: Razorpay paymentData received:');
-      SecureLogger.d('  razorpay_subscription_id: $razorpaySubscriptionId');
+      SecureLogger.d('  mode: $mode');
+      SecureLogger.d('  razorpay_order_or_subscription_id: $razorpayOrderOrSubId');
       SecureLogger.d('  key_id set: ${keyId.isNotEmpty}');
 
-      if (razorpaySubscriptionId.isEmpty || keyId.isEmpty) {
-        SecureLogger.e('SIP PAYMENT: Missing Razorpay subscription id or key_id!');
+      if (razorpayOrderOrSubId.isEmpty || keyId.isEmpty) {
+        SecureLogger.e('SIP PAYMENT: Missing Razorpay subscription/order id or key_id!');
         setState(() {
           _isProcessing = false;
           _error = 'Invalid payment session. Please try again.';
@@ -281,7 +292,9 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
 
       final options = {
         'key': keyId,
-        'subscription_id': razorpaySubscriptionId,
+        ...isRecurring
+            ? {'order_id': razorpayOrderOrSubId, 'recurring': '1'}
+            : {'subscription_id': razorpayOrderOrSubId},
         'name': 'startGOLD',
         'description': 'Auto Savings Plan Authorization',
         'prefill': {
@@ -290,7 +303,7 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
         },
       };
 
-      SecureLogger.d('SIP PAYMENT: Opening Razorpay AutoPay checkout...');
+      SecureLogger.d('SIP PAYMENT: Opening Razorpay AutoPay checkout (mode=$mode)...');
       _razorpay!.open(options);
     } catch (e) {
       AppLifecycleObserver.suppressAppLock = false;
