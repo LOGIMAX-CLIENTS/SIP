@@ -44,6 +44,12 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..forward();
+    // Always fetch fresh data on screen entry — sipDetailsProvider is a
+    // plain (non-autoDispose) FutureProvider, so without this it keeps
+    // serving whatever was cached last, even after a mandate is
+    // cancelled/changed out-of-band (e.g. via the UPI app / GPay), since
+    // no in-app action fires to invalidate it in that case.
+    Future.microtask(() => ref.invalidate(sipDetailsProvider));
   }
 
   @override
@@ -92,7 +98,13 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       });
     });
 
-    // Sync active plans into state for duplicate checking
+    // Sync active plans into state for duplicate checking.
+    // WidgetRef.listen has no fireImmediately option, so an already-cached
+    // sipDetailsProvider value (e.g. resolved earlier on
+    // sip_overview_screen.dart) wouldn't otherwise reach this listener.
+    // We rely on the ref.invalidate(sipDetailsProvider) in initState to
+    // force a fresh emission right after mount, which this listener does
+    // catch.
     ref.listen<AsyncValue<List<SipPlanDetail>>>(sipDetailsProvider,
         (prev, next) {
       next.whenData((plans) {
