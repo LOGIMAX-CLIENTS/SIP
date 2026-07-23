@@ -95,6 +95,36 @@ class AuthService {
     return response.data;
   }
 
+  Future<Map<String, dynamic>> sendEmailOtp({
+    required String email,
+    String? fullName,
+  }) async {
+    final response = await _apiClient.post(
+      'users/auth/generate-email-otp',
+      data: {
+        'email': email,
+        'full_name': fullName,
+      },
+    );
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> verifyEmailOtp({
+    required String email,
+    required String otp,
+    required String otpReferenceId,
+  }) async {
+    final response = await _apiClient.post(
+      'users/auth/verify-email-otp',
+      data: {
+        'email': email,
+        'otp': otp,
+        'otp_reference_id': otpReferenceId,
+      },
+    );
+    return response.data;
+  }
+
   Future<Map<String, dynamic>> register({
     required String mobile,
     required String fullName,
@@ -326,6 +356,120 @@ class AuthNotifier extends StateNotifier<AuthState> {
           sessionData: data['data'],
           data: data['data'],
         );
+        return true;
+      } else {
+        String? errorMessage;
+        if (data['error'] != null && data['error']['message'] != null) {
+          final msg = data['error']['message'];
+          if (msg is Map) {
+            errorMessage = msg.values.first
+                .toString()
+                .replaceAll('[', '')
+                .replaceAll(']', '');
+          } else {
+            errorMessage = msg.toString();
+          }
+        }
+        errorMessage ??=
+            data['message'] ?? 'Invalid or expired OTP. Please try again.';
+        state = state.copyWith(isLoading: false, error: errorMessage);
+        return false;
+      }
+    } catch (e) {
+      String errorMessage = 'Verification failed. Please try again.';
+      if (e is DioException) {
+        if (e.response?.data != null) {
+          final respData = e.response?.data;
+          if (respData['error'] != null &&
+              respData['error']['message'] != null) {
+            final msg = respData['error']['message'];
+            if (msg is Map) {
+              errorMessage = msg.values.first
+                  .toString()
+                  .replaceAll('[', '')
+                  .replaceAll(']', '');
+            } else {
+              errorMessage = msg.toString();
+            }
+          } else {
+            errorMessage = respData['message'] ??
+                'Verification error [${e.response?.statusCode ?? 'No Connection'}]';
+          }
+        }
+      }
+      state = state.copyWith(isLoading: false, error: errorMessage);
+      return false;
+    }
+  }
+
+  Future<bool> sendEmailOtp(String email, {String? fullName}) async {
+    if (state.isLoading) return false;
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final data = await _authService.sendEmailOtp(email: email, fullName: fullName);
+
+      if (data['success'] == true) {
+        state = state.copyWith(isLoading: false, data: data['data']);
+        return true;
+      } else {
+        String? errorMessage;
+        if (data['error'] != null && data['error']['message'] != null) {
+          final msg = data['error']['message'];
+          if (msg is Map) {
+            errorMessage = msg.values.first.toString();
+          } else {
+            errorMessage = msg.toString();
+          }
+        }
+        errorMessage ??=
+            data['message'] ?? 'Failed to send OTP. Please try again.';
+        state = state.copyWith(isLoading: false, error: errorMessage);
+        return false;
+      }
+    } catch (e) {
+      String errorMessage = 'Connection error. Please check your internet.';
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout) {
+          errorMessage = 'Server timeout. Please try again later.';
+        } else if (e.response?.data != null) {
+          final respData = e.response?.data;
+          if (respData['error'] != null &&
+              respData['error']['message'] != null) {
+            final msg = respData['error']['message'];
+            if (msg is Map) {
+              errorMessage = msg.values.first
+                  .toString()
+                  .replaceAll('[', '')
+                  .replaceAll(']', '');
+            } else {
+              errorMessage = msg.toString();
+            }
+          } else {
+            errorMessage = respData['message'] ??
+                'Server unreachable [${e.response?.statusCode ?? 'No Connection'}]';
+          }
+        } else {
+          errorMessage = 'Server unreachable [No Data]';
+        }
+      }
+      state = state.copyWith(isLoading: false, error: errorMessage);
+      return false;
+    }
+  }
+
+  Future<bool> verifyEmailOtp(String email, String otp, String otpReferenceId) async {
+    if (state.isLoading) return false;
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final data = await _authService.verifyEmailOtp(
+        email: email,
+        otp: otp,
+        otpReferenceId: otpReferenceId,
+      );
+
+      if (data['success'] == true) {
+        state = state.copyWith(isLoading: false, data: data['data']);
         return true;
       } else {
         String? errorMessage;

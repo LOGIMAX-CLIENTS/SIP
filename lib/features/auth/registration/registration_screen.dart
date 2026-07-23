@@ -14,6 +14,8 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/utils/navigation_utils.dart';
+import '../../../core/utils/validators.dart';
+import 'email_otp_sheet.dart';
 
 class RegistrationScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -35,6 +37,11 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   bool _agreedToTerms = false;
   bool _isSubmitting = false;
 
+  // ── Mandatory email OTP verification state ──────────────────────────────
+  bool _emailVerified = false;
+  bool _isVerifyingEmail = false;
+  String? _verifiedEmail;
+
   late final TapGestureRecognizer _termsRecognizer;
 
   @override
@@ -42,6 +49,13 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     super.initState();
     _termsRecognizer = TapGestureRecognizer()
       ..onTap = () => Navigator.pushNamed(context, AppRouter.terms);
+
+    // Editing the email after verification invalidates that verification.
+    _emailController.addListener(() {
+      if (_emailVerified && _emailController.text.trim() != _verifiedEmail) {
+        setState(() => _emailVerified = false);
+      }
+    });
 
     Future.microtask(() {
       if (mounted) ref.read(authControllerProvider.notifier).clearError();
@@ -104,7 +118,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     final primaryTextColor = isDark ? Colors.white : const Color(0xFF333333);
     final inputBgColor = isDark ? Colors.white.withOpacity(0.05) : Colors.white;
 
-    final bool canSubmit = _agreedToTerms && !_isSubmitting && !authState.isLoading;
+    final bool canSubmit =
+        _agreedToTerms && _emailVerified && !_isSubmitting && !authState.isLoading;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -226,7 +241,53 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                         SizedBox(height: 24.h),
 
                         // Email Field
-                        _buildInputLabel('E-Mail *', primaryTextColor),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildInputLabel('E-Mail *', primaryTextColor),
+                            if (_emailVerified)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.check_circle,
+                                      size: 15.sp, color: const Color(0xFF1B882C)),
+                                  SizedBox(width: 4.w),
+                                  Text(
+                                    'Verified',
+                                    style: GoogleFonts.playfairDisplay(
+                                      fontSize: 13.sp,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF1B882C),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              GestureDetector(
+                                onTap: _isVerifyingEmail ? null : _verifyEmail,
+                                child: _isVerifyingEmail
+                                    ? SizedBox(
+                                        width: 14.w,
+                                        height: 14.w,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                              Colors.orangeAccent),
+                                        ),
+                                      )
+                                    : Text(
+                                        'Verify',
+                                        style: GoogleFonts.playfairDisplay(
+                                          fontSize: 13.sp,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.orangeAccent,
+                                          decoration: TextDecoration.underline,
+                                          decorationColor: Colors.orangeAccent,
+                                        ),
+                                      ),
+                              ),
+                          ],
+                        ),
                         SizedBox(height: 8.h),
                         _buildClassicTextField(
                           controller: _emailController,
@@ -234,19 +295,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
                           keyboardType: TextInputType.emailAddress,
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) {
-                              return 'E-Mail is required';
-                            }
-                            // RFC-compliant email pattern
-                            final emailRegex = RegExp(
-                              r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
-                            );
-                            if (!emailRegex.hasMatch(v.trim())) {
-                              return 'Enter a valid e-mail address';
-                            }
-                            return null;
-                          },
+                          validator: Validators.validateEmail,
                         ),
 
                         SizedBox(height: 24.h),
@@ -436,8 +485,53 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     );
   }
 
+  Future<void> _verifyEmail() async {
+    final email = _emailController.text.trim();
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+
+    setState(() => _isVerifyingEmail = true);
+    final success = await ref.read(authControllerProvider.notifier).sendEmailOtp(
+          email,
+          fullName: _nameController.text.trim().isNotEmpty
+              ? _nameController.text.trim()
+              : null,
+        );
+
+    if (!mounted) return;
+    setState(() => _isVerifyingEmail = false);
+    if (!success) return;
+
+    final otpReferenceId =
+        ref.read(authControllerProvider).data?['otp_reference_id'] as String?;
+    if (otpReferenceId == null) return;
+
+    final verified = await showEmailOtpSheet(
+      context,
+      email: email,
+      otpReferenceId: otpReferenceId,
+      fullName: _nameController.text.trim(),
+    );
+
+    if (verified == true && mounted) {
+      setState(() {
+        _emailVerified = true;
+        _verifiedEmail = email;
+      });
+    }
+  }
+
   Future<void> _handleRegistration() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (!_emailVerified) {
+      AppToast.show(context, 'Please verify your email before proceeding.',
+          type: ToastType.error);
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 

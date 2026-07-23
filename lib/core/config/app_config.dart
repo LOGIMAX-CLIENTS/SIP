@@ -47,6 +47,8 @@ class AppConfig {
   static const List<String> encryptedEndpoints = [
     'auth/generate-otp',
     'auth/verify-otp',
+    'auth/generate-email-otp',
+    'auth/verify-email-otp',
     'auth/register',
     'savings/initiate',
     'savings/check-eligibility',
