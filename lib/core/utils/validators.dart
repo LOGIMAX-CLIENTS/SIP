@@ -11,5 +11,14 @@
     if (value.length != 6) return 'Enter a 6-digit OTP';
     return null;
   }
+
+  static String? validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) return 'E-Mail is required';
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+    if (!emailRegex.hasMatch(value.trim())) return 'Enter a valid e-mail address';
+    return null;
+  }
 }
 

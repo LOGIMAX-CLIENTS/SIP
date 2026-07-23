@@ -439,6 +439,66 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
     }
     ```
 
+### 2.2.1 Generate Email OTP
+*   **Page Name:** `RegistrationScreen` (inline, Personal Information)
+*   **Reason:** Mandatory email verification during registration — sends a one-time code to the entered email address. The customer must verify it before `register-check`/`register` will succeed.
+*   **Trigger:** User taps "Verify" next to the E-Mail field.
+*   **Endpoint:** `POST users/auth/generate-email-otp`
+*   **Authorization:** None (pre-auth, unauthenticated endpoint)
+*   **Request Body:**
+    ```json
+    {
+      "email": "alex@gold.com",
+      "full_name": "Lord Alexander"
+    }
+    ```
+*   **Response (Success):**
+    ```json
+    {
+      "success": true,
+      "message": "OTP sent to your email.",
+      "data": {
+        "otp_reference_id": "uuid-string",
+        "email": "alex@gold.com"
+      }
+    }
+    ```
+*   **Error Scenarios:**
+    - Missing/invalid email format
+    - Email already registered with another account
+    - Resend requested before the cooldown window elapses (`"Please wait N second(s)..."`)
+    - Rate-limited (`EmailOTPSendThrottle`, default 3/min per IP)
+
+### 2.2.2 Verify Email OTP
+*   **Page Name:** `RegistrationScreen` (inline OTP bottom sheet)
+*   **Endpoint:** `POST users/auth/verify-email-otp`
+*   **Authorization:** None (pre-auth, unauthenticated endpoint)
+*   **Request Body:**
+    ```json
+    {
+      "email": "alex@gold.com",
+      "otp": "123456",
+      "otp_reference_id": "uuid-string"
+    }
+    ```
+*   **Response (Success):**
+    ```json
+    {
+      "success": true,
+      "message": "Email verified successfully.",
+      "data": {
+        "email": "alex@gold.com",
+        "otp_reference_id": "uuid-string",
+        "email_verified": true
+      }
+    }
+    ```
+*   **Error Scenarios:**
+    - OTP expired (default 10 min, configurable via `EMAIL_OTP_SECURITY` Config row)
+    - Max attempts exceeded (default 5)
+    - Incorrect OTP
+    - Rate-limited (`EmailOTPVerifyThrottle`, default 5/min per IP)
+
 ### 2.3 User Registration (Profile Creation)
 *   **Page Name:** `RegistrationScreen`
 *   **Reason:** To create a new profile for a first-time users.
@@ -525,7 +585,7 @@ echo | openssl s_client -connect vaptapi.startgold.com:443 2>/dev/null | openssl
 
 *   **Error Scenarios:**
     - Invalid or expired `temp_token`
-    - Email already in use
+    - Email missing, already in use, or not yet OTP-verified (see §2.2.1/§2.2.2 — `"Please verify your email before proceeding."`)
     - Invalid date of birth format
     - Invalid referral code
     - Server-side validation failures

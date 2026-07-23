@@ -133,6 +133,8 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
     const unauthenticatedEndpoints = [
       'auth/generate-otp',
       'auth/verify-otp',
+      'auth/generate-email-otp',
+      'auth/verify-email-otp',
       'auth/register-check',
       'auth/register',
       'auth/token/refresh',
