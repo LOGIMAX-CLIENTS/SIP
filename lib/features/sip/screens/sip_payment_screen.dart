@@ -263,11 +263,18 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
           (widget.paymentData['mode'] as String?)?.toLowerCase() ??
           'subscriptions';
       final isRecurring = mode == 'recurring';
+      // Recurring Payments mode only — Razorpay support identified
+      // omitting this as a likely cause of "Token absent for recurring
+      // payment": Checkout must be told which Customer the order/token was
+      // registered against, matching the customer_id used at order
+      // creation (see RazorpayRecurringService.create_subscription).
+      final customerId = widget.paymentData['customer_id']?.toString() ?? '';
 
       SecureLogger.d('SIP PAYMENT: Razorpay paymentData received:');
       SecureLogger.d('  mode: $mode');
       SecureLogger.d('  razorpay_order_or_subscription_id: $razorpayOrderOrSubId');
       SecureLogger.d('  key_id set: ${keyId.isNotEmpty}');
+      SecureLogger.d('  customer_id set: ${customerId.isNotEmpty}');
 
       if (razorpayOrderOrSubId.isEmpty || keyId.isEmpty) {
         SecureLogger.e('SIP PAYMENT: Missing Razorpay subscription/order id or key_id!');
@@ -293,7 +300,11 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
       final options = {
         'key': keyId,
         ...isRecurring
-            ? {'order_id': razorpayOrderOrSubId, 'recurring': '1'}
+            ? {
+                'order_id': razorpayOrderOrSubId,
+                'recurring': '1',
+                if (customerId.isNotEmpty) 'customer_id': customerId,
+              }
             : {'subscription_id': razorpayOrderOrSubId},
         'name': 'startGOLD',
         'description': 'Auto Savings Plan Authorization',
