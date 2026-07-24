@@ -1613,6 +1613,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'amount': sipState.amount,
                 'payment_gateway': response.paymentGateway,
                 'key_id': response.keyId,
+                'mode': response.mode,
+                'customer_id': response.customerId,
               },
             );
           } else {

@@ -103,6 +103,19 @@ class SipCreateResponse {
   /// Empty when paymentGateway == 'cashfree' — the Cashfree subscription
   /// SDK does not need a client-side key.
   final String? keyId;
+  /// Only meaningful when paymentGateway == 'razorpay': 'subscriptions'
+  /// (orderId is a real sub_xxx id; Checkout takes subscription_id) or
+  /// 'recurring' (orderId is a real order_xxx id; Checkout takes order_id +
+  /// recurring: '1' instead — see sip_payment_screen.dart). Defaults to
+  /// 'subscriptions' to match the backend's own default when this field is
+  /// absent (see shared/services/sip.py create_scheme).
+  final String mode;
+  /// Razorpay Recurring Payments mode only: the Razorpay Customer id
+  /// (cust_xxx) the order/token was registered against. Must be passed to
+  /// Checkout alongside order_id + recurring:'1' — Razorpay support
+  /// identified omitting this as a likely cause of "Token absent for
+  /// recurring payment". Empty for Subscriptions mode and Cashfree.
+  final String? customerId;
 
   SipCreateResponse({
     required this.success,
@@ -115,6 +128,8 @@ class SipCreateResponse {
     this.authorizationLink,
     this.paymentGateway = 'cashfree',
     this.keyId,
+    this.mode = 'subscriptions',
+    this.customerId,
   });
 
   factory SipCreateResponse.fromJson(Map<String, dynamic> json) {
@@ -139,6 +154,8 @@ class SipCreateResponse {
       paymentGateway:
           data['payment_gateway']?.toString().toLowerCase() ?? 'cashfree',
       keyId: data['key_id']?.toString(),
+      mode: data['mode']?.toString().toLowerCase() ?? 'subscriptions',
+      customerId: data['customer_id']?.toString(),
     );
   }
 }
