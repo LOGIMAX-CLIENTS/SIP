@@ -27,6 +27,7 @@ import '../../shared/utils/no_leading_zeros_formatter.dart';
 import '../../shared/widgets/secure_clipboard.dart';
 import 'payment_handler.dart';
 import 'widgets/payment_method_sheet.dart';
+import '../kyc/kyc_flow.dart';
 import '../../core/providers/countdown_offer_provider.dart';
 
 class InstantSavingScreen extends ConsumerStatefulWidget {
@@ -1592,18 +1593,15 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       if (mounted) setState(() => _isProcessing = false);
 
       if (eligibility.nextStep == 'KYC_REQUIRED') {
-        // Push KYC and AWAIT the result (true = KYC completed successfully).
-        // KycScreen now does Navigator.pop(context, true) on 'instant' flow
-        // instead of navigating to PaymentMethodsScreen.
-        //
-        // [LEGACY — kept for reference]
-        // Navigator.pushNamed(context, '/kyc', arguments: {...});
-        //   └─ previously KycScreen did pushReplacementNamed('/payment-methods')
-        final kycDone = await Navigator.pushNamed(
+        // Push the unified KYC hub (PAN + Aadhaar) and AWAIT the result
+        // (true = both approved). Routed through KycVerificationFlow so
+        // this uses the same entry point as SIP/Withdrawal instead of
+        // pushing the route directly.
+        final kycDone = await KycVerificationFlow.start(
           context,
-          '/kyc',
-          arguments: {
-            'request_from': 'instant',
+          ref,
+          requestFrom: 'instant',
+          extraData: {
             'amount': totalPayable,
             'metal_id': metalId,
             'rate': rate,
@@ -1612,7 +1610,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           },
         );
 
-        if (kycDone == true && mounted) {
+        if (kycDone && mounted) {
           SecureLogger.d(
               'ORDER FLOW: KYC completed → continuing to PaymentHandler');
           // KYC done — continue to Cashfree payment directly from here.

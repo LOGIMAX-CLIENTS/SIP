@@ -23,6 +23,7 @@ import '../features/withdrawal/screens/withdrawal_confirmation_screen.dart';
 import '../features/withdrawal/screens/upi_selection_screen.dart';
 import '../features/withdrawal/screens/withdrawal_success_screen.dart';
 import '../features/kyc/screens/kyc_screen.dart' as dynamic_kyc;
+import '../features/kyc/widgets/aadhaar_digilocker_webview.dart';
 import '../features/instant_saving/screens/payment_methods_screen.dart';
 import '../features/history/screens/transaction_history_screen.dart';
 import '../features/history/screens/transaction_details_screen.dart';
@@ -136,8 +137,13 @@ class AppRouter {
           );
         },
         panVerification: (context) => const PanVerificationScreen(),
-        aadhaarVerification: (context) =>
-            const Scaffold(body: Center(child: Text('Aadhaar Verification'))),
+        aadhaarVerification: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return AadhaarDigilockerWebView(
+            consentUrl: args['consentUrl'] as String,
+          );
+        },
         bankVerification: (context) =>
             const Scaffold(body: Center(child: Text('Bank Verification'))),
         instantSaving: (context) => const InstantSavingScreen(),

@@ -15,6 +15,7 @@ import '../../instant_saving/models/saving_models.dart';
 import '../providers/withdrawal_provider.dart';
 import '../services/withdrawal_service.dart';
 import '../../../routes/app_router.dart';
+import '../../kyc/kyc_flow.dart';
 import '../../market/models/market_rates.dart';
 import '../../../shared/widgets/loaders.dart';
 import '../../../shared/widgets/app_toast.dart';
@@ -1100,8 +1101,20 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       notifier.setProcessing(false);
 
       if (nextStep == 'KYC_REQUIRED') {
-        Navigator.pushNamed(context, AppRouter.dynamicKyc,
-            arguments: {'request_from': 'withdraw'});
+        // Await the unified KYC hub (PAN + Aadhaar) instead of firing and
+        // forgetting — once both are APPROVED, automatically resume the
+        // withdrawal exactly where it would have gone had KYC already been
+        // complete (UPI/bank selection), instead of the old behavior where
+        // the KYC screen itself hardcoded that navigation.
+        final verified = await KycVerificationFlow.start(
+          context,
+          ref,
+          requestFrom: 'withdraw',
+        );
+        if (!mounted) return;
+        if (verified) {
+          Navigator.pushNamed(context, AppRouter.upiSelection);
+        }
       } else {
         Navigator.pushNamed(context, AppRouter.upiSelection);
       }
