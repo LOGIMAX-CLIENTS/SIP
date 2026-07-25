@@ -15,7 +15,9 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/utils/no_leading_zeros_formatter.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/security/secure_logger.dart';
+import '../../../core/error/failures.dart';
 import '../../../routes/app_router.dart';
+import '../../kyc/kyc_flow.dart';
 import '../controller/sip_controller.dart';
 import '../models/sip_models.dart';
 import '../widgets/bank_details_sheet.dart';
@@ -1688,6 +1690,24 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             type: ToastType.error,
           );
         }
+      }
+    } on KycRequiredFailure catch (e) {
+      // Backend blocked SIP creation with KYC_REQUIRED (SIPCreateView —
+      // both PAN and Aadhaar must be APPROVED). Route through the unified
+      // KYC hub and, once both are verified, automatically retry this same
+      // SIP creation request instead of leaving the user stuck on an error.
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await KycVerificationFlow.start(
+        context,
+        ref,
+        requestFrom: 'sip',
+      );
+      if (!mounted) return;
+      if (verified) {
+        await _createSipPlan();
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
       }
     } catch (e) {
       notifier.setCreating(false);
