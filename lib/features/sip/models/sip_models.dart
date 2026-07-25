@@ -116,6 +116,14 @@ class SipCreateResponse {
   /// identified omitting this as a likely cause of "Token absent for
   /// recurring payment". Empty for Subscriptions mode and Cashfree.
   final String? customerId;
+  /// The instrument actually registered: 'upi' | 'card' | 'netbanking'.
+  /// Echoed back by the backend (see shared/services/sip.py create_scheme's
+  /// return dict) for display/logging only — it does NOT change how
+  /// Checkout is launched (see sip_payment_screen.dart's
+  /// _launchRazorpayAutoPay: the order's own 'method' field already
+  /// determines what Checkout presents). Defaults to 'upi' to match the
+  /// backend's own default for pre-existing/older responses.
+  final String paymentMethod;
 
   SipCreateResponse({
     required this.success,
@@ -130,6 +138,7 @@ class SipCreateResponse {
     this.keyId,
     this.mode = 'subscriptions',
     this.customerId,
+    this.paymentMethod = 'upi',
   });
 
   factory SipCreateResponse.fromJson(Map<String, dynamic> json) {
@@ -156,6 +165,7 @@ class SipCreateResponse {
       keyId: data['key_id']?.toString(),
       mode: data['mode']?.toString().toLowerCase() ?? 'subscriptions',
       customerId: data['customer_id']?.toString(),
+      paymentMethod: data['payment_method']?.toString().toLowerCase() ?? 'upi',
     );
   }
 }
