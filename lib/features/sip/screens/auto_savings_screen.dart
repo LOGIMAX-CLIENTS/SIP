@@ -18,6 +18,8 @@ import '../../../core/security/secure_logger.dart';
 import '../../../routes/app_router.dart';
 import '../controller/sip_controller.dart';
 import '../models/sip_models.dart';
+import '../widgets/bank_details_sheet.dart';
+import '../../instant_saving/widgets/payment_method_sheet.dart';
 // import '../../nominee/controller/nominee_controller.dart'; // Commented ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nominee feature will be updated
 
 /// Main Auto Savings (SIP) setup screen.
@@ -1254,7 +1256,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
 
     switch (frequencyId) {
       case 1: // Daily ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ direct API call
-        _createSipPlan();
+        _selectPaymentMethodAndCreate();
         break;
       case 2: // Weekly ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ select day popup
         _showWeeklyDayPicker();
@@ -1433,7 +1435,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                                 .read(sipControllerProvider.notifier)
                                 .setDay(selected!);
                             Navigator.pop(ctx);
-                            _createSipPlan();
+                            _selectPaymentMethodAndCreate();
                           }
                         : null,
                     gradient: selected != null
@@ -1560,7 +1562,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                                 .read(sipControllerProvider.notifier)
                                 .setDate(selected!);
                             Navigator.pop(ctx);
-                            _createSipPlan();
+                            _selectPaymentMethodAndCreate();
                           }
                         : null,
                     gradient: selected != null
@@ -1579,7 +1581,48 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     );
   }
 
-  Future<void> _createSipPlan() async {
+  /// Shows the Payment Methods sheet (reused from instant_saving — see
+  /// PaymentMethodSheet) so the customer can pick UPI / Card / Netbanking
+  /// before the SIP mandate is registered. Netbanking additionally needs
+  /// bank account details up front (Razorpay eMandate requirement — see
+  /// RazorpayRecurringService.create_subscription()'s 'netbanking' branch),
+  /// so that method routes through BankDetailsSheet first.
+  ///
+  /// UPI and Card proceed straight to _createSipPlan() — nothing else
+  /// changes for them; in particular the Razorpay Checkout launch itself
+  /// (sip_payment_screen.dart) is untouched, since the recurring order's
+  /// own 'method' field is what determines what Checkout presents.
+  void _selectPaymentMethodAndCreate() {
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => PaymentMethodSheet(
+        onProceed: (String paymentMethod) {
+          if (paymentMethod == 'netbanking') {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              isScrollControlled: true,
+              builder: (_) => BankDetailsSheet(
+                onSubmit: (BankDetails details) {
+                  _createSipPlan(paymentMethod: 'netbanking', bankDetails: details);
+                },
+              ),
+            );
+          } else {
+            _createSipPlan(paymentMethod: paymentMethod);
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _createSipPlan({
+    String? paymentMethod,
+    BankDetails? bankDetails,
+  }) async {
     final sipState = ref.read(sipControllerProvider);
     final notifier = ref.read(sipControllerProvider.notifier);
     notifier.setCreating(true);
@@ -1592,6 +1635,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         amount: sipState.amount.toInt(),
         day: sipState.selectedDay,
         date: sipState.selectedDate,
+        paymentMethod: paymentMethod,
+        bankAccountNumber: bankDetails?.accountNumber,
+        bankIfsc: bankDetails?.ifsc,
+        bankBeneficiaryName: bankDetails?.beneficiaryName,
+        bankAccountType: bankDetails?.accountType,
       );
 
       notifier.setCreating(false);
@@ -1615,6 +1663,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'key_id': response.keyId,
                 'mode': response.mode,
                 'customer_id': response.customerId,
+                'payment_method': response.paymentMethod,
               },
             );
           } else {

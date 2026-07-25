@@ -63,9 +63,19 @@ class SipService {
     required int amount,
     String? day,
     int? date,
+    /// 'upi' | 'card' | 'netbanking'. Omitted/null keeps the backend's own
+    /// default ('upi') — matches pre-existing behaviour for callers that
+    /// don't yet offer method selection.
+    String? paymentMethod,
+    /// Netbanking (eMandate) only — required by the backend when
+    /// paymentMethod == 'netbanking' (see SIPCreateSerializer.validate()).
+    String? bankAccountNumber,
+    String? bankIfsc,
+    String? bankBeneficiaryName,
+    String? bankAccountType,
   }) async {
     SecureLogger.d(
-        'SIP: Creating SIP – frequency=$frequencyId, commodity=$commodityId');
+        'SIP: Creating SIP – frequency=$frequencyId, commodity=$commodityId, method=${paymentMethod ?? 'upi'}');
 
     final Map<String, dynamic> payload = {
       'frequency': frequencyId,
@@ -78,6 +88,15 @@ class SipService {
     }
     if (frequencyId == 3 && date != null) {
       payload['date'] = date;
+    }
+    if (paymentMethod != null) {
+      payload['payment_method'] = paymentMethod;
+    }
+    if (paymentMethod == 'netbanking') {
+      payload['bank_account_number'] = bankAccountNumber;
+      payload['bank_ifsc'] = bankIfsc;
+      payload['bank_beneficiary_name'] = bankBeneficiaryName;
+      payload['bank_account_type'] = bankAccountType ?? 'savings';
     }
 
     final response = await _apiClient.post('sip/create', data: payload);
