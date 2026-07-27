@@ -9,15 +9,16 @@ import 'package:startgold/shared/widgets/gradient_header.dart';
 
 /// Hosts the Cashfree DigiLocker consent page for Aadhaar verification.
 ///
-/// The backend's `_initiate_aadhaar_kyc()` (kyc.py) now passes a
-/// `startgold-kyc://digilocker-callback` redirect_url to Cashfree, which
-/// this screen intercepts client-side via NavigationDelegate below — the
-/// scheme is never resolved by the OS (no AndroidManifest/Info.plist entry
-/// needed), it's caught before the WebView attempts to load it. The
-/// "I've completed verification" button remains as a manual fallback for
-/// any consent-page variant that doesn't honor redirect_url. The caller
-/// (the unified KYC hub) is responsible for polling the backend after this
-/// screen returns `true`.
+/// The backend's `_initiate_aadhaar_kyc()` (kyc.py) passes an https://
+/// redirect_url to Cashfree (Cashfree rejects custom app schemes outright —
+/// "redirect_url should start with https."), containing the path segment
+/// `/kyc/digilocker-callback`. This screen matches on that path substring
+/// via NavigationDelegate below and intercepts the request before the
+/// WebView actually loads it — the URL never needs to resolve to a real
+/// page. The "I've completed verification" button remains as a manual
+/// fallback for any consent-page variant that doesn't honor redirect_url.
+/// The caller (the unified KYC hub) is responsible for polling the backend
+/// after this screen returns `true`.
 ///
 /// Route: `AppRouter.aadhaarVerification` ('/aadhaar-verification').
 /// Arguments: `{'consentUrl': String}`.
@@ -32,7 +33,7 @@ class AadhaarDigilockerWebView extends StatefulWidget {
 }
 
 class _AadhaarDigilockerWebViewState extends State<AadhaarDigilockerWebView> {
-  static const _callbackScheme = 'startgold-kyc';
+  static const _callbackPathSegment = '/kyc/digilocker-callback';
 
   late final WebViewController _controller;
   bool _isLoading = true;
@@ -47,7 +48,7 @@ class _AadhaarDigilockerWebViewState extends State<AadhaarDigilockerWebView> {
           onPageStarted: (_) => setState(() => _isLoading = true),
           onPageFinished: (_) => setState(() => _isLoading = false),
           onNavigationRequest: (request) {
-            if (request.url.startsWith('$_callbackScheme://')) {
+            if (request.url.contains(_callbackPathSegment)) {
               Navigator.pop(context, true);
               return NavigationDecision.prevent;
             }
