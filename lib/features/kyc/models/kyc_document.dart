@@ -36,6 +36,17 @@
   }
 }
 
+/// Wraps the `/kyc/document-types` response: the field-driven documents
+/// list (PAN today) plus Aadhaar's own approval status, which is reported
+/// separately since Aadhaar is rendered as its own client-side card rather
+/// than a generic fields form (see kyc_screen.dart).
+class KycDocumentsResult {
+  final List<KycDocumentType> documents;
+  final bool aadhaarApproved;
+
+  KycDocumentsResult({required this.documents, required this.aadhaarApproved});
+}
+
 class KycField {
   final String name;
   final String label;

@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:startgold/shared/theme/app_theme.dart';
 import 'package:startgold/shared/widgets/custom_button.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
 
 /// Hosts the Cashfree DigiLocker consent page for Aadhaar verification.
 ///
-/// The backend's `_initiate_aadhaar_kyc()` (kyc.py) does not pass a
-/// `redirect_url` to Cashfree, so there is no app-controlled "done" URL to
-/// intercept — DigiLocker's own consent UI ends the session on its side.
-/// The reliable signal that the user has finished is therefore the explicit
-/// "I've completed verification" action below, not URL sniffing. The caller
+/// The backend's `_initiate_aadhaar_kyc()` (kyc.py) now passes a
+/// `startgold-kyc://digilocker-callback` redirect_url to Cashfree, which
+/// this screen intercepts client-side via NavigationDelegate below — the
+/// scheme is never resolved by the OS (no AndroidManifest/Info.plist entry
+/// needed), it's caught before the WebView attempts to load it. The
+/// "I've completed verification" button remains as a manual fallback for
+/// any consent-page variant that doesn't honor redirect_url. The caller
 /// (the unified KYC hub) is responsible for polling the backend after this
 /// screen returns `true`.
 ///
@@ -29,6 +32,8 @@ class AadhaarDigilockerWebView extends StatefulWidget {
 }
 
 class _AadhaarDigilockerWebViewState extends State<AadhaarDigilockerWebView> {
+  static const _callbackScheme = 'startgold-kyc';
+
   late final WebViewController _controller;
   bool _isLoading = true;
 
@@ -41,9 +46,36 @@ class _AadhaarDigilockerWebViewState extends State<AadhaarDigilockerWebView> {
         NavigationDelegate(
           onPageStarted: (_) => setState(() => _isLoading = true),
           onPageFinished: (_) => setState(() => _isLoading = false),
+          onNavigationRequest: (request) {
+            if (request.url.startsWith('$_callbackScheme://')) {
+              Navigator.pop(context, true);
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+          onWebResourceError: (error) {
+            setState(() => _isLoading = false);
+          },
         ),
       )
       ..loadRequest(Uri.parse(widget.consentUrl));
+    _enableThirdPartyCookies();
+  }
+
+  /// DigiLocker's consent flow hands off between digilocker.gov.in and
+  /// Cashfree's domain; Android's WebView blocks third-party cookies by
+  /// default (this is opt-in, not automatic), which silently breaks that
+  /// cross-domain session handoff and can stall the page after account
+  /// selection with no visible error.
+  Future<void> _enableThirdPartyCookies() async {
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      final cookieManager = WebViewCookieManager();
+      if (cookieManager.platform is AndroidWebViewCookieManager) {
+        await (cookieManager.platform as AndroidWebViewCookieManager)
+            .setAcceptThirdPartyCookies(platform, true);
+      }
+    }
   }
 
   @override

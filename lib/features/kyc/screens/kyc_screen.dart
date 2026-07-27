@@ -47,6 +47,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   final Set<String> _completedDocIds = {};
   final Set<String> _submittingDocIds = {};
   bool _initialized = false;
+  bool _aadhaarSeeded = false;
 
   final _aadhaarNumberController = TextEditingController();
   final _aadhaarNameController = TextEditingController();
@@ -110,6 +111,19 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       }
     }
     _initialized = true;
+  }
+
+  /// Seeds the Aadhaar card as already-approved before the user ever sees
+  /// the form, if the server reports it's already VERIFIED — mirrors
+  /// `_initControllers`'s PAN seeding above. Deferred to a post-frame
+  /// callback since it's triggered from `build()` and mutates a provider
+  /// this widget also watches.
+  void _seedAadhaarIfApproved(bool aadhaarApproved) {
+    if (_aadhaarSeeded || !aadhaarApproved) return;
+    _aadhaarSeeded = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(aadhaarProvider.notifier).seedApproved();
+    });
   }
 
   Future<void> _submitDoc(KycDocumentType doc) async {
@@ -279,8 +293,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           const GradientHeader(title: 'Verification'),
           Expanded(
             child: docsAsync.when(
-              data: (docs) {
-                _initControllers(docs);
+              data: (result) {
+                _initControllers(result.documents);
+                _seedAadhaarIfApproved(result.aadhaarApproved);
                 return SingleChildScrollView(
                   padding: EdgeInsets.all(24.w),
                   child: Column(
@@ -299,7 +314,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                             color: isDark ? Colors.white60 : Colors.black54),
                       ),
                       SizedBox(height: 32.h),
-                      ...docs.map((doc) => _buildDocumentCard(doc, isDark)),
+                      ...result.documents.map((doc) => _buildDocumentCard(doc, isDark)),
                       _buildAadhaarCard(isDark, aadhaarState),
                     ],
                   ),
@@ -312,7 +327,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         ],
       ),
       bottomNavigationBar: docsAsync.hasValue
-          ? _buildFooter(isDark, docsAsync.value!, aadhaarApproved)
+          ? _buildFooter(isDark, docsAsync.value!.documents, aadhaarApproved)
           : null,
     );
   }

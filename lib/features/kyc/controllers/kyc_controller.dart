@@ -3,10 +3,10 @@ import 'package:startgold/core/providers/user_provider.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
 
-final kycDocumentsProvider = FutureProvider.autoDispose.family<List<KycDocumentType>, String>((ref, requestFrom) async {
+final kycDocumentsProvider = FutureProvider.autoDispose.family<KycDocumentsResult, String>((ref, requestFrom) async {
   final user = ref.watch(userProvider);
-  if (user == null) return [];
-  
+  if (user == null) return KycDocumentsResult(documents: [], aadhaarApproved: false);
+
   return ref.read(kycRepositoryProvider).getDocumentTypes(
     customerId: user.id,
     requestFrom: requestFrom,
@@ -228,5 +228,14 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
 
   /// Resets to idle so the user can restart consent after EXPIRED/REJECTED.
   void reset() => state = const AadhaarState();
+
+  /// Seeds the card as already-approved from the server's per-document
+  /// status check (`kyc/document-types`'s `aadhaar_status` — see
+  /// kyc_screen.dart) — skips the form entirely, no DigiLocker round trip.
+  void seedApproved() {
+    if (state.phase == AadhaarPhase.idle) {
+      state = state.copyWith(phase: AadhaarPhase.approved);
+    }
+  }
 }
 
