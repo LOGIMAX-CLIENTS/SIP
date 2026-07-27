@@ -9,7 +9,7 @@ final kycRepositoryProvider = Provider((ref) => KycRepository());
 class KycRepository {
   final ApiClient _apiClient = ApiClient();
 
-  Future<List<KycDocumentType>> getDocumentTypes({
+  Future<KycDocumentsResult> getDocumentTypes({
     required String customerId,
     required String requestFrom,
   }) async {
@@ -20,7 +20,11 @@ class KycRepository {
 
     if (response.data['success'] == true) {
       final List documents = response.data['data']['documents'];
-      return documents.map((e) => KycDocumentType.fromJson(e)).toList();
+      final aadhaarStatus = (response.data['data']['aadhaar_status'] ?? '').toString();
+      return KycDocumentsResult(
+        documents: documents.map((e) => KycDocumentType.fromJson(e)).toList(),
+        aadhaarApproved: aadhaarStatus.toUpperCase() == 'APPROVED',
+      );
     } else {
       throw Exception(response.data['message'] ?? 'Failed to load documents');
     }

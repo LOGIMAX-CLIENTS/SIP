@@ -1680,6 +1680,25 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             );
           }
         }
+      } else if (response.errorCode == 'KYC_REQUIRED') {
+        // Backend blocked SIP creation with KYC_REQUIRED, wrapped as a 200
+        // OK response (ResponseStandardizationMiddleware) rather than an
+        // HTTP error — so it never throws and never reaches the
+        // KycRequiredFailure catch below. Route through the unified KYC hub
+        // here too, and once both PAN + Aadhaar are verified, automatically
+        // retry this same SIP creation request.
+        if (!mounted) return;
+        final verified = await KycVerificationFlow.start(
+          context,
+          ref,
+          requestFrom: 'sip',
+        );
+        if (!mounted) return;
+        if (verified) {
+          await _createSipPlan();
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
       } else {
         if (mounted) {
           AppToast.show(
@@ -1696,6 +1715,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       // both PAN and Aadhaar must be APPROVED). Route through the unified
       // KYC hub and, once both are verified, automatically retry this same
       // SIP creation request instead of leaving the user stuck on an error.
+      // (Kept alongside the response.errorCode branch above in case this
+      // endpoint ever returns KYC_REQUIRED as a real HTTP error status.)
       notifier.setCreating(false);
       if (!mounted) return;
       final verified = await KycVerificationFlow.start(

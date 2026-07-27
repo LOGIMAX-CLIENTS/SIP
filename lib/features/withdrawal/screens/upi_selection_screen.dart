@@ -14,6 +14,7 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
+import '../../../core/error/failures.dart';
 
 class UpiSelectionScreen extends ConsumerStatefulWidget {
   const UpiSelectionScreen({super.key});
@@ -34,9 +35,16 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoSelect());
   }
 
+  // Bank-only filter: UPI is currently disabled for withdrawal (see
+  // _showAddOptions), so any previously-saved UPI methods must be hidden
+  // from this screen entirely -- not just from the "Add Account" sheet --
+  // to avoid ever auto-selecting or displaying a UPI account here.
+  List<WithdrawalMethod> _bankOnly(List<WithdrawalMethod>? list) =>
+      (list ?? []).where((m) => !m.isUpi).toList();
+
   void _autoSelect() {
-    final list = ref.read(accountDetailsProvider).valueOrNull;
-    if (list != null && list.isNotEmpty) {
+    final list = _bankOnly(ref.read(accountDetailsProvider).valueOrNull);
+    if (list.isNotEmpty) {
       final alreadySelected = ref.read(withdrawalProvider).selectedMethod;
       if (alreadySelected == null) {
         ref.read(withdrawalProvider.notifier).selectMethod(list.first);
@@ -51,7 +59,8 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
 
     ref.listen<AsyncValue<List<WithdrawalMethod>>>(accountDetailsProvider,
         (_, next) {
-      next.whenData((list) {
+      next.whenData((rawList) {
+        final list = _bankOnly(rawList);
         final current = ref.read(withdrawalProvider).selectedMethod;
         if (list.isEmpty) {
           ref.read(withdrawalProvider.notifier).selectMethod(null);
@@ -68,14 +77,14 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
       body: Column(
         children: [
           GradientHeader(
-            title: 'Select UPI ID',
+            title: 'Select Bank Account',
             onBack: () => Navigator.pop(context),
           ),
 
           // â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           Expanded(
             child: accountsAsync.when(
-              data: (methods) => _buildBody(context, methods, isDark),
+              data: (methods) => _buildBody(context, _bankOnly(methods), isDark),
               loading: () => const Center(
                   child: CircularProgressIndicator(color: _accentGreen)),
               error: (_, __) => _buildErrorState(isDark),
@@ -303,7 +312,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
           ),
           SizedBox(height: 6.h),
           Text(
-            'Add a UPI ID or bank account\nto proceed with withdrawal',
+            'Add a bank account\nto proceed with withdrawal',
             textAlign: TextAlign.center,
             style: GoogleFonts.playfairDisplay(
               fontSize: 12.sp,
@@ -335,7 +344,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
           ElevatedButton(
             onPressed: () => ref.refresh(accountDetailsProvider),
             style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
-            child: const Text('Retry', style: TextStyle(color: Colors.white)),
+            child: Text('Retry', style: GoogleFonts.playfairDisplay(color: Colors.white)),
           ),
         ],
       ),
@@ -346,7 +355,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
   Widget _buildFooter(BuildContext context, WidgetRef ref, bool isDark,
       AsyncValue<List<WithdrawalMethod>> accountsAsync) {
     final selected = ref.watch(withdrawalProvider).selectedMethod;
-    final methods = accountsAsync.valueOrNull ?? [];
+    final methods = _bankOnly(accountsAsync.valueOrNull);
     final isEnabled = selected != null && methods.isNotEmpty;
 
     return SafeArea(
@@ -442,30 +451,32 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                     height: 1.5),
               ),
               SizedBox(height: 20.h),
-              _buildOptionTile(
-                context,
-                'UPI Handle',
-                'Receive your money instantly using your UPI ID for a quick and easy transfer.',
-                'assets/withdraw/upi.svg',
-                () {
-                  Navigator.pop(context);
-                  _showUpiForm(context, ref, isDark);
-                },
-                isDark,
-              ),
-              // TODO: Bank Account feature â€” to be enabled later
-              // SizedBox(height: 12.h),
+              // UPI Handle disabled for now -- bank account is the only
+              // supported withdrawal method. _showUpiForm/_processAddUpi
+              // are kept intact below, just unreachable from this sheet.
               // _buildOptionTile(
               //   context,
-              //   'Bank Account',
-              //   'Get your funds securely transferred directly to your registered bank account.',
-              //   'assets/withdraw/bank.svg',
+              //   'UPI Handle',
+              //   'Receive your money instantly using your UPI ID for a quick and easy transfer.',
+              //   'assets/withdraw/upi.svg',
               //   () {
               //     Navigator.pop(context);
-              //     _showBankForm(context, ref, isDark);
+              //     _showUpiForm(context, ref, isDark);
               //   },
               //   isDark,
               // ),
+              // SizedBox(height: 12.h),
+              _buildOptionTile(
+                context,
+                'Bank Account',
+                'Get your funds securely transferred directly to your registered bank account.',
+                'assets/withdraw/bank.svg',
+                () {
+                  Navigator.pop(context);
+                  _showBankForm(context, ref, isDark);
+                },
+                isDark,
+              ),
               SizedBox(height: 16.h),
             ],
           ),
@@ -619,7 +630,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                       color: isDark ? Colors.white : Colors.black),
                   decoration: InputDecoration(
                     hintText: 'example@abc',
-                    hintStyle: TextStyle(
+                    hintStyle: GoogleFonts.playfairDisplay(
                         fontSize: 16.sp,
                         color: isDark ? Colors.white30 : Colors.black26),
                     filled: true,
@@ -661,8 +672,8 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
   // â”€â”€ BANK FORM SHEET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _showBankForm(BuildContext context, WidgetRef ref, bool isDark) {
     final nameCtrl = TextEditingController();
-    final bankNameCtrl = TextEditingController();
     final accCtrl = TextEditingController();
+    final confirmAccCtrl = TextEditingController();
     final ifscCtrl = TextEditingController();
     bool isVerifying = false;
     showModalBottomSheet(
@@ -725,19 +736,27 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                     ],
                   ),
                   SizedBox(height: 20.h),
-                  _buildField('Account Holder Name', 'Enter full name',
+                  _buildField('Beneficiary Name', 'Enter full name',
                       nameCtrl, isDark,
                       forceUpperCase: true,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 12.h),
-                  _buildField('Bank Name', 'e.g. State Bank of India',
-                      bankNameCtrl, isDark,
                       onChanged: (_) => setModalState(() {})),
                   SizedBox(height: 12.h),
                   _buildField(
                       'Account Number', 'Enter account number', accCtrl, isDark,
                       kbd: TextInputType.number,
                       onChanged: (_) => setModalState(() {})),
+                  SizedBox(height: 12.h),
+                  _buildField('Confirm Account Number',
+                      'Re-enter account number', confirmAccCtrl, isDark,
+                      kbd: TextInputType.number,
+                      onChanged: (_) => setModalState(() {})),
+                  if (confirmAccCtrl.text.isNotEmpty &&
+                      accCtrl.text.trim() != confirmAccCtrl.text.trim()) ...[
+                    SizedBox(height: 6.h),
+                    Text('Account numbers do not match',
+                        style: GoogleFonts.playfairDisplay(
+                            fontSize: 11.sp, color: Colors.redAccent)),
+                  ],
                   SizedBox(height: 12.h),
                   _buildField('IFSC Code', 'e.g. SBIN0001234', ifscCtrl, isDark,
                       forceUpperCase: true,
@@ -746,20 +765,20 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                   _buildGradientButton(
                     'Verify & Add',
                     nameCtrl.text.trim().isNotEmpty &&
-                        bankNameCtrl.text.trim().isNotEmpty &&
                         accCtrl.text.trim().isNotEmpty &&
+                        confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
                         ifscCtrl.text.trim().isNotEmpty &&
                         !isVerifying,
                     (nameCtrl.text.trim().isNotEmpty &&
-                            bankNameCtrl.text.trim().isNotEmpty &&
                             accCtrl.text.trim().isNotEmpty &&
+                            confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
                             ifscCtrl.text.trim().isNotEmpty &&
                             !isVerifying)
                         ? () => _processAddBank(
                             sheetCtx,
                             ref,
                             nameCtrl.text.trim(),
-                            bankNameCtrl.text.trim(),
+                            '',
                             accCtrl.text.trim(),
                             ifscCtrl.text.trim(),
                             setModalState,
@@ -898,7 +917,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
               color: isDark ? Colors.white : Colors.black),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(
+            hintStyle: GoogleFonts.playfairDisplay(
                 fontSize: 16.sp,
                 color: isDark ? Colors.white30 : Colors.black26),
             filled: true,
@@ -996,15 +1015,28 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
         }
       } else {
         setModalState(() => setVerifying(false));
-        AppToast.show(sheetCtx, result['message'] ?? 'Verification failed',
-            type: ToastType.error);
+        // error_response() (backend) never puts "message" at the top level —
+        // it's nested under error.message / data.message. This branch is not
+        // normally reached (ApiClient.post() throws for non-2xx and lands in
+        // the catch block below instead), but fixing the same extraction gap
+        // here too in case a 2xx response ever carries success:false.
+        final errMsg = result['message'] ??
+            (result['error'] as Map<String, dynamic>?)?['message'] ??
+            (result['data'] as Map<String, dynamic>?)?['message'] ??
+            'Verification failed';
+        AppToast.show(sheetCtx, errMsg, type: ToastType.error);
       }
     } catch (e) {
       if (sheetCtx.mounted) {
         setModalState(() => setVerifying(false));
-        AppToast.show(
-            sheetCtx, 'Could not verify bank details. Please try again.',
-            type: ToastType.error);
+        // ApiClient.post() already converts non-2xx responses into a
+        // Failure with the real server message (e.g. Cashfree's IFSC
+        // format error) extracted via ApiFailureMapper — show that instead
+        // of a generic string, which previously discarded it entirely.
+        final message = e is Failure
+            ? e.message
+            : 'Could not verify bank details. Please try again.';
+        AppToast.show(sheetCtx, message, type: ToastType.error);
       }
     }
   }

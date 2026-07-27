@@ -87,6 +87,7 @@ class SipDenomination {
 class SipCreateResponse {
   final bool success;
   final String message;
+  final String? errorCode;
   final String? subscriptionId;
   final String? status;
   final String? orderId;
@@ -128,6 +129,7 @@ class SipCreateResponse {
   SipCreateResponse({
     required this.success,
     required this.message,
+    this.errorCode,
     this.subscriptionId,
     this.status,
     this.orderId,
@@ -154,6 +156,7 @@ class SipCreateResponse {
     return SipCreateResponse(
       success: json['success'] == true,
       message: message,
+      errorCode: error['code']?.toString() ?? data['code']?.toString(),
       subscriptionId: data['subscription_id']?.toString(),
       status: data['status']?.toString(),
       orderId: data['order_id']?.toString(),
