@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'package:startgold/shared/theme/app_theme.dart';
-import 'package:startgold/shared/widgets/custom_button.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
 
 /// Hosts the Cashfree DigiLocker consent page for Aadhaar verification.
@@ -15,8 +12,8 @@ import 'package:startgold/shared/widgets/gradient_header.dart';
 /// `/kyc/digilocker-callback`. This screen matches on that path substring
 /// via NavigationDelegate below and intercepts the request before the
 /// WebView actually loads it — the URL never needs to resolve to a real
-/// page. The "I've completed verification" button remains as a manual
-/// fallback for any consent-page variant that doesn't honor redirect_url.
+/// page. There is no manual fallback button; consent-page variants that
+/// don't honor redirect_url will never resolve this screen.
 /// The caller (the unified KYC hub) is responsible for polling the backend
 /// after this screen returns `true`.
 ///
@@ -81,8 +78,6 @@ class _AadhaarDigilockerWebViewState extends State<AadhaarDigilockerWebView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
@@ -93,28 +88,6 @@ class _AadhaarDigilockerWebViewState extends State<AadhaarDigilockerWebView> {
               children: [
                 WebViewWidget(controller: _controller),
                 if (_isLoading) const Center(child: CircularProgressIndicator()),
-              ],
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.all(20.w),
-            child: Column(
-              children: [
-                Text(
-                  'Complete the DigiLocker consent above, then tap below to confirm.',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 13.sp,
-                    color: isDark ? Colors.white70 : Colors.black54,
-                  ),
-                ),
-                SizedBox(height: 12.h),
-                CustomButton(
-                  text: "I've completed verification",
-                  svgIconPath: 'assets/buttons/tick.svg',
-                  gradient: AppTheme.greenGradient,
-                  onPressed: () => Navigator.pop(context, true),
-                ),
               ],
             ),
           ),
