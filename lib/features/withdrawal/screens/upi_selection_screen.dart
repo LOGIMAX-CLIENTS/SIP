@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/shared/widgets/animations.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import '../providers/withdrawal_provider.dart';
 import '../models/withdrawal_method.dart';
@@ -587,11 +588,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Add UPI Handle',
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white : Colors.black)),
+                    Text('Add UPI Handle', style: AppTextStyles.titleLarge(isDark)),
                     GestureDetector(
                       onTap: isVerifying ? null : () => Navigator.pop(sheetCtx),
                       child: Container(
@@ -609,55 +606,36 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 SizedBox(height: 4.h),
                 Text(
                   'Receive your money instantly using your UPI\nID for a quick and easy transfer.',
-                  style: GoogleFonts.playfairDisplay(
-                      fontSize: 12.sp,
-                      color: isDark ? Colors.white54 : Colors.black54,
-                      height: 1.5),
+                  style: AppTextStyles.fieldHelper(isDark),
                 ),
                 SizedBox(height: 24.h),
-                Text('Enter UPI ID',
-                    style: GoogleFonts.playfairDisplay(
-                        fontSize: 13.sp,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white70 : Colors.black87)),
-                SizedBox(height: 8.h),
-                TextField(
-                  controller: ctrl,
-                  enabled: !isVerifying,
-                  onChanged: (_) => setModalState(() {}),
-                  contextMenuBuilder: SecureClipboard.none,
-                  style: GoogleFonts.playfairDisplay(
-                      color: isDark ? Colors.white : Colors.black),
-                  decoration: InputDecoration(
-                    hintText: 'example@abc',
-                    hintStyle: GoogleFonts.playfairDisplay(
-                        fontSize: 16.sp,
-                        color: isDark ? Colors.white30 : Colors.black26),
-                    filled: true,
-                    fillColor: isDark
-                        ? Colors.white.withOpacity(0.05)
-                        : const Color(0xFFF3F4F6),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14.r),
-                        borderSide: BorderSide.none),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14.r),
-                        borderSide:
-                            const BorderSide(color: _accentGreen, width: 1.5)),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 18.w, vertical: 16.h),
-                  ),
-                ),
+                _buildField('Enter UPI ID', 'example@abc', ctrl, isDark,
+                    enabled: !isVerifying,
+                    onChanged: (_) => setModalState(() {})),
                 SizedBox(height: 28.h),
-                _buildGradientButton(
-                  'Verify & Add',
-                  ctrl.text.trim().isNotEmpty && !isVerifying,
-                  (ctrl.text.trim().isNotEmpty && !isVerifying)
+                CustomButton(
+                  text: 'Verify & Add',
+                  isLoading: isVerifying,
+                  loadingText: 'Verifying...',
+                  onPressed: (ctrl.text.trim().isNotEmpty && !isVerifying)
                       ? () => _processAddUpi(
                           sheetCtx, ref, ctrl.text.trim(), setModalState,
                           (v) => isVerifying = v)
                       : null,
-                  isLoading: isVerifying,
+                  gradient: const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [_accentGreen, _gradientDark],
+                  ),
+                  boxShadow: (ctrl.text.trim().isNotEmpty && !isVerifying)
+                      ? [
+                          BoxShadow(
+                            color: _accentGreen.withOpacity(0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : [],
                 ),
                 SizedBox(height: 8.h),
               ],
@@ -717,10 +695,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                   Text('Add Bank Account',
-                          style: GoogleFonts.playfairDisplay(
-                              fontSize: 20.sp,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : Colors.black)),
+                          style: AppTextStyles.titleLarge(isDark)),
                       GestureDetector(
                         onTap: () { if (!isVerifying) Navigator.pop(sheetCtx); },
                         child: Container(
@@ -754,22 +729,18 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                       accCtrl.text.trim() != confirmAccCtrl.text.trim()) ...[
                     SizedBox(height: 6.h),
                     Text('Account numbers do not match',
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 11.sp, color: Colors.redAccent)),
+                        style: AppTextStyles.fieldError(isDark)),
                   ],
                   SizedBox(height: 12.h),
                   _buildField('IFSC Code', 'e.g. SBIN0001234', ifscCtrl, isDark,
                       forceUpperCase: true,
                       onChanged: (_) => setModalState(() {})),
                   SizedBox(height: 28.h),
-                  _buildGradientButton(
-                    'Verify & Add',
-                    nameCtrl.text.trim().isNotEmpty &&
-                        accCtrl.text.trim().isNotEmpty &&
-                        confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
-                        ifscCtrl.text.trim().isNotEmpty &&
-                        !isVerifying,
-                    (nameCtrl.text.trim().isNotEmpty &&
+                  CustomButton(
+                    text: 'Verify & Add',
+                    isLoading: isVerifying,
+                    loadingText: 'Verifying...',
+                    onPressed: (nameCtrl.text.trim().isNotEmpty &&
                             accCtrl.text.trim().isNotEmpty &&
                             confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
                             ifscCtrl.text.trim().isNotEmpty &&
@@ -784,7 +755,24 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                             setModalState,
                             (v) => isVerifying = v)
                         : null,
-                    isLoading: isVerifying,
+                    gradient: const LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [_accentGreen, _gradientDark],
+                    ),
+                    boxShadow: (nameCtrl.text.trim().isNotEmpty &&
+                            accCtrl.text.trim().isNotEmpty &&
+                            confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
+                            ifscCtrl.text.trim().isNotEmpty &&
+                            !isVerifying)
+                        ? [
+                            BoxShadow(
+                              color: _accentGreen.withOpacity(0.35),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : [],
                   ),
                   SizedBox(height: 8.h),
                 ],
@@ -796,110 +784,21 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
     );
   }
 
-  // â”€â”€ Shared gradient button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  Widget _buildGradientButton(
-      String label, bool isEnabled, VoidCallback? onPressed,
-      {bool isLoading = false}) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      width: double.infinity,
-      height: 54.h,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: isEnabled
-              ? const [_accentGreen, _gradientDark]
-              : isLoading
-                  ? [_accentGreen.withOpacity(0.7), _gradientDark.withOpacity(0.7)]
-                  : [
-                      _accentGreen.withOpacity(0.4),
-                      _gradientDark.withOpacity(0.4),
-                    ],
-        ),
-        borderRadius: BorderRadius.circular(100.r),
-        boxShadow: (isEnabled && !isLoading)
-            ? [
-                BoxShadow(
-                  color: _accentGreen.withOpacity(0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : [],
-      ),
-      child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Colors.transparent,
-          disabledForegroundColor: Colors.white60,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(100.r)),
-          elevation: 0,
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: isLoading
-              ? Row(
-                  key: const ValueKey('verifying'),
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 18.h,
-                      height: 18.h,
-                      child: const CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white70),
-                      ),
-                    ),
-                    SizedBox(width: 12.w),
-                    Text(
-                      'Verifying...',
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                )
-              : Text(
-                  label,
-                  key: const ValueKey('label'),
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 16.sp,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-
   // â”€â”€ Field helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildField(
       String label, String hint, TextEditingController ctrl, bool isDark,
       {TextInputType kbd = TextInputType.text,
       bool forceUpperCase = false,
+      bool enabled = true,
       ValueChanged<String>? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white70 : Colors.black87)),
+        Text(label, style: AppTextStyles.fieldLabel(isDark)),
         SizedBox(height: 8.h),
         TextField(
           controller: ctrl,
+          enabled: enabled,
           onChanged: onChanged,
           keyboardType: kbd,
           contextMenuBuilder: SecureClipboard.none,
@@ -912,14 +811,11 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                       newValue.copyWith(text: newValue.text.toUpperCase()))
                 ]
               : null,
-          style: GoogleFonts.playfairDisplay(
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black),
+          style: AppTextStyles.kycFieldInput(isDark),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: GoogleFonts.playfairDisplay(
-                fontSize: 16.sp,
-                color: isDark ? Colors.white30 : Colors.black26),
+            hintStyle: AppTextStyles.kycFieldHint(isDark),
+            errorStyle: AppTextStyles.fieldError(isDark),
             filled: true,
             fillColor: isDark
                 ? Colors.white.withOpacity(0.05)
