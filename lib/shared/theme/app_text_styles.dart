@@ -173,4 +173,61 @@ class AppTextStyles {
         fontWeight: FontWeight.w700,
         color: Colors.white,
       );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ─── FORM FIELD STYLES ──────────────────────────────────────────────────
+  // Shared across every form/validation screen (KYC — PAN/Aadhaar/Bank —
+  // Auto Savings, Withdrawal, etc.) so labels, inputs, hints and messages
+  // read identically everywhere instead of each screen hardcoding its own
+  // GoogleFonts.playfairDisplay(...) call with slightly different numbers.
+  // Reference: Auto Savings screen's "Enter your saving amount" field group.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Field label above a TextFormField. Example: "Aadhaar Number", "Full Name".
+  static TextStyle fieldLabel(bool isDark) => GoogleFonts.playfairDisplay(
+        fontSize: 14.sp,
+        fontWeight: FontWeight.w600,
+        color: _secondary(isDark),
+      );
+
+  /// Helper / instructional copy under a field group (not an error).
+  static TextStyle fieldHelper(bool isDark) => GoogleFonts.playfairDisplay(
+        fontSize: 13.sp,
+        fontWeight: FontWeight.w500,
+        color: _secondary(isDark),
+      );
+
+  /// Validation / error message text under a field.
+  static TextStyle fieldError(bool isDark) => GoogleFonts.playfairDisplay(
+        fontSize: 12.sp,
+        fontWeight: FontWeight.w600,
+        color: const Color(0xFFE11D48),
+      );
+
+  /// THE single canonical input-text style for every KYC / Bank Verification
+  /// TextField — PAN, Aadhaar, Name as on PAN, Beneficiary Name, Account
+  /// Number, Confirm Account Number, IFSC Code, and any other field on those
+  /// screens. The Aadhaar Number field is the source of truth this was
+  /// extracted from; every one of those fields must reference this exact
+  /// method (not a copy, not an approximation) so they stay pixel-identical.
+  /// Do not add a second "similar" input style for these screens — if a
+  /// field on a KYC/Bank screen looks different, find and remove whatever
+  /// override made it diverge instead of adding another style here.
+  static TextStyle kycFieldInput(bool isDark) => GoogleFonts.lora(
+        fontSize: 18.sp,
+        fontWeight: FontWeight.w600,
+        color: _primary(isDark),
+        letterSpacing: 1.2,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      );
+
+  /// Hint/placeholder counterpart to [kycFieldInput] — same size and
+  /// spacing so the placeholder and typed value don't visibly jump in size.
+  /// Same "one canonical style" rule applies.
+  static TextStyle kycFieldHint(bool isDark) => GoogleFonts.lora(
+        fontSize: 18.sp,
+        fontWeight: FontWeight.w400,
+        color: _muted(isDark),
+        letterSpacing: 1.2,
+      );
 }

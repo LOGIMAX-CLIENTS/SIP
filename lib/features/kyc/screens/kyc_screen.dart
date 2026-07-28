@@ -7,6 +7,8 @@ import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/routes/app_router.dart';
 import 'package:startgold/shared/theme/app_theme.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
+import 'package:startgold/shared/utils/aadhaar_input_formatter.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/custom_button.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
@@ -70,7 +72,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// digit). This is purely a client-side sanity check — actual identity
   /// verification always happens via DigiLocker consent, never this number.
   String? _validateAadhaarNumber(String? value) {
-    final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
+    final digits = AadhaarInputFormatter.unformat(value ?? '');
     if (digits.length != 12) return 'Enter a valid 12-digit Aadhaar number';
     if (!RegExp(r'^[2-9]').hasMatch(digits)) {
       return 'Enter a valid 12-digit Aadhaar number';
@@ -181,7 +183,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final notifier = ref.read(aadhaarProvider.notifier);
     await notifier.initiate(
       widget.requestFrom,
-      aadhaarNumber: _aadhaarNumberController.text.replaceAll(RegExp(r'\D'), ''),
+      aadhaarNumber: AadhaarInputFormatter.unformat(_aadhaarNumberController.text),
       fullName: _aadhaarNameController.text.trim(),
     );
     if (!mounted) return;
@@ -302,16 +304,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Complete your KYC',
-                          style: GoogleFonts.playfairDisplay(
-                              fontSize: 20.sp,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : Colors.black)),
+                          style: AppTextStyles.titleLarge(isDark)),
                       SizedBox(height: 8.h),
                       Text(
                         'PAN and Aadhaar verification are both required.',
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 13.sp,
-                            color: isDark ? Colors.white60 : Colors.black54),
+                        style: AppTextStyles.fieldHelper(isDark),
                       ),
                       SizedBox(height: 32.h),
                       ...result.documents.map((doc) => _buildDocumentCard(doc, isDark)),
@@ -398,17 +395,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     Text(
                       state.message ??
                           'Enter your Aadhaar number, then verify via DigiLocker to complete KYC.',
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 13.sp,
-                        color: isDark ? Colors.white60 : Colors.black54,
-                      ),
+                      style: AppTextStyles.fieldHelper(isDark),
                     ),
                     SizedBox(height: 16.h),
                     Text('Full Name (as per Aadhaar)',
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white60 : Colors.black54)),
+                        style: AppTextStyles.fieldLabel(isDark)),
                     SizedBox(height: 8.h),
                     TextFormField(
                       controller: _aadhaarNameController,
@@ -418,13 +409,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                         _UpperCaseNameFormatter(),
                       ],
                       contextMenuBuilder: SecureClipboard.none,
-                      style: GoogleFonts.playfairDisplay(
-                          color: isDark ? Colors.white : Colors.black),
+                      style: AppTextStyles.kycFieldInput(isDark),
                       decoration: InputDecoration(
                         hintText: 'Full name',
-                        hintStyle: GoogleFonts.playfairDisplay(
-                            fontSize: 16.sp,
-                            color: isDark ? Colors.white38 : Colors.black38),
+                        hintStyle: AppTextStyles.kycFieldHint(isDark),
+                        errorStyle: AppTextStyles.fieldError(isDark),
                         filled: true,
                         fillColor: isDark
                             ? Colors.white.withOpacity(0.03)
@@ -439,26 +428,18 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     ),
                     SizedBox(height: 16.h),
                     Text('Aadhaar Number',
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white60 : Colors.black54)),
+                        style: AppTextStyles.fieldLabel(isDark)),
                     SizedBox(height: 8.h),
                     TextFormField(
                       controller: _aadhaarNumberController,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(12),
-                      ],
+                      inputFormatters: [AadhaarInputFormatter()],
                       contextMenuBuilder: SecureClipboard.none,
-                      style: GoogleFonts.playfairDisplay(
-                          color: isDark ? Colors.white : Colors.black),
+                      style: AppTextStyles.kycFieldInput(isDark),
                       decoration: InputDecoration(
-                        hintText: '12-digit Aadhaar number',
-                        hintStyle: GoogleFonts.playfairDisplay(
-                            fontSize: 16.sp,
-                            color: isDark ? Colors.white38 : Colors.black38),
+                        hintText: 'XXXX XXXX XXXX',
+                        hintStyle: AppTextStyles.kycFieldHint(isDark),
+                        errorStyle: AppTextStyles.fieldError(isDark),
                         filled: true,
                         fillColor: isDark
                             ? Colors.white.withOpacity(0.03)
@@ -504,11 +485,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               size: 14.sp),
         ),
         SizedBox(width: 8.w),
-        Text('$name Required',
-            style: GoogleFonts.playfairDisplay(
-                fontSize: 15.sp,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white : Colors.black)),
+        Text('$name Required', style: AppTextStyles.fieldLabel(isDark)),
       ],
     );
   }
@@ -678,11 +655,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (!stylized)
-                Text(field.label,
-                    style: GoogleFonts.playfairDisplay(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white60 : Colors.black54)),
+                Text(field.label, style: AppTextStyles.fieldLabel(isDark)),
               if (!stylized) SizedBox(height: 8.h),
               TextFormField(
                 controller: _docControllers[doc.id]?[field.name],
@@ -693,17 +666,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     : TextCapitalization.none,
                 inputFormatters: formatters,
                 contextMenuBuilder: SecureClipboard.none,
-                style: GoogleFonts.playfairDisplay(
-                    color: stylized
-                        ? Colors.black87
-                        : (isDark ? Colors.white : Colors.black),
-                    fontWeight:
-                        stylized ? FontWeight.w600 : FontWeight.normal),
+                style: AppTextStyles.kycFieldInput(isDark),
                 decoration: InputDecoration(
                   hintText: field.label,
-                  hintStyle: GoogleFonts.playfairDisplay(
-                      fontSize: 16.sp,
-                      color: isDark ? Colors.white38 : Colors.black38),
+                  hintStyle: AppTextStyles.kycFieldHint(isDark),
+                  errorStyle: AppTextStyles.fieldError(isDark),
                   filled: true,
                   fillColor: stylized
                       ? Colors.white
