@@ -1,5 +1,7 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:startgold/core/error/failures.dart';
 import 'package:startgold/core/providers/user_provider.dart';
+import 'package:startgold/core/security/secure_logger.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
 
@@ -101,6 +103,39 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
 
   AadhaarNotifier(this._repository) : super(const AadhaarState());
 
+  /// Shown to the user instead of ANY backend/provider exception, gateway
+  /// error, or network failure — never the technical detail itself. That
+  /// detail is only ever logged via [SecureLogger] for debugging.
+  static const _temporaryIssueMessage =
+      "We're currently experiencing a temporary technical service issue. "
+      "Please try again later or contact your administrator.";
+
+  /// The backend already returns a clean, user-facing message for every
+  /// known Aadhaar failure path — this is a defensive fallback so that if
+  /// something else ever throws a raw technical exception (e.g. a gateway
+  /// error string like "CASHFREE API error: 422 — {...}", or an unhandled
+  /// Dio/network exception), the Aadhaar card never displays it verbatim.
+  static final _technicalErrorPattern = RegExp(
+    r'API error:\s*\d{3}|status(Code)?\s*[:=]?\s*\d{3}|error code:\s*\d{3}|'
+    r'DioException|SocketException|TimeoutException|HandshakeException',
+    caseSensitive: false,
+  );
+
+  String _sanitizeErrorMessage(Object e) {
+    // Network/provider-infrastructure failures (timeouts, 5xx, connection
+    // drops, SSL errors) never carry a message safe to show verbatim.
+    if (e is Failure) {
+      SecureLogger.e('[Aadhaar] technical error (not shown to user)', e);
+      return _temporaryIssueMessage;
+    }
+    final raw = e.toString().replaceFirst('Exception: ', '');
+    if (_technicalErrorPattern.hasMatch(raw)) {
+      SecureLogger.e('[Aadhaar] technical error (not shown to user)', e);
+      return _temporaryIssueMessage;
+    }
+    return raw;
+  }
+
   /// Step 1: request a DigiLocker consent session. If Aadhaar was already
   /// approved in a prior attempt, short-circuits straight to `approved`
   /// without ever calling Cashfree (see backend idempotency check).
@@ -145,7 +180,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         message: data['message']?.toString() ?? 'Unable to start Aadhaar verification.',
       );
     } catch (e) {
-      state = state.copyWith(phase: AadhaarPhase.failed, message: e.toString());
+      state = state.copyWith(phase: AadhaarPhase.failed, message: _sanitizeErrorMessage(e));
     }
   }
 
@@ -205,14 +240,15 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
             }
             continue;
           default:
+            SecureLogger.e('[Aadhaar] unexpected DigiLocker status (not shown to user): $status');
             state = state.copyWith(
               phase: AadhaarPhase.failed,
-              message: data['message']?.toString() ?? 'Unexpected status: $status',
+              message: data['message']?.toString() ?? _temporaryIssueMessage,
             );
             return;
         }
       } catch (e) {
-        state = state.copyWith(phase: AadhaarPhase.failed, message: e.toString());
+        state = state.copyWith(phase: AadhaarPhase.failed, message: _sanitizeErrorMessage(e));
         return;
       }
     }
