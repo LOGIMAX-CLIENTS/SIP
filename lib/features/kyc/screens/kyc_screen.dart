@@ -368,6 +368,15 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final isDone = state.phase == AadhaarPhase.approved;
     final isBusy = state.phase == AadhaarPhase.initiating ||
         state.phase == AadhaarPhase.polling;
+    // Error/failure text is surfaced only via AppToast (see
+    // _onVerifyAadhaar) — never rendered inline on the card, so no backend
+    // exception, provider error, or technical message can ever appear here.
+    final isErrorPhase = state.phase == AadhaarPhase.failed ||
+        state.phase == AadhaarPhase.expired ||
+        state.phase == AadhaarPhase.rejected;
+    const defaultHelperText =
+        'Enter your Aadhaar number, then verify via DigiLocker to complete KYC.';
+    final helperText = isErrorPhase ? defaultHelperText : (state.message ?? defaultHelperText);
 
     return Padding(
       padding: EdgeInsets.only(bottom: 32.h),
@@ -393,8 +402,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      state.message ??
-                          'Enter your Aadhaar number, then verify via DigiLocker to complete KYC.',
+                      helperText,
                       style: AppTextStyles.fieldHelper(isDark),
                     ),
                     SizedBox(height: 16.h),
