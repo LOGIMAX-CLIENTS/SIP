@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
+import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
 import 'package:startgold/routes/app_router.dart';
 import 'package:startgold/shared/theme/app_theme.dart';
 import 'package:startgold/shared/theme/app_text_styles.dart';
@@ -50,6 +51,10 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   final Set<String> _submittingDocIds = {};
   bool _initialized = false;
   bool _aadhaarSeeded = false;
+  // Set when the user taps "Edit" on an already-verified Aadhaar card, so
+  // the next _onVerifyAadhaar() call tells the backend to bypass its
+  // already-approved idempotency short-circuit (see KYCRepository.initiateAadhaar).
+  bool _aadhaarEditing = false;
 
   final _aadhaarNumberController = TextEditingController();
   final _aadhaarNameController = TextEditingController();
@@ -120,12 +125,30 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// `_initControllers`'s PAN seeding above. Deferred to a post-frame
   /// callback since it's triggered from `build()` and mutates a provider
   /// this widget also watches.
-  void _seedAadhaarIfApproved(bool aadhaarApproved) {
+  void _seedAadhaarIfApproved(bool aadhaarApproved, {String? maskedNumber, String? name}) {
     if (_aadhaarSeeded || !aadhaarApproved) return;
     _aadhaarSeeded = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ref.read(aadhaarProvider.notifier).seedApproved();
+      if (mounted) {
+        ref.read(aadhaarProvider.notifier).seedApproved(maskedNumber: maskedNumber, name: name);
+      }
     });
+  }
+
+  /// Re-opens an already-verified document's form so the user can redo
+  /// verification (e.g. fix a typo). PAN just needs its form shown again —
+  /// a new/edited PAN number is verified fresh by the backend regardless.
+  void _editDocument(KycDocumentType doc) {
+    setState(() => _completedDocIds.remove(doc.id));
+  }
+
+  /// Re-opens the Aadhaar form for a redo. `_aadhaarEditing` tells the next
+  /// `_onVerifyAadhaar()` call to pass `allowReverify: true`, since the
+  /// backend otherwise short-circuits any Aadhaar re-verification attempt
+  /// once one is already APPROVED.
+  void _editAadhaar() {
+    setState(() => _aadhaarEditing = true);
+    ref.read(aadhaarProvider.notifier).reset();
   }
 
   Future<void> _submitDoc(KycDocumentType doc) async {
@@ -138,6 +161,15 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       _docControllers[doc.id]?.forEach((key, controller) {
         fields[key] = controller.text;
       });
+      // doc.alreadyUploaded means this document was already APPROVED when
+      // the screen loaded — the only way its form is visible again is via
+      // the "Edit" action (see _editDocument), so this is a deliberate redo.
+      // Tells the backend to bypass its already-approved idempotency
+      // short-circuit, which would otherwise silently ignore a corrected
+      // name/number without ever re-verifying via Cashfree.
+      if (doc.alreadyUploaded) {
+        fields['allow_reverify'] = true;
+      }
 
       await ref.read(kycSubmitProvider.notifier).submit(
             requestFrom: widget.requestFrom,
@@ -159,6 +191,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
       if (mounted) {
         setState(() => _completedDocIds.add(doc.id));
+        await _checkAndHandleCompletion();
       }
     } catch (e) {
       if (mounted) {
@@ -185,6 +218,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       widget.requestFrom,
       aadhaarNumber: AadhaarInputFormatter.unformat(_aadhaarNumberController.text),
       fullName: _aadhaarNameController.text.trim(),
+      allowReverify: _aadhaarEditing,
     );
     if (!mounted) return;
 
@@ -215,14 +249,94 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         finalState.message ?? 'Aadhaar verification failed. Please try again.',
         type: ToastType.error,
       );
+      return;
+    }
+
+    if (finalState.phase == AadhaarPhase.approved) {
+      await _checkAndHandleCompletion();
     }
   }
 
-  bool _allDocsComplete(List<KycDocumentType> docs) {
-    return docs.every((doc) => _completedDocIds.contains(doc.id));
+  /// Fires after EVERY successful PAN submit and EVERY successful Aadhaar
+  /// approval (first-time or via Edit/reverify — see _submitDoc and
+  /// _onVerifyAadhaar). Re-fetches document-types so the completion check —
+  /// and the names shown in the mandatory popup below — always reflect the
+  /// verification that JUST happened, never stale pre-edit data. Only forms
+  /// call this, so it can never fire from merely viewing an already-verified
+  /// screen (e.g. opened from Profile).
+  Future<void> _checkAndHandleCompletion() async {
+    if (!mounted) return;
+    final KycDocumentsResult result;
+    try {
+      result = await ref.refresh(kycDocumentsProvider(widget.requestFrom).future);
+    } catch (_) {
+      return; // Couldn't refresh — nothing reliable to show, don't block on it.
+    }
+    if (!mounted) return;
+
+    // Sync the Aadhaar card's own display (separate from this dialog) —
+    // pollUntilTerminal's APPROVED case only flips the phase, it doesn't
+    // carry the masked number/name itself.
+    if (result.aadhaarApproved) {
+      ref.read(aadhaarProvider.notifier).updateVerifiedDetails(
+            maskedNumber: result.aadhaarMaskedNumber,
+            name: result.aadhaarName,
+          );
+    }
+
+    final bothComplete =
+        result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
+    if (!bothComplete) return;
+
+    final panDoc = result.documents.isEmpty
+        ? null
+        : result.documents.firstWhere(
+            (d) => d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'),
+            orElse: () => result.documents.first,
+          );
+
+    await _runCompletionSequence(panName: panDoc?.verifiedName, aadhaarName: result.aadhaarName);
   }
 
-  void _showSuccessDialog() {
+  /// Success animation, then the MANDATORY Profile Name Selection popup
+  /// (never skipped — see _showProfileNameSelectionDialog), then applies
+  /// the user's choice, then finally completes the screen. Every caller
+  /// (SIP/Withdrawal/Investment/Profile) awaits this screen and decides
+  /// what to do next itself (typically retrying the original blocked
+  /// action via KycVerificationFlow) — no requestFrom-specific navigation
+  /// lives here.
+  Future<void> _runCompletionSequence({String? panName, String? aadhaarName}) async {
+    await _showSuccessAnimation();
+    if (!mounted) return;
+
+    final choice = await _showProfileNameSelectionDialog(
+      panName: panName, aadhaarName: aadhaarName,
+    );
+    if (!mounted) return;
+
+    if (choice == 'PAN' || choice == 'AADHAAR') {
+      try {
+        await ref.read(kycRepositoryProvider).updateProfileName(source: choice!);
+        if (mounted) {
+          AppToast.show(context, 'Profile name updated.', type: ToastType.success);
+        }
+      } catch (e) {
+        if (mounted) {
+          String msg = e.toString();
+          if (msg.startsWith('Exception: ')) msg = msg.substring('Exception: '.length);
+          AppToast.show(context, msg, type: ToastType.error);
+        }
+      }
+    }
+    // "Not Now" (choice == null): profile name left unchanged, KYC stays APPROVED.
+
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  /// Brief, auto-dismissing checkmark — purely celebratory, does not itself
+  /// close this screen (see _runCompletionSequence).
+  Future<void> _showSuccessAnimation() async {
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -269,16 +383,96 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       ),
     );
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        Navigator.pop(context); // Close dialog
-        // KYC is complete — every caller (SIP/Withdrawal/Investment/Profile)
-        // awaits this screen and decides what to do next itself (typically
-        // retrying the original blocked action via KycVerificationFlow).
-        // No requestFrom-specific navigation lives here anymore.
-        Navigator.pop(context, true);
-      }
-    });
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) Navigator.pop(context); // Close the checkmark dialog only.
+  }
+
+  /// MANDATORY confirmation shown after every PAN + Aadhaar completion —
+  /// first-time verification AND every re-verification via Edit — with no
+  /// exceptions, even when both verified names are identical to each other
+  /// or to the current profile name (the point is to make the customer
+  /// explicitly aware their profile name CAN change, every single time).
+  /// Not dismissible via the barrier or the back button (PopScope
+  /// canPop:false) — the user must tap one of the three actions. Returns
+  /// 'PAN', 'AADHAAR', or null ("Not Now").
+  Future<String?> _showProfileNameSelectionDialog({String? panName, String? aadhaarName}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PopScope(
+        canPop: false,
+        child: Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24.r)),
+          child: Padding(
+            padding: EdgeInsets.all(24.r),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Choose Your Profile Name',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 18.sp,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF643D41),
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                _buildVerifiedNameDisplay('Verified PAN Name', panName, isDark),
+                SizedBox(height: 12.h),
+                _buildVerifiedNameDisplay('Verified Aadhaar Name', aadhaarName, isDark),
+                SizedBox(height: 16.h),
+                Text(
+                  'Which verified name would you like to use as your Profile Name?',
+                  style: AppTextStyles.fieldHelper(isDark),
+                ),
+                SizedBox(height: 20.h),
+                CustomButton(
+                  text: 'Use PAN Name',
+                  onPressed: () => Navigator.pop(dialogContext, 'PAN'),
+                  gradient: AppTheme.greenGradient,
+                ),
+                SizedBox(height: 10.h),
+                CustomButton(
+                  text: 'Use Aadhaar Name',
+                  onPressed: () => Navigator.pop(dialogContext, 'AADHAAR'),
+                  gradient: AppTheme.greenGradient,
+                ),
+                SizedBox(height: 8.h),
+                // Center(
+                //   child: TextButton(
+                //     onPressed: () => Navigator.pop(dialogContext, null),
+                //     child: Text(
+                //       'Not Now',
+                //       style: TextStyle(
+                //         fontSize: 14.sp,
+                //         fontWeight: FontWeight.w700,
+                //         color: isDark ? Colors.white60 : Colors.black54,
+                //       ),
+                //     ),
+                //   ),
+                // ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerifiedNameDisplay(String label, String? name, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label:', style: AppTextStyles.fieldLabel(isDark)),
+        SizedBox(height: 2.h),
+        Text(
+          (name == null || name.isEmpty) ? '—' : name,
+          style: AppTextStyles.kycFieldInput(isDark).copyWith(fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
   }
 
   @override
@@ -286,7 +480,6 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final docsAsync = ref.watch(kycDocumentsProvider(widget.requestFrom));
     final aadhaarState = ref.watch(aadhaarProvider);
-    final aadhaarApproved = aadhaarState.phase == AadhaarPhase.approved;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -297,7 +490,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             child: docsAsync.when(
               data: (result) {
                 _initControllers(result.documents);
-                _seedAadhaarIfApproved(result.aadhaarApproved);
+                _seedAadhaarIfApproved(
+                  result.aadhaarApproved,
+                  maskedNumber: result.aadhaarMaskedNumber,
+                  name: result.aadhaarName,
+                );
                 return SingleChildScrollView(
                   padding: EdgeInsets.all(24.w),
                   child: Column(
@@ -323,9 +520,6 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: docsAsync.hasValue
-          ? _buildFooter(isDark, docsAsync.value!.documents, aadhaarApproved)
-          : null,
     );
   }
 
@@ -342,7 +536,14 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           _buildStatusHeader(doc.name, isDark, isDone),
           SizedBox(height: 16.h),
           if (isDone)
-            _buildVerifiedBanner(isDark)
+            _buildVerifiedBanner(
+              isDark,
+              numberLabel: 'PAN Number',
+              maskedValue: doc.maskedValue,
+              nameLabel: 'Name as on PAN',
+              verifiedName: doc.verifiedName,
+              onEdit: () => _editDocument(doc),
+            )
           else ...[
             Form(
               key: _docFormKeys[doc.id],
@@ -386,7 +587,14 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           _buildStatusHeader('Aadhaar', isDark, isDone),
           SizedBox(height: 16.h),
           if (isDone)
-            _buildVerifiedBanner(isDark)
+            _buildVerifiedBanner(
+              isDark,
+              numberLabel: 'Aadhaar Number',
+              maskedValue: state.maskedNumber,
+              nameLabel: 'Name as on Aadhaar',
+              verifiedName: state.verifiedName,
+              onEdit: _editAadhaar,
+            )
           else ...[
             Container(
               width: double.infinity,
@@ -498,10 +706,19 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
-  /// Same green "Verified" pill used on the Profile screen's KYC menu item
-  /// (see profile_screen.dart) — reused here so a completed PAN/Aadhaar
-  /// step reads consistently across the app.
-  Widget _buildVerifiedBanner(bool isDark) {
+  /// Same green "Verified" styling used on the Profile screen's KYC menu
+  /// item (see profile_screen.dart), extended with the masked document
+  /// number + verified name (when available) and an "Edit" action that
+  /// re-opens the form to redo verification.
+  Widget _buildVerifiedBanner(
+    bool isDark, {
+    String? numberLabel,
+    String? maskedValue,
+    String? nameLabel,
+    String? verifiedName,
+    VoidCallback? onEdit,
+  }) {
+    final labelColor = const Color(0xFF0E5723).withOpacity(0.65);
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
@@ -510,20 +727,66 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         borderRadius: BorderRadius.circular(16.r),
         border: Border.all(color: const Color(0xFF0E5723).withOpacity(0.15)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.verified_user_rounded,
-              color: const Color(0xFF0E5723), size: 16.sp),
-          SizedBox(width: 8.w),
-          Text(
-            'Verified',
-            style: TextStyle(
-              fontSize: 12.sp,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF0E5723),
-              letterSpacing: 0.3,
-            ),
+          Row(
+            children: [
+              Icon(Icons.verified_user_rounded,
+                  color: const Color(0xFF0E5723), size: 16.sp),
+              SizedBox(width: 8.w),
+              Text(
+                'Verified',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF0E5723),
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const Spacer(),
+              if (onEdit != null)
+                InkWell(
+                  onTap: onEdit,
+                  borderRadius: BorderRadius.circular(8.r),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.edit_outlined,
+                            size: 14.sp, color: const Color(0xFF0E5723)),
+                        SizedBox(width: 4.w),
+                        Text(
+                          'Edit',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0E5723),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
+          if (maskedValue != null && maskedValue.isNotEmpty) ...[
+            SizedBox(height: 12.h),
+            Text(numberLabel ?? 'Number',
+                style: TextStyle(fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
+            SizedBox(height: 2.h),
+            Text(maskedValue,
+                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+          ],
+          if (verifiedName != null && verifiedName.isNotEmpty) ...[
+            SizedBox(height: 10.h),
+            Text(nameLabel ?? 'Name',
+                style: TextStyle(fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
+            SizedBox(height: 2.h),
+            Text(verifiedName,
+                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+          ],
         ],
       ),
     );
@@ -718,23 +981,6 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
-  Widget _buildFooter(
-      bool isDark, List<KycDocumentType> docs, bool aadhaarApproved) {
-    final canFinish = _allDocsComplete(docs) && aadhaarApproved;
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(24.w, 16.h, 24.w, 16.h),
-        decoration: const BoxDecoration(color: Colors.transparent),
-        child: CustomButton(
-          text: 'Finish',
-          svgIconPath: 'assets/buttons/tick.svg',
-          onPressed: canFinish ? _showSuccessDialog : null,
-          gradient: AppTheme.greenGradient,
-        ),
-      ),
-    );
-  }
 }
 
 /// Converts input to UPPER CASE (used for PAN number).

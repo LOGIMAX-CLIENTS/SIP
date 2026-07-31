@@ -19,11 +19,14 @@ class KycRepository {
     });
 
     if (response.data['success'] == true) {
-      final List documents = response.data['data']['documents'];
-      final aadhaarStatus = (response.data['data']['aadhaar_status'] ?? '').toString();
+      final data = response.data['data'];
+      final List documents = data['documents'];
+      final aadhaarStatus = (data['aadhaar_status'] ?? '').toString();
       return KycDocumentsResult(
         documents: documents.map((e) => KycDocumentType.fromJson(e)).toList(),
         aadhaarApproved: aadhaarStatus.toUpperCase() == 'APPROVED',
+        aadhaarMaskedNumber: data['aadhaar_masked_number']?.toString(),
+        aadhaarName: data['aadhaar_name']?.toString(),
       );
     } else {
       throw Exception(response.data['message'] ?? 'Failed to load documents');
@@ -113,16 +116,22 @@ class KycRepository {
   /// later compared against DigiLocker's returned name in
   /// `_check_aadhaar_kyc` to populate `name_matched`/`name_match_score` —
   /// a mismatch does not block approval, but it is recorded.
+  /// [allowReverify] is set when the user deliberately taps "Edit" on an
+  /// already-verified Aadhaar card to redo verification — tells the backend
+  /// to bypass its already-approved idempotency short-circuit (see
+  /// `KYCService._initiate_aadhaar_kyc`'s `allow_reverify` param).
   Future<Map<String, dynamic>> initiateAadhaar({
     required String requestFrom,
     required String aadhaarNumber,
     required String fullName,
+    bool allowReverify = false,
   }) {
     return _uploadAadhaar(
       requestFrom: requestFrom,
       fields: {
         'aadhaar_number': aadhaarNumber,
         'name': fullName,
+        if (allowReverify) 'allow_reverify': true,
       },
     );
   }
@@ -167,6 +176,28 @@ class KycRepository {
         (data is Map ? data['message'] : null) ??
         response.data['message'] ??
         'Aadhaar verification failed. Please try again.';
+    throw Exception(serverMessage);
+  }
+
+  /// Updates the customer's profile name (cus_name) to the verified name
+  /// from the latest APPROVED PAN or Aadhaar KYC record — used by the
+  /// mandatory Profile Name Selection popup shown after every successful
+  /// PAN + Aadhaar completion. [source] must be `'PAN'` or `'AADHAAR'`; the
+  /// backend resolves the actual name server-side from the verified
+  /// record, never trusting a client-supplied name string.
+  Future<void> updateProfileName({required String source}) async {
+    final response = await _apiClient.post('kyc/update-profile-name', data: {
+      'source': source,
+    });
+
+    if (response.data['success'] == true) return;
+
+    final errorObj = response.data['error'];
+    final dataObj = response.data['data'];
+    final String serverMessage = (errorObj is Map ? errorObj['message'] : null) ??
+        (dataObj is Map ? dataObj['message'] : null) ??
+        response.data['message'] ??
+        'Could not update profile name.';
     throw Exception(serverMessage);
   }
 }

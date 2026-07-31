@@ -70,12 +70,16 @@ class AadhaarState {
   final String? verificationId;
   final String? consentUrl;
   final String? message;
+  final String? maskedNumber;
+  final String? verifiedName;
 
   const AadhaarState({
     this.phase = AadhaarPhase.idle,
     this.verificationId,
     this.consentUrl,
     this.message,
+    this.maskedNumber,
+    this.verifiedName,
   });
 
   AadhaarState copyWith({
@@ -83,12 +87,16 @@ class AadhaarState {
     String? verificationId,
     String? consentUrl,
     String? message,
+    String? maskedNumber,
+    String? verifiedName,
   }) {
     return AadhaarState(
       phase: phase ?? this.phase,
       verificationId: verificationId ?? this.verificationId,
       consentUrl: consentUrl ?? this.consentUrl,
       message: message ?? this.message,
+      maskedNumber: maskedNumber ?? this.maskedNumber,
+      verifiedName: verifiedName ?? this.verifiedName,
     );
   }
 }
@@ -150,6 +158,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
     String requestFrom, {
     required String aadhaarNumber,
     required String fullName,
+    bool allowReverify = false,
   }) async {
     state = state.copyWith(phase: AadhaarPhase.initiating, message: null);
     try {
@@ -157,6 +166,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         requestFrom: requestFrom,
         aadhaarNumber: aadhaarNumber,
         fullName: fullName,
+        allowReverify: allowReverify,
       );
       final status = (data['status'] ?? '').toString();
 
@@ -262,16 +272,34 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
     );
   }
 
-  /// Resets to idle so the user can restart consent after EXPIRED/REJECTED.
+  /// Resets to idle so the user can restart consent after EXPIRED/REJECTED,
+  /// or to redo verification from the "Edit" action on an approved card.
   void reset() => state = const AadhaarState();
 
   /// Seeds the card as already-approved from the server's per-document
-  /// status check (`kyc/document-types`'s `aadhaar_status` — see
-  /// kyc_screen.dart) — skips the form entirely, no DigiLocker round trip.
-  void seedApproved() {
+  /// status check (`kyc/document-types`'s `aadhaar_status`/`aadhaar_masked_number`/
+  /// `aadhaar_name` — see kyc_screen.dart) — skips the form entirely, no
+  /// DigiLocker round trip. [maskedNumber]/[name] are shown on the verified
+  /// card instead of a bare "Verified" badge.
+  void seedApproved({String? maskedNumber, String? name}) {
     if (state.phase == AadhaarPhase.idle) {
-      state = state.copyWith(phase: AadhaarPhase.approved);
+      state = state.copyWith(
+        phase: AadhaarPhase.approved,
+        maskedNumber: maskedNumber,
+        verifiedName: name,
+      );
     }
+  }
+
+  /// Syncs the masked number/name shown on the verified card after a LIVE
+  /// approval this session (first-time or via Edit/reverify) — unlike
+  /// [seedApproved], applies regardless of current phase, since
+  /// `pollUntilTerminal`'s APPROVED case only flips the phase and doesn't
+  /// carry these display fields itself (see kyc_screen.dart's
+  /// _checkAndHandleCompletion, which re-fetches document-types and calls
+  /// this right after).
+  void updateVerifiedDetails({String? maskedNumber, String? name}) {
+    state = state.copyWith(maskedNumber: maskedNumber, verifiedName: name);
   }
 }
 
