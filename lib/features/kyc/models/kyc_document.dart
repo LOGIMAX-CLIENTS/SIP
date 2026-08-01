@@ -7,6 +7,8 @@
   final bool alreadyUploaded;
   final List<KycField> fields;
   final KycImagesRequirement images;
+  final String? maskedValue;
+  final String? verifiedName;
 
   KycDocumentType({
     required this.id,
@@ -17,6 +19,8 @@
     required this.images,
     this.status = '',
     this.alreadyUploaded = false,
+    this.maskedValue,
+    this.verifiedName,
   });
 
   factory KycDocumentType.fromJson(Map<String, dynamic> json) {
@@ -27,6 +31,8 @@
       mandatory: json['mandatory'] ?? false,
       status: json['status'] ?? '',
       alreadyUploaded: json['already_uploaded'] ?? false,
+      maskedValue: json['masked_value']?.toString(),
+      verifiedName: json['verified_name']?.toString(),
       fields: (json['fields'] as List?)
               ?.map((e) => KycField.fromJson(e))
               .toList() ??
@@ -43,8 +49,15 @@
 class KycDocumentsResult {
   final List<KycDocumentType> documents;
   final bool aadhaarApproved;
+  final String? aadhaarMaskedNumber;
+  final String? aadhaarName;
 
-  KycDocumentsResult({required this.documents, required this.aadhaarApproved});
+  KycDocumentsResult({
+    required this.documents,
+    required this.aadhaarApproved,
+    this.aadhaarMaskedNumber,
+    this.aadhaarName,
+  });
 }
 
 class KycField {

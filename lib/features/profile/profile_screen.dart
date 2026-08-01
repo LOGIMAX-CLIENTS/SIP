@@ -154,6 +154,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.accountDetails),
                           ),
                           _buildMenuItem(
+                            'Bank Details',
+                            'assets/withdraw/bank.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.bankDetails),
+                          ),
+                          _buildMenuItem(
                             'Transaction History',
                             'assets/sidemenu/transhistory.svg',
                             onTap: () => Navigator.pushNamed(
@@ -163,12 +169,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             'KYC Verification',
                             'assets/sidemenu/kyc.svg',
                             onTap: () async {
-                              if (user.kycStatus == 1) {
-                                AppToast.show(
-                                    context, 'Your KYC is already verified! ✓',
-                                    type: ToastType.success);
-                                return;
-                              }
+                              // Always open the KYC screen — even when already
+                              // verified, so the user can view their masked
+                              // PAN/Aadhaar details and use Edit to redo
+                              // verification (see kyc/screens/kyc_screen.dart).
                               final result = await Navigator.pushNamed(
                                   context, AppRouter.kyc,
                                   arguments: {'request_from': 'profile'});
