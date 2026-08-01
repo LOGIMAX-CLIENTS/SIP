@@ -479,7 +479,7 @@ class _TransactionFilterSheetState extends State<_TransactionFilterSheet> {
                 children: [
                   Text(
                     label,
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 9.sp,
                       fontWeight: FontWeight.w600,
                       color: isSet ? _green : Colors.grey,

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import 'package:pinput/pinput.dart';
 import '../controller/auth_controller.dart';
 
@@ -90,9 +91,7 @@ class _PinScreenState extends ConsumerState<PinScreen> {
                           delay: const Duration(milliseconds: 100),
                           child: Text(
                             ref.tr('welcomeBack'),
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 28.sp,
-                              fontWeight: FontWeight.w800,
+                            style: AppTextStyles.displayLarge(isDark).copyWith(
                               color: isDark ? Colors.white : const Color(0xFF0F172A),
                               height: 1.15,
                             ),

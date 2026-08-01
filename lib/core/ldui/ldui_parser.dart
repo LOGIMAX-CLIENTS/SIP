@@ -435,22 +435,25 @@ class LduiParser {
       height: height,
     );
 
-    // Support Google Fonts via fontFamily
-    if (fontFamily != null) {
-      switch (fontFamily) {
-        case 'PlayfairDisplay':
-          baseStyle = GoogleFonts.playfairDisplay(textStyle: baseStyle);
-          break;
-        case 'Lora':
-          baseStyle = GoogleFonts.lora(textStyle: baseStyle);
-          break;
-        case 'Poppins':
-          baseStyle = GoogleFonts.poppins(textStyle: baseStyle);
-          break;
-        case 'Inter':
-          baseStyle = GoogleFonts.inter(textStyle: baseStyle);
-          break;
-      }
+    // Support Google Fonts via fontFamily. When fontFamily is missing or
+    // unrecognized, fall back to PlayfairDisplay rather than returning a
+    // bare TextStyle, so server-driven text always renders in a real
+    // registered font instead of silently falling through to the broken
+    // theme default.
+    switch (fontFamily) {
+      case 'Lora':
+        baseStyle = GoogleFonts.lora(textStyle: baseStyle);
+        break;
+      case 'Poppins':
+        baseStyle = GoogleFonts.poppins(textStyle: baseStyle);
+        break;
+      case 'Inter':
+        baseStyle = GoogleFonts.inter(textStyle: baseStyle);
+        break;
+      case 'PlayfairDisplay':
+      default:
+        baseStyle = GoogleFonts.playfairDisplay(textStyle: baseStyle);
+        break;
     }
 
     return baseStyle;

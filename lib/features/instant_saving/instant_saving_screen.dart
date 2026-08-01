@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 import '../../shared/widgets/numeric_styled_text.dart';
 import 'package:startgold/core/providers/market_provider.dart';
 import 'package:startgold/core/providers/commodity_provider.dart';
@@ -340,7 +341,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       Text(
                         ref.tr('Please do not press back or close the app while we secure your transaction.'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           fontSize: 13.sp,
                           color: Colors.black45,
                           height: 1.4,
@@ -363,7 +364,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                     SizedBox(width: 6.w),
                     Text(
                       ref.tr('100% Secure Transaction'),
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 11.sp,
                         fontWeight: FontWeight.w600,
                         color: const Color(0xFF91411D).withOpacity(0.75),
@@ -488,7 +489,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 children: [
                   Text(
                     'Live Selling Price',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 14.sp,
                       color: Colors.black45,
                       fontWeight: FontWeight.w600,
@@ -533,7 +534,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       SizedBox(width: 4.w),
                       Text(
                         'Market Closed',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           fontSize: 11.sp,
                           color: const Color(0xFFD97706),
                           fontWeight: FontWeight.w700,
@@ -702,7 +703,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         child: Center(
           child: Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 14.sp,
               fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
               color: isActive
@@ -741,7 +742,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           ),
           SizedBox(width: 10.w),
           Text(label,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                   fontSize: 14.sp,
                   fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                   color: isActive ? Colors.black : Colors.black45)),
@@ -807,7 +808,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           children: [
             // ── Select invest type ──
             Text('Select Invest Type',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                     fontWeight: FontWeight.w600)),
@@ -865,7 +866,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
             // ── Enter your saving amount ──
             Text('Enter Your Saving Amount',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                     fontWeight: FontWeight.w600)),
@@ -952,7 +953,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                     Expanded(
                       child: Text(
                         errorMsg!,
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           fontSize: 12.sp,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFFE53935),
@@ -1282,7 +1283,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       ),
                       child: Text(
                         'POPULAR',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           color: Colors.white,
                           fontSize: 8.sp,
                           letterSpacing: 0.5,
@@ -1409,7 +1410,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
               SizedBox(width: 6.w),
               Text(
                 '100% Secure Transaction & Bank Grade Storage',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 11.sp,
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF91411D).withOpacity(0.75),
@@ -1504,7 +1505,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                           SizedBox(width: 8.w),
                           Text(
                             'Pay Now',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 16.sp,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
@@ -1724,6 +1725,7 @@ class _BreakdownSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1751,11 +1753,8 @@ class _BreakdownSheet extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Breakdown',
-                      style: GoogleFonts.lora(
-                        fontSize: 20.sp,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black,
-                      )),
+                      style: AppTextStyles.titleLarge(isDark)
+                          .copyWith(color: Colors.black)),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Container(
@@ -1835,12 +1834,8 @@ class _BreakdownSheet extends StatelessWidget {
                           color: Colors.white, size: 22.sp),
                       SizedBox(width: 10.w),
                       Text('Pay Now',
-                          style: TextStyle(
-                            fontSize: 18.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.3,
-                          )),
+                          style: AppTextStyles.button(isDark)
+                              .copyWith(letterSpacing: 0.3)),
                     ],
                   ),
                 ),
@@ -1862,14 +1857,14 @@ class _BreakdownSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label,
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: isBold ? 16.sp : 14.sp,
                   fontWeight: isBold ? FontWeight.w700 : FontWeight.w600,
                   color: Colors.black,
                 )),
             if (subtitle != null)
               Text(subtitle,
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black38,
                     fontWeight: FontWeight.w500,

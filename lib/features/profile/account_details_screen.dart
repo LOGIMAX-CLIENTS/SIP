@@ -364,6 +364,9 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     final inputStyle = isNumeric
         ? GoogleFonts.lora(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white : const Color(0xFF333333))
         : GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white : const Color(0xFF333333));
+    final hintStyle = isNumeric
+        ? GoogleFonts.lora(fontSize: 16.sp, color: Colors.grey)
+        : GoogleFonts.playfairDisplay(fontSize: 16.sp, color: Colors.grey);
 
     return Padding(
       padding: EdgeInsets.only(bottom: 16.h),
@@ -393,7 +396,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                           onChanged: onChanged,
                           contextMenuBuilder: SecureClipboard.none,
                           style: inputStyle,
-                          decoration: InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 12.h), hintStyle: GoogleFonts.playfairDisplay(fontSize: 16.sp, color: Colors.grey)),
+                          decoration: InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 12.h), hintStyle: hintStyle),
                         )
                       : Padding(
                           padding: EdgeInsets.symmetric(vertical: 16.h),

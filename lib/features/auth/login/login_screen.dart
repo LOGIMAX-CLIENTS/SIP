@@ -18,6 +18,7 @@ import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/shared_service.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import '../../../core/services/environment_service.dart';
 import '../../../core/providers/environment_provider.dart';
 import '../../../core/providers/app_control_provider.dart';
@@ -148,7 +149,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             children: [
                               Text(
                                 'Welcome to',
-                                style: TextStyle(
+                                style: GoogleFonts.playfairDisplay(
                                   fontSize: 30.sp,
                                   fontWeight: FontWeight.bold,
                                   color: primaryTextColor,
@@ -172,7 +173,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     blendMode: BlendMode.srcIn,
                                     child: Text(
                                       'start',
-                                      style: TextStyle(
+                                      style: GoogleFonts.playfairDisplay(
                                         fontSize: 30.sp,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -192,7 +193,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     blendMode: BlendMode.srcIn,
                                     child: Text(
                                       'GOLD',
-                                      style: TextStyle(
+                                      style: GoogleFonts.playfairDisplay(
                                         fontSize: 30.sp,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -201,7 +202,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   // " Family" — plain color
                                   Text(
                                     ' Family',
-                                    style: TextStyle(
+                                    style: GoogleFonts.playfairDisplay(
                                       fontSize: 30.sp,
                                       fontWeight: FontWeight.bold,
                                       color: primaryTextColor,
@@ -212,7 +213,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               SizedBox(height: 12.h),
                               Text(
                                 'Your Gold Journey Starts the Best Way!',
-                                style: TextStyle(
+                                style: GoogleFonts.playfairDisplay(
                                   fontSize: 16.sp,
                                   color: secondaryTextColor,
                                 ),
@@ -239,7 +240,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             behavior: HitTestBehavior.opaque,
                             child: Text(
                               'Phone Number*',
-                              style: TextStyle(
+                              style: GoogleFonts.playfairDisplay(
                                 fontSize: 20.sp,
                                 fontWeight: FontWeight.bold,
                                 color: primaryTextColor,
@@ -319,7 +320,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     },
                                     decoration: InputDecoration(
                                       hintText: 'Enter Your Phone Number',
-                                      hintStyle: TextStyle(
+                                      hintStyle: AppTextStyles.inputHint(isDark)
+                                          .copyWith(
                                         fontSize: 16.sp,
                                         color:
                                             primaryTextColor.withOpacity(0.3),
@@ -380,8 +382,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: RichText(
                           textAlign: TextAlign.center,
                           text: TextSpan(
-                            style: TextStyle(
-                              fontFamily: 'PlayfairDisplay',
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 12.sp,
                               color: secondaryTextColor,
                               height: 1.6,
@@ -391,8 +392,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   text: 'By Proceeding, You Accept Our '),
                               TextSpan(
                                 text: 'Terms and Conditions.',
-                                style: const TextStyle(
-                                  fontFamily: 'PlayfairDisplay',
+                                style: GoogleFonts.playfairDisplay(
                                   color: Colors.orangeAccent,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -401,8 +401,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               const TextSpan(text: '\nand '),
                               TextSpan(
                                 text: 'Privacy Policy.',
-                                style: const TextStyle(
-                                  fontFamily: 'PlayfairDisplay',
+                                style: GoogleFonts.playfairDisplay(
                                   color: Colors.orangeAccent,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -553,18 +552,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 Text(
                   'Developer Access',
-                  style: TextStyle(
-                    fontFamily: 'PlayfairDisplay',
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.bold,
-                    color: primaryTextColor,
-                  ),
+                  style: AppTextStyles.titleMedium(isDark)
+                      .copyWith(color: primaryTextColor),
                   textAlign: TextAlign.center,
                 ),
                 SizedBox(height: 8.h),
                 Text(
                   'Enter environment code to proceed.',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 14.sp,
                     color: secondaryTextColor,
                   ),
@@ -584,7 +579,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     obscureText: true,
                     autofocus: true,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: GoogleFonts.lora(
                       fontSize: 18.sp,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 8,
@@ -612,7 +607,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onPressed: () => Navigator.of(context).pop(),
                   child: Text(
                     'Cancel',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       color: secondaryTextColor,
                       fontSize: 14.sp,
                     ),
@@ -651,18 +646,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 Text(
                   'Select Environment',
-                  style: TextStyle(
-                    fontFamily: 'PlayfairDisplay',
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.bold,
-                    color: primaryTextColor,
-                  ),
+                  style: AppTextStyles.titleMedium(isDark)
+                      .copyWith(color: primaryTextColor),
                   textAlign: TextAlign.center,
                 ),
                 SizedBox(height: 8.h),
                 Text(
                   'Choose the target API and WebSocket server.',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 14.sp,
                     color: secondaryTextColor,
                   ),
@@ -713,7 +704,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onPressed: () => Navigator.of(context).pop(),
                   child: Text(
                     'Cancel',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       color: secondaryTextColor,
                       fontSize: 14.sp,
                     ),
@@ -763,7 +754,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             SizedBox(width: 12.w),
             Text(
               label,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 16.sp,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                 color: primaryTextColor,
@@ -779,7 +770,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
                 child: Text(
                   'Active',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     color: Colors.white,
                     fontSize: 10.sp,
                     fontWeight: FontWeight.bold,

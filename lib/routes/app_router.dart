@@ -214,7 +214,7 @@ class AppRouter {
                   const SizedBox(height: 8),
                   Text(
                       'Plan: ${args['type'] == 'daily_sip' ? 'Daily Savings' : 'One-time'}',
-                      style: const TextStyle(color: Colors.grey)),
+                      style: GoogleFonts.playfairDisplay(color: Colors.grey)),
                   const SizedBox(height: 48),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),

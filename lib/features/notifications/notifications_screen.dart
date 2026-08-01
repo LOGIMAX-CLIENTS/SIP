@@ -8,6 +8,7 @@ import '../../shared/widgets/numeric_styled_text.dart';
 
 import '../../core/services/notification_service.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/theme/app_text_styles.dart';
 import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/app_toast.dart';
 
@@ -62,7 +63,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                           SizedBox(width: 4.w),
                           Text(
                             'Mark All Read',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 11.sp,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
@@ -410,11 +411,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           SizedBox(height: 20.h),
           Text(
             'No Notifications Yet',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 18.sp,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : const Color(0xFF1E293B),
-            ),
+            style: AppTextStyles.titleMedium(isDark),
           ),
           SizedBox(height: 8.h),
           Text(

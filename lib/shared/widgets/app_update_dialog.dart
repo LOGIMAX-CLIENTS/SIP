@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/models/app_control_model.dart';
+import '../theme/app_text_styles.dart';
 
 /// Blocking app update dialog.
 ///
@@ -111,7 +112,7 @@ class AppUpdateDialog extends StatelessWidget {
                 ),
                 child: Text(
                   'v${msg.latestVersion}',
-                  style: GoogleFonts.playfairDisplay(
+                  style: GoogleFonts.lora(
                     fontSize: 12.sp,
                     color: const Color(0xFF1B882C),
                     fontWeight: FontWeight.w700,
@@ -155,11 +156,7 @@ class AppUpdateDialog extends StatelessWidget {
                     ),
                     child: Text(
                       msg.buttonText.isNotEmpty ? msg.buttonText : 'Update Now',
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 15.sp,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
+                      style: AppTextStyles.button(isDark),
                     ),
                   ),
                 ),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../home/home_screen.dart';
 import '../instant_saving/instant_saving_screen.dart';
 import '../history/screens/transaction_history_screen.dart';
@@ -246,7 +247,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           SizedBox(height: 2.h),
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 11.sp,
               fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
               color: isActive ? AppTheme.primaryGreen : inactiveColor,

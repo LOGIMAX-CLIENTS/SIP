@@ -47,7 +47,7 @@ class JewelleryScreen extends ConsumerWidget {
             icon: Icon(Icons.home_rounded, size: 20.sp),
             label: Text(
               'Back to Home',
-              style: GoogleFonts.lora(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 16.sp,
                 fontWeight: FontWeight.w700,
               ),
@@ -91,7 +91,7 @@ class JewelleryScreen extends ConsumerWidget {
                         Text(
                           'Failed to load jewellery data',
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.lora(
+                          style: GoogleFonts.playfairDisplay(
                             fontSize: 16.sp,
                             fontWeight: FontWeight.w600,
                             color: isDark ? Colors.white70 : Colors.black54,
@@ -192,7 +192,7 @@ class JewelleryScreen extends ConsumerWidget {
             children: [
               TextSpan(
                 text: 'Stay ',
-                style: GoogleFonts.lora(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 28.sp,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF024E1C),
@@ -200,7 +200,7 @@ class JewelleryScreen extends ConsumerWidget {
               ),
               TextSpan(
                 text: 'Tuned...!',
-                style: GoogleFonts.lora(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 28.sp,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFFDE6A02),
@@ -222,7 +222,7 @@ class JewelleryScreen extends ConsumerWidget {
         // "Right Route for"
         Text(
           'Right Route for',
-          style: GoogleFonts.lora(
+          style: GoogleFonts.playfairDisplay(
             fontSize: 14.sp,
             fontWeight: FontWeight.w500,
             color: isDark
@@ -239,7 +239,7 @@ class JewelleryScreen extends ConsumerWidget {
             children: [
               TextSpan(
                 text: 'Bright Jewellery\n',
-                style: GoogleFonts.lora(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 20.sp,
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF024E1C),
@@ -248,7 +248,7 @@ class JewelleryScreen extends ConsumerWidget {
               ),
               TextSpan(
                 text: 'Solutions',
-                style: GoogleFonts.lora(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 20.sp,
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFFDE6A02),

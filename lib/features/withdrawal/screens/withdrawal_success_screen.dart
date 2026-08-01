@@ -11,6 +11,7 @@ import '../../../core/providers/home_dashboard_provider.dart';
 import '../../profile/profile_controller.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/theme/app_text_styles.dart';
 
 class WithdrawalSuccessScreen extends ConsumerWidget {
   final Map<String, dynamic> data;
@@ -265,6 +266,7 @@ class WithdrawalSuccessScreen extends ConsumerWidget {
     bool showCopy = false,
     String fullValue = '',
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 10.h),
       child: Row(
@@ -282,11 +284,8 @@ class WithdrawalSuccessScreen extends ConsumerWidget {
           Expanded(
             child: Text(
               label,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w500,
-                color: secondaryText,
-              ),
+              style: AppTextStyles.bodySmall(isDark)
+                  .copyWith(color: secondaryText),
             ),
           ),
           Text(

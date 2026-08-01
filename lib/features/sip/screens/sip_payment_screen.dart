@@ -533,7 +533,8 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
           Text(
             'Please wait while we prepare your\nsubscription checkout',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13.sp, color: Colors.black45),
+            style: GoogleFonts.playfairDisplay(
+                fontSize: 13.sp, color: Colors.black45),
           ),
         ],
       ),
@@ -581,7 +582,7 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
             Text(
               'Please wait while we confirm your\nmandate authorization',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 12.sp,
                 color: Colors.black45,
                 height: 1.5,
@@ -645,7 +646,7 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
               onPressed: () => Navigator.pop(context),
               child: Text(
                 'Go Back',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   color: Colors.black45,
                   fontSize: 14.sp,
                   fontWeight: FontWeight.w600,

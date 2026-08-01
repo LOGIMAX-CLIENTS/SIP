@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
@@ -197,8 +198,7 @@ class RegistrationSuccessScreen extends ConsumerWidget {
                       children: [
                         TextSpan(
                           text: 'Powered by: ',
-                          style: GoogleFonts.playfairDisplay(
-                            fontSize: 12.sp,
+                          style: AppTextStyles.labelMedium(isDark).copyWith(
                             color: isDark
                                 ? Colors.white38
                                 : const Color(0xFF888888),

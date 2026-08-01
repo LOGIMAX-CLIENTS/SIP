@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../shared/widgets/numeric_styled_text.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/theme/app_text_styles.dart';
 
 class SupportScreen extends StatelessWidget {
   const SupportScreen({super.key});
@@ -24,10 +25,8 @@ class SupportScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text('Support Center',
-            style: GoogleFonts.playfairDisplay(
-                fontSize: 20.sp,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : Colors.black)),
+            style: AppTextStyles.titleLarge(isDark)
+                .copyWith(color: isDark ? Colors.white : Colors.black)),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -39,10 +38,8 @@ class SupportScreen extends StatelessWidget {
             _buildSearchBox(isDark),
             SizedBox(height: 32.h),
             Text('Quick Assistance',
-                style: GoogleFonts.playfairDisplay(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black87)),
+                style: AppTextStyles.titleMedium(isDark)
+                    .copyWith(color: isDark ? Colors.white : Colors.black87)),
             SizedBox(height: 16.h),
             Row(
               children: [
@@ -55,10 +52,8 @@ class SupportScreen extends StatelessWidget {
             ),
             SizedBox(height: 32.h),
             Text('Frequently Asked Questions',
-                style: GoogleFonts.playfairDisplay(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black87)),
+                style: AppTextStyles.titleMedium(isDark)
+                    .copyWith(color: isDark ? Colors.white : Colors.black87)),
             SizedBox(height: 16.h),
             _buildFaqItem('How to buy digital gold?',
                 'Navigate to the Market tab and select Buy Gold.', isDark),

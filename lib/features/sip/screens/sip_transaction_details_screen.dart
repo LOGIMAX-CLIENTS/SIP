@@ -318,7 +318,7 @@ class _SipTransactionDetailsScreenState
                     icon: Icon(Icons.download_rounded,
                         color: textColor, size: 20.sp),
                     label: Text('Invoice',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                             color: textColor,
                             fontSize: 13.sp,
                             fontWeight: FontWeight.bold)),
@@ -494,9 +494,11 @@ class _SipTransactionDetailsScreenState
             ],
           ),
           SizedBox(height: 14.h),
-          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor),
+          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor,
+              isNumeric: false),
           _buildDetailRow(
-              'Frequency', scheme.frequency, textColor, mutedTextColor),
+              'Frequency', scheme.frequency, textColor, mutedTextColor,
+              isNumeric: false),
           _buildDetailRow(
               'SIP Amount', '₹${scheme.amount}', textColor, mutedTextColor),
           _buildDetailRow('Total Saved', '₹${scheme.totalSaved}', textColor,
@@ -598,7 +600,8 @@ class _SipTransactionDetailsScreenState
             _buildDetailRow('Placed On', details.technicalDetails.placedOn,
                 textColor, mutedTextColor),
             _buildDetailRow('Paid Via', details.technicalDetails.paidVia,
-                textColor, mutedTextColor),
+                textColor, mutedTextColor,
+                isNumeric: false),
           ]
         ],
       ),
@@ -606,12 +609,27 @@ class _SipTransactionDetailsScreenState
   }
 
   // ── Detail Row ─────────────────────────────────────────────────────
+  /// [isNumeric] selects the value's font family: numeric/amount/rate/date/ID
+  /// values (default) use Lora; textual/categorical values (e.g. Plan name,
+  /// Frequency name, Paid Via) should pass isNumeric: false to use Playfair
+  /// Display.
   Widget _buildDetailRow(
       String label, String value, Color textColor, Color mutedTextColor,
-      {bool isBold = false, bool showCopy = false}) {
+      {bool isBold = false, bool showCopy = false, bool isNumeric = true}) {
     if (value.isEmpty || value == 'N/A' || value == 'null') {
       return const SizedBox.shrink();
     }
+    final valueStyle = isNumeric
+        ? GoogleFonts.lora(
+            fontSize: 13.sp,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            color: textColor,
+          )
+        : GoogleFonts.playfairDisplay(
+            fontSize: 13.sp,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            color: textColor,
+          );
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 5.h),
       child: Row(
@@ -629,11 +647,7 @@ class _SipTransactionDetailsScreenState
             children: [
               Text(
                 value,
-                style: GoogleFonts.lora(
-                  fontSize: 13.sp,
-                  fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-                  color: textColor,
-                ),
+                style: valueStyle,
               ),
               if (showCopy) ...[
                 SizedBox(width: 8.w),

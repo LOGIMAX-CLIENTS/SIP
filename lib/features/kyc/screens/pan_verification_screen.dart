@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
@@ -47,6 +48,7 @@ class _PanVerificationScreenState extends State<PanVerificationScreen> {
   }
 
   void _showSuccessDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -86,8 +88,9 @@ class _PanVerificationScreenState extends State<PanVerificationScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12.r)),
                 ),
-                child:
-                    const Text('GOT IT', style: TextStyle(color: Colors.white)),
+                child: Text('GOT IT',
+                    style: AppTextStyles.button(isDark)
+                        .copyWith(color: Colors.white)),
               ),
             ),
           ],
@@ -172,9 +175,7 @@ class _PanVerificationScreenState extends State<PanVerificationScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: GoogleFonts.playfairDisplay(
-                fontWeight: FontWeight.w700, fontSize: 14.sp)),
+        Text(label, style: AppTextStyles.fieldLabel(isDark)),
         SizedBox(height: 12.h),
         TextField(
           controller: controller,
@@ -182,8 +183,7 @@ class _PanVerificationScreenState extends State<PanVerificationScreen> {
           textCapitalization: textCapitalization,
           inputFormatters: inputFormatters,
           contextMenuBuilder: SecureClipboard.none,
-          style:
-              GoogleFonts.lora(fontSize: 18.sp, fontWeight: FontWeight.w600),
+          style: AppTextStyles.kycFieldInput(isDark),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.playfairDisplay(fontSize: 16.sp, color: isDark ? Colors.white38 : Colors.black38),

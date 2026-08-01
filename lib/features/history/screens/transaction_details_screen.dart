@@ -12,6 +12,7 @@ import '../../invoice/invoice_service.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/app_text_styles.dart';
 
 class TransactionDetailsScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> transactionData;
@@ -366,7 +367,7 @@ class _TransactionDetailsScreenState
                     icon: Icon(Icons.download_rounded,
                         color: textColor, size: 20.sp),
                     label: Text('Invoice',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                             color: textColor,
                             fontSize: 13.sp,
                             fontWeight: FontWeight.bold)),
@@ -405,7 +406,7 @@ class _TransactionDetailsScreenState
                         elevation: 0,
                       ),
                       child: Text('Save ₹${details.amount} Again',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                               color: Colors.white,
                               fontSize: 13.sp,
                               fontWeight: FontWeight.bold)),
@@ -588,10 +589,11 @@ class _TransactionDetailsScreenState
             ],
           ),
           SizedBox(height: 14.h),
+          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor,
+              isNumericValue: false),
           _buildDetailRow(
-              'Plan', scheme.label, textColor, mutedTextColor),
-          _buildDetailRow(
-              'Frequency', scheme.frequency, textColor, mutedTextColor),
+              'Frequency', scheme.frequency, textColor, mutedTextColor,
+              isNumericValue: false),
           _buildDetailRow(
               'SIP Amount', '₹${scheme.amount}', textColor, mutedTextColor),
           _buildDetailRow(
@@ -727,7 +729,8 @@ class _TransactionDetailsScreenState
                 textColor, mutedTextColor),
             if (!isReferral && !isOffer)
               _buildDetailRow('Paid Via',
-                  details.technicalDetails.paidVia, textColor, mutedTextColor),
+                  details.technicalDetails.paidVia, textColor, mutedTextColor,
+                  isNumericValue: false),
           ]
         ],
       ),
@@ -736,11 +739,12 @@ class _TransactionDetailsScreenState
 
   Widget _buildDetailRow(
       String label, String value, Color textColor, Color mutedTextColor,
-      {bool isBold = false, bool showCopy = false}) {
+      {bool isBold = false, bool showCopy = false, bool isNumericValue = true}) {
     // Hide row when server returns empty / placeholder data
     if (value.isEmpty || value == 'N/A' || value == 'null') {
       return const SizedBox.shrink();
     }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 5.h),
       child: Row(
@@ -748,21 +752,30 @@ class _TransactionDetailsScreenState
         children: [
           Text(
             label,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 13.sp,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-              color: isBold ? textColor : mutedTextColor,
-            ),
+            style: isBold
+                ? GoogleFonts.playfairDisplay(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  )
+                : AppTextStyles.bodySmall(isDark)
+                    .copyWith(color: mutedTextColor),
           ),
           Row(
             children: [
               Text(
                 value,
-                style: GoogleFonts.lora(
-                  fontSize: 13.sp,
-                  fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-                  color: textColor,
-                ),
+                style: isNumericValue
+                    ? GoogleFonts.lora(
+                        fontSize: 13.sp,
+                        fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+                        color: textColor,
+                      )
+                    : GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp,
+                        fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+                        color: textColor,
+                      ),
               ),
               if (showCopy) ...[
                 SizedBox(width: 8.w),

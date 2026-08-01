@@ -146,7 +146,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                         Expanded(
                           child: Text(
                             '${isGoldSelected ? 'Gold' : 'Silver'} market is closed. Auto Savings will resume when market opens.',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 11.sp,
                               fontWeight: FontWeight.w600,
                               color: const Color(0xFF92400E),
@@ -265,7 +265,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               children: [
                 Text(
                   'Select Invest Type',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.w600,
                     color: Colors.black54,
@@ -360,10 +360,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 _buildDetailRow('Started On', _formatDate(plan.startDate)),
                 _buildDetailRow('Savings Amount',
                     '\u20b9${plan.amount.toStringAsFixed(0)}'),
-                _buildDetailRow('Frequency', plan.frequency),
+                _buildDetailRow('Frequency', plan.frequency,
+                    isNumeric: false),
                 _buildDetailRow('Reference ID', plan.subscriptionId),
                 _buildDetailRow('Status', plan.status.toUpperCase(),
-                    valueColor: statusColor),
+                    valueColor: statusColor, isNumeric: false),
               ],
             ),
           ),
@@ -402,7 +403,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 Expanded(
                   child: Text(
                     'You can only keep one Active ${plan.commodityName} $freqName plan. Switch to ${plan.commodityName.toLowerCase().contains('gold') ? 'Silver' : 'Gold'} above or try a ${_getOtherFrequencies(freqName)} plan to grow your savings faster',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 11.sp,
                       color: const Color(0xFF92400E),
                       fontWeight: FontWeight.w500,
@@ -419,7 +420,23 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   }
 
   /// Build a label/value detail row for the existing plan card.
-  Widget _buildDetailRow(String label, String value, {Color? valueColor}) {
+  ///
+  /// [isNumeric] selects the value's font family: numeric/amount/rate/date/ID
+  /// values (default) use Lora; textual/categorical values (e.g. Frequency
+  /// name, Status) should pass isNumeric: false to use Playfair Display.
+  Widget _buildDetailRow(String label, String value,
+      {Color? valueColor, bool isNumeric = true}) {
+    final valueStyle = isNumeric
+        ? GoogleFonts.lora(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: valueColor ?? const Color(0xFF1A1A2E),
+          )
+        : GoogleFonts.playfairDisplay(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: valueColor ?? const Color(0xFF1A1A2E),
+          );
     return Padding(
       padding: EdgeInsets.only(bottom: 12.h),
       child: Row(
@@ -427,7 +444,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 12.sp,
               color: Colors.black45,
               fontWeight: FontWeight.w500,
@@ -436,11 +453,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           Flexible(
             child: Text(
               value,
-              style: GoogleFonts.lora(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: valueColor ?? const Color(0xFF1A1A2E),
-              ),
+              style: valueStyle,
               textAlign: TextAlign.end,
             ),
           ),
@@ -589,7 +602,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                             ),
                           Text(
                             freq.name,
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 13.sp,
                               fontWeight: isSelected
                                   ? FontWeight.w700
@@ -665,7 +678,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Enter Saving Amount ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
             Text(
               'Enter your saving amount',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 14.sp,
                 fontWeight: FontWeight.w600,
                 color: Colors.black54,
@@ -716,7 +729,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                         children: [
                           Text(
                             'Invalid Amount',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 12.sp,
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFFBE123C),
@@ -726,7 +739,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                           SizedBox(height: 3.h),
                           Text(
                             errorMsg,
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 11.sp,
                               color: const Color(0xFF9F1239),
                               fontWeight: FontWeight.w500,
@@ -879,7 +892,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: '0',
-                hintStyle: TextStyle(
+                hintStyle: GoogleFonts.lora(
                   fontSize: 22.sp,
                   fontWeight: FontWeight.w700,
                   color: Colors.black12,
@@ -994,7 +1007,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                       ),
                       child: Text(
                         'POPULAR',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           color: Colors.white,
                           fontSize: 8.sp,
                           letterSpacing: 0.5,
@@ -1063,7 +1076,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               children: [
                 Text(
                   'In 1 Year, You Would Save',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w500,
                     color: Colors.black45,
@@ -1125,7 +1138,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(width: 4.w),
                 Text(
                   '$commodityLabel | 100% Safe & Secured',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     color: Colors.black38,
                     fontWeight: FontWeight.w500,
@@ -1198,7 +1211,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(width: 4.w),
                 Text(
                   '$commodityLabel | 100% Safe & Secured',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     color: Colors.black38,
                     fontWeight: FontWeight.w500,
@@ -1361,7 +1374,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 ),
                 Text(
                   'Select Day',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1A1A2E),
@@ -1370,7 +1383,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(height: 4.h),
                 Text(
                   'Your auto saving will run every selected day',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                   ),
@@ -1403,7 +1416,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                           Expanded(
                             child: Text(
                               day,
-                              style: TextStyle(
+                              style: GoogleFonts.playfairDisplay(
                                 fontSize: 14.sp,
                                 fontWeight: isActive
                                     ? FontWeight.w700
@@ -1486,7 +1499,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 ),
                 Text(
                   'Select Date',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1A1A2E),
@@ -1495,7 +1508,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(height: 4.h),
                 Text(
                   'Your auto saving will run on this date every month',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                   ),
@@ -1538,7 +1551,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                         child: Center(
                           child: Text(
                             '$date',
-                            style: TextStyle(
+                            style: GoogleFonts.lora(
                               fontSize: 13.sp,
                               fontWeight:
                                   isActive ? FontWeight.w700 : FontWeight.w500,
@@ -1755,7 +1768,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             SizedBox(height: 16.h),
             Text(
               'Unable to load Auto Savings',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 16.sp,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF1A1A2E),
@@ -1765,7 +1778,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             Text(
               'Please check your connection and try again',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 13.sp,
                 color: Colors.black45,
               ),

@@ -337,6 +337,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// close this screen (see _runCompletionSequence).
   Future<void> _showSuccessAnimation() async {
     if (!mounted) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -350,11 +351,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             children: [
               Text(
                 'KYC Verification',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF643D41),
-                ),
+                style: AppTextStyles.titleMedium(isDark)
+                    .copyWith(color: const Color(0xFF643D41)),
               ),
               SizedBox(height: 24.h),
               Container(
@@ -370,12 +368,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               Text(
                 'PAN & Aadhaar Verified\nKYC Completed Successfully',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black,
-                  height: 1.4,
-                ),
+                style: AppTextStyles.titleLarge(isDark)
+                    .copyWith(height: 1.4, color: Colors.black),
               ),
             ],
           ),
@@ -412,11 +406,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               children: [
                 Text(
                   'Choose Your Profile Name',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF643D41),
-                  ),
+                  style: AppTextStyles.titleMedium(isDark)
+                      .copyWith(color: const Color(0xFF643D41)),
                 ),
                 SizedBox(height: 16.h),
                 _buildVerifiedNameDisplay('Verified PAN Name', panName, isDark),
@@ -737,7 +728,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               SizedBox(width: 8.w),
               Text(
                 'Verified',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 12.sp,
                   fontWeight: FontWeight.w900,
                   color: const Color(0xFF0E5723),
@@ -759,7 +750,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                         SizedBox(width: 4.w),
                         Text(
                           'Edit',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontSize: 12.sp,
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF0E5723),
@@ -774,18 +765,22 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           if (maskedValue != null && maskedValue.isNotEmpty) ...[
             SizedBox(height: 12.h),
             Text(numberLabel ?? 'Number',
-                style: TextStyle(fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
+                style: GoogleFonts.playfairDisplay(
+                    fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
             SizedBox(height: 2.h),
             Text(maskedValue,
-                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+                style: GoogleFonts.lora(
+                    fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
           ],
           if (verifiedName != null && verifiedName.isNotEmpty) ...[
             SizedBox(height: 10.h),
             Text(nameLabel ?? 'Name',
-                style: TextStyle(fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
+                style: GoogleFonts.playfairDisplay(
+                    fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
             SizedBox(height: 2.h),
             Text(verifiedName,
-                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+                style: GoogleFonts.playfairDisplay(
+                    fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
           ],
         ],
       ),

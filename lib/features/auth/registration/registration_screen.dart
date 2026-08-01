@@ -15,6 +15,7 @@ import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/utils/navigation_utils.dart';
 import '../../../core/utils/validators.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import 'email_otp_sheet.dart';
 
 class RegistrationScreen extends ConsumerStatefulWidget {
@@ -408,13 +409,10 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   }
 
   Widget _buildInputLabel(String label, Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Text(
       label,
-      style: GoogleFonts.playfairDisplay(
-        fontSize: 15.sp,
-        fontWeight: FontWeight.w500,
-        color: color,
-      ),
+      style: AppTextStyles.fieldLabel(isDark).copyWith(color: color),
     );
   }
 
@@ -434,6 +432,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     String? Function(String?)? validator,
     bool isNumeric = false,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
@@ -446,21 +445,13 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       inputFormatters: inputFormatters,
       contextMenuBuilder: SecureClipboard.none,
       style: isNumeric
-          ? GoogleFonts.lora(
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w500,
-              color: textColor,
-            )
-          : GoogleFonts.playfairDisplay(
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w500,
-              color: textColor,
-            ),
+          ? AppTextStyles.input(isDark).copyWith(color: textColor)
+          : AppTextStyles.bodyLarge(isDark).copyWith(color: textColor),
       decoration: InputDecoration(
         counterText: '',
         hintText: hint,
-        hintStyle: GoogleFonts.playfairDisplay(
-            fontSize: 16.sp, color: textColor.withOpacity(0.6)),
+        hintStyle: AppTextStyles.inputHint(isDark)
+            .copyWith(color: textColor.withOpacity(0.6)),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: bgColor,

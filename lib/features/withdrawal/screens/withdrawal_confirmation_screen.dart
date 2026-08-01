@@ -9,6 +9,7 @@ import '../../../core/providers/timer_provider.dart';
 import '../../instant_saving/controller/saving_controller.dart';
 import '../../instant_saving/models/saving_models.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../providers/withdrawal_provider.dart';
 import '../models/withdrawal_method.dart';
@@ -341,10 +342,10 @@ class _WithdrawalConfirmationScreenState
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: GoogleFonts.playfairDisplay(
-                color: isDark ? Colors.white54 : Colors.black54)),
-        Text(value, style: GoogleFonts.lora(fontWeight: FontWeight.w700)),
+        Text(label, style: AppTextStyles.bodyMedium(isDark)),
+        Text(value,
+            style: AppTextStyles.valueSmall(isDark)
+                .copyWith(fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -368,12 +369,12 @@ class _WithdrawalConfirmationScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('CREDIT TO',
-                    style: GoogleFonts.playfairDisplay(
-                        fontSize: 10.sp,
+                    style: AppTextStyles.labelSmall(isDark).copyWith(
                         fontWeight: FontWeight.w800,
                         color: isDark ? Colors.white38 : Colors.black38)),
                 Text(method?.identifier ?? 'N/A',
-                    style: GoogleFonts.lora(fontWeight: FontWeight.w700)),
+                    style: AppTextStyles.valueSmall(isDark)
+                        .copyWith(fontWeight: FontWeight.w700)),
               ],
             ),
           ),

@@ -387,7 +387,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
               child: Text(
                 code,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.playfairDisplay(
+                style: GoogleFonts.lora(
                   fontSize: 28.sp,
                   fontWeight: FontWeight.w900,
                   color: const Color(0xFF1B3A2D),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../../../shared/widgets/gradient_header.dart';
@@ -82,7 +83,7 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
 
                     Text(
                       'Why are you cancelling?',
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 16.sp,
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFF1A1A2E),
@@ -91,7 +92,7 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
                     SizedBox(height: 4.h),
                     Text(
                       'Please select a reason to proceed',
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 12.sp,
                         color: Colors.black45,
                       ),
@@ -156,7 +157,7 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
                               SizedBox(width: 12.w),
                               Text(
                                 reason.label,
-                                style: TextStyle(
+                                style: GoogleFonts.playfairDisplay(
                                   fontSize: 14.sp,
                                   fontWeight: isSelected
                                       ? FontWeight.w700
@@ -248,7 +249,7 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
                           Expanded(
                             child: Text(
                               _blockedMessage,
-                              style: TextStyle(
+                              style: GoogleFonts.playfairDisplay(
                                 fontSize: 13.5.sp,
                                 fontWeight: FontWeight.w600,
                                 color: const Color(0xFF991B1B),
@@ -283,7 +284,7 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
                 ),
                 child: Text(
                   'Back',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF064E3B),
@@ -306,19 +307,21 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
         ),
         title: Text(
           'Are you sure?',
-          style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700),
+          style: GoogleFonts.playfairDisplay(
+              fontSize: 16.sp, fontWeight: FontWeight.w700),
         ),
         content: Text(
           'This action will permanently cancel your auto savings plan. '
           'You can create a new plan anytime.',
-          style: TextStyle(fontSize: 13.sp, color: Colors.black54),
+          style: GoogleFonts.playfairDisplay(
+              fontSize: 13.sp, color: Colors.black54),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(
               'Go Back',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                   color: Colors.black45, fontWeight: FontWeight.w600),
             ),
           ),
@@ -329,7 +332,7 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
             },
             child: Text(
               'Yes, Cancel',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 color: const Color(0xFFDC2626),
                 fontWeight: FontWeight.w700,
               ),
