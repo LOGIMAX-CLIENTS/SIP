@@ -18,6 +18,7 @@ import '../features/auth/pin/pin_screen.dart';
 import '../features/auth/registration/registration_screen.dart';
 import '../features/auth/registration/registration_success_screen.dart';
 import '../features/profile/account_details_screen.dart';
+import '../features/profile/bank_details_screen.dart';
 import '../features/withdrawal/screens/withdrawal_screen.dart';
 import '../features/withdrawal/screens/withdrawal_confirmation_screen.dart';
 import '../features/withdrawal/screens/upi_selection_screen.dart';
@@ -90,6 +91,7 @@ class AppRouter {
   static const String withdrawalSuccess = '/withdrawal-success';
   static const String registrationSuccess = '/registration-success';
   static const String accountDetails = '/accountdetails';
+  static const String bankDetails = '/bank-details';
   static const String transactionHistory = '/transaction-history';
   static const String transactionDetails = '/transaction-details';
   static const String changeMpin = '/change-mpin';
@@ -152,6 +154,7 @@ class AppRouter {
         main: (context) => const MainScreen(),
         profile: (context) => const ProfileScreen(),
         accountDetails: (context) => const AccountDetailsScreen(),
+        bankDetails: (context) => const BankDetailsScreen(),
         transactionHistory: (context) => const TransactionHistoryScreen(),
         transactionDetails: (context) {
           final tx = ModalRoute.of(context)!.settings.arguments

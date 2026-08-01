@@ -15,7 +15,7 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
-import '../../../core/error/failures.dart';
+import '../../../shared/widgets/add_bank_account_sheet.dart';
 
 class UpiSelectionScreen extends ConsumerStatefulWidget {
   const UpiSelectionScreen({super.key});
@@ -27,7 +27,6 @@ class UpiSelectionScreen extends ConsumerStatefulWidget {
 class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
   // Brand colours
   static const _gradientDark = Color(0xFF003716);
-  static const _gradientLight = Color(0xFF167525);
   static const _accentGreen = Color(0xFF1B882C);
 
   @override
@@ -474,7 +473,12 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 'assets/withdraw/bank.svg',
                 () {
                   Navigator.pop(context);
-                  _showBankForm(context, ref, isDark);
+                  showAddBankAccountSheet(
+                    context,
+                    ref,
+                    isDark: isDark,
+                    onAdded: () => ref.invalidate(accountDetailsProvider),
+                  );
                 },
                 isDark,
               ),
@@ -647,144 +651,8 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
     );
   }
 
-  // â”€â”€ BANK FORM SHEET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  void _showBankForm(BuildContext context, WidgetRef ref, bool isDark) {
-    final nameCtrl = TextEditingController();
-    final accCtrl = TextEditingController();
-    final confirmAccCtrl = TextEditingController();
-    final ifscCtrl = TextEditingController();
-    bool isVerifying = false;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
-          child: Container(
-            padding: EdgeInsets.all(24.w),
-            decoration: BoxDecoration(
-              gradient: isDark
-                  ? const LinearGradient(
-                      colors: [Color(0xFF0F172A), Color(0xFF0F172A)])
-                  : const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFFDEF9DF), Color(0xFFFFFFFF)],
-                      stops: [-0.3775, 1.0],
-                    ),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28.r)),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36.w,
-                      height: 4.h,
-                      decoration: BoxDecoration(
-                          color: Colors.black12,
-                          borderRadius: BorderRadius.circular(4.r)),
-                    ),
-                  ),
-                  SizedBox(height: 20.h),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                  Text('Add Bank Account',
-                          style: AppTextStyles.titleLarge(isDark)),
-                      GestureDetector(
-                        onTap: () { if (!isVerifying) Navigator.pop(sheetCtx); },
-                        child: Container(
-                          padding: EdgeInsets.all(6.w),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.05),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.close_rounded,
-                              size: 18.sp, color: Colors.black54),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 20.h),
-                  _buildField('Beneficiary Name', 'Enter full name',
-                      nameCtrl, isDark,
-                      forceUpperCase: true,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 12.h),
-                  _buildField(
-                      'Account Number', 'Enter account number', accCtrl, isDark,
-                      kbd: TextInputType.number,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 12.h),
-                  _buildField('Confirm Account Number',
-                      'Re-enter account number', confirmAccCtrl, isDark,
-                      kbd: TextInputType.number,
-                      onChanged: (_) => setModalState(() {})),
-                  if (confirmAccCtrl.text.isNotEmpty &&
-                      accCtrl.text.trim() != confirmAccCtrl.text.trim()) ...[
-                    SizedBox(height: 6.h),
-                    Text('Account numbers do not match',
-                        style: AppTextStyles.fieldError(isDark)),
-                  ],
-                  SizedBox(height: 12.h),
-                  _buildField('IFSC Code', 'e.g. SBIN0001234', ifscCtrl, isDark,
-                      forceUpperCase: true,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 28.h),
-                  CustomButton(
-                    text: 'Verify & Add',
-                    isLoading: isVerifying,
-                    loadingText: 'Verifying...',
-                    onPressed: (nameCtrl.text.trim().isNotEmpty &&
-                            accCtrl.text.trim().isNotEmpty &&
-                            confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
-                            ifscCtrl.text.trim().isNotEmpty &&
-                            !isVerifying)
-                        ? () => _processAddBank(
-                            sheetCtx,
-                            ref,
-                            nameCtrl.text.trim(),
-                            '',
-                            accCtrl.text.trim(),
-                            ifscCtrl.text.trim(),
-                            setModalState,
-                            (v) => isVerifying = v)
-                        : null,
-                    gradient: const LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [_accentGreen, _gradientDark],
-                    ),
-                    boxShadow: (nameCtrl.text.trim().isNotEmpty &&
-                            accCtrl.text.trim().isNotEmpty &&
-                            confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
-                            ifscCtrl.text.trim().isNotEmpty &&
-                            !isVerifying)
-                        ? [
-                            BoxShadow(
-                              color: _accentGreen.withOpacity(0.35),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : [],
-                  ),
-                  SizedBox(height: 8.h),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // â”€â”€ Field helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ Field helper (used by _showUpiForm below; bank form now lives in
+  // shared/widgets/add_bank_account_sheet.dart) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildField(
       String label, String hint, TextEditingController ctrl, bool isDark,
       {TextInputType kbd = TextInputType.text,
@@ -881,59 +749,4 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
     }
   }
 
-  // â”€â”€ Process Bank â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  Future<void> _processAddBank(BuildContext sheetCtx, WidgetRef ref,
-      String name, String bankName, String acc, String ifsc,
-      StateSetter setModalState, void Function(bool) setVerifying) async {
-    final user = ref.read(userProvider);
-    if (user == null) return;
-
-    setModalState(() => setVerifying(true));
-    try {
-      final result = await ref.read(withdrawalServiceProvider).verifyAndAddBank(
-            customerId: user.id,
-            mobile: user.mobile,
-            holderName: name,
-            bankName: bankName,
-            accNo: acc,
-            ifsc: ifsc,
-          );
-      if (!sheetCtx.mounted) return;
-      if (result['success'] == true) {
-        Navigator.pop(sheetCtx);
-        ref.invalidate(accountDetailsProvider);
-        if (mounted) {
-          AppToast.show(
-            context,
-            result['message'] ?? 'Bank account verified successfully',
-            type: ToastType.success,
-          );
-        }
-      } else {
-        setModalState(() => setVerifying(false));
-        // error_response() (backend) never puts "message" at the top level —
-        // it's nested under error.message / data.message. This branch is not
-        // normally reached (ApiClient.post() throws for non-2xx and lands in
-        // the catch block below instead), but fixing the same extraction gap
-        // here too in case a 2xx response ever carries success:false.
-        final errMsg = result['message'] ??
-            (result['error'] as Map<String, dynamic>?)?['message'] ??
-            (result['data'] as Map<String, dynamic>?)?['message'] ??
-            'Verification failed';
-        AppToast.show(sheetCtx, errMsg, type: ToastType.error);
-      }
-    } catch (e) {
-      if (sheetCtx.mounted) {
-        setModalState(() => setVerifying(false));
-        // ApiClient.post() already converts non-2xx responses into a
-        // Failure with the real server message (e.g. Cashfree's IFSC
-        // format error) extracted via ApiFailureMapper — show that instead
-        // of a generic string, which previously discarded it entirely.
-        final message = e is Failure
-            ? e.message
-            : 'Could not verify bank details. Please try again.';
-        AppToast.show(sheetCtx, message, type: ToastType.error);
-      }
-    }
-  }
 }
