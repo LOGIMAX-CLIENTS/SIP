@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 
 import '../controller/saving_controller.dart';
 import '../models/saving_models.dart';
@@ -46,6 +47,7 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final methodsAsync = ref.watch(paymentMethodsProvider);
 
     return Container(
@@ -77,11 +79,8 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
                 children: [
                   Text(
                     'Payment Methods',
-                    style: GoogleFonts.lora(
-                      fontSize: 20.sp,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black,
-                    ),
+                    style: AppTextStyles.titleLarge(isDark)
+                        .copyWith(color: Colors.black),
                   ),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
@@ -140,12 +139,8 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
                       SizedBox(width: 10.w),
                       Text(
                         'Proceed to Pay',
-                        style: TextStyle(
-                          fontSize: 18.sp,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 0.3,
-                        ),
+                        style: AppTextStyles.button(isDark)
+                            .copyWith(letterSpacing: 0.3),
                       ),
                     ],
                   ),
@@ -259,7 +254,7 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
                 children: [
                   Text(
                     method.name,
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 15.sp,
                       fontWeight: FontWeight.w700,
                       color: Colors.black,
@@ -300,7 +295,7 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
                                 )),
                             Text(
                               '& more',
-                              style: TextStyle(
+                              style: GoogleFonts.playfairDisplay(
                                 fontSize: 11.sp,
                                 fontWeight: FontWeight.w500,
                                 color: Colors.black45,
@@ -312,7 +307,7 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
                           method.subtitle.isNotEmpty
                               ? method.subtitle
                               : method.description,
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontSize: 12.sp,
                             fontWeight: FontWeight.w500,
                             color: Colors.black45,

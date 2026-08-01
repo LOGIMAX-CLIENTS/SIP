@@ -6,6 +6,7 @@ import '../../routes/app_router.dart';
 import '../../core/security/session_manager.dart';
 import '../../core/security/secure_logger.dart';
 import '../../main.dart' show navigatorKey;
+import '../theme/app_text_styles.dart';
 
 /// Premium full-screen session invalidated dialog.
 ///
@@ -254,9 +255,7 @@ class _SessionInvalidatedOverlayState
           Text(
             'Session Expired',
             textAlign: TextAlign.center,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 20.sp,
-              fontWeight: FontWeight.w700,
+            style: AppTextStyles.titleLarge(false).copyWith(
               color: const Color(0xFF1A1A2E),
               letterSpacing: -0.3,
             ),
@@ -285,7 +284,7 @@ class _SessionInvalidatedOverlayState
                 SizedBox(width: 4.w),
                 Text(
                   'Logged in on another device',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w600,
                     color: const Color(0xFFE53935),
@@ -363,11 +362,7 @@ class _SessionInvalidatedOverlayState
                     size: 18.sp, color: Colors.white),
                 label: Text(
                   'Log In Again',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
+                  style: AppTextStyles.button(false),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,

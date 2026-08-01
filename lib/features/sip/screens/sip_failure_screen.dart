@@ -59,7 +59,7 @@ class _SipFailureScreenState extends State<SipFailureScreen> {
                     Text(
                       message,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 14.sp,
                         color: Colors.black45,
                         fontWeight: FontWeight.w500,
@@ -105,7 +105,7 @@ class _SipFailureScreenState extends State<SipFailureScreen> {
                 ),
                 child: Text(
                   'Back To Home',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF064E3B),

@@ -1428,7 +1428,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                         child: Text(
                           'Withdrawal',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontWeight: FontWeight.bold,
                             fontSize: 12.sp,
                           ),
@@ -1453,7 +1453,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                         child: Text(
                           'Invest More',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontWeight: FontWeight.bold,
                             fontSize: 12.sp,
                           ),
@@ -1640,7 +1640,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: Center(
           child: Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 14.sp,
               fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
               color: isActive
@@ -1754,8 +1754,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           TextSpan(text: 'with just '),
                           TextSpan(
                             text: '₹10',
-                            style: TextStyle(
-                                fontFamily: 'Lora',
+                            style: GoogleFonts.lora(
                                 color: const Color(0xFFFBBF24)),
                           ),
                         ],
@@ -1783,7 +1782,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                             child: Text(
                               'Invest Now',
-                              style: TextStyle(
+                              style: GoogleFonts.playfairDisplay(
                                 fontSize: 13.sp,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1937,7 +1936,7 @@ class PremiumHomeHeader extends SliverPersistentHeaderDelegate {
                               child: Center(
                                 child: Text(
                                   unreadCount > 99 ? '99+' : '$unreadCount',
-                                  style: TextStyle(
+                                  style: GoogleFonts.lora(
                                     fontSize: unreadCount > 9 ? 8.sp : 9.sp,
                                     fontWeight: FontWeight.w900,
                                     color: Colors.white,
@@ -2144,7 +2143,7 @@ class _LiveBadgeState extends State<_LiveBadge>
               SizedBox(width: 5.w),
               Text(
                 'LIVE',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 10.sp,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -2235,7 +2234,7 @@ class _ClosedBadgeState extends State<_ClosedBadge>
               SizedBox(width: 5.w),
               Text(
                 'CLOSED',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 10.sp,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,

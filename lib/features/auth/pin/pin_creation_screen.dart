@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../../core/services/mpin_service.dart';
@@ -182,12 +183,8 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
                         _isConfirming
                             ? 'Confirm\nYour PIN'
                             : 'Set Your\nSecurity PIN',
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 28.sp,
-                          fontWeight: FontWeight.w800,
-                          color: textColor,
-                          height: 1.15,
-                        ),
+                        style: AppTextStyles.displayLarge(isDark)
+                            .copyWith(color: textColor, height: 1.15),
                       ),
                     ),
                     SizedBox(height: 8.h),

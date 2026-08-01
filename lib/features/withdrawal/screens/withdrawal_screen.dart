@@ -23,6 +23,7 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/utils/no_leading_zeros_formatter.dart';
+import '../../../shared/theme/app_text_styles.dart';
 
 class WithdrawalScreen extends ConsumerStatefulWidget {
   const WithdrawalScreen({super.key});
@@ -286,6 +287,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
   Widget _buildLiveRateSection(CommodityType type,
       AsyncValue<MarketRates> market, TimerState timerState,
       bool isCurrentMarketClosed) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return market.when(
       data: (rates) {
         final price =
@@ -310,7 +312,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                         Flexible(
                           child: Text(
                             'Live Withdrawal Price',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 14.sp,
                               color: Colors.black45,
                               fontWeight: FontWeight.w600,
@@ -361,7 +363,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                           SizedBox(width: 4.w),
                           Text(
                             'Market Closed',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 11.sp,
                               color: const Color(0xFFD97706),
                               fontWeight: FontWeight.w700,
@@ -409,9 +411,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               SizedBox(height: 8.h),
               Text(
                 '₹${price.toStringAsFixed(2)}/gm',
-                style: GoogleFonts.lora(
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.w700,
+                style: AppTextStyles.numericLarge(isDark).copyWith(
                   color: Colors.black,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
@@ -444,7 +444,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
         padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 16.h),
         child: Text(
           err.toString().replaceAll('Exception: ', ''),
-          style: TextStyle(fontSize: 14.sp, color: Colors.redAccent),
+          style: GoogleFonts.playfairDisplay(fontSize: 14.sp, color: Colors.redAccent),
         ),
       ),
     );
@@ -558,6 +558,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       AsyncValue<MarketRates> market,
       WithdrawalState state,
       AsyncValue<Map<String, dynamic>> rewardAsync) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 24.w),
       child: Container(
@@ -580,7 +581,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Withdrawable Balance',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                         fontSize: 12.sp,
                         color: Colors.black45,
                         fontWeight: FontWeight.w600)),
@@ -618,20 +619,16 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                 return Row(
                   children: [
                     Text('${withdrawable.toStringAsFixed(6)} gm',
-                        style: GoogleFonts.lora(
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black)),
+                        style: AppTextStyles.numericLarge(isDark)
+                            .copyWith(color: Colors.black)),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12.w),
                       child: Container(
                           width: 1.5, height: 20.h, color: Colors.black12),
                     ),
                     Text('\u20b9 ${inrValue.toStringAsFixed(2)}',
-                        style: GoogleFonts.lora(
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black)),
+                        style: AppTextStyles.numericLarge(isDark)
+                            .copyWith(color: Colors.black)),
                   ],
                 );
               },
@@ -653,12 +650,12 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                 ],
               ),
               error: (_, __) => Text('Error loading holding',
-                  style: TextStyle(fontSize: 13.sp, color: Colors.black45)),
+                  style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: Colors.black45)),
             ),
             Divider(color: Colors.black.withOpacity(0.05)),
             SizedBox(height: 24.h),
             Text('Enter your amount',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                     fontWeight: FontWeight.w600)),
@@ -678,10 +675,8 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                     child: Row(
                       children: [
                         Text('₹',
-                            style: GoogleFonts.lora(
-                                fontSize: 20.sp,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black)),
+                            style: AppTextStyles.numericLarge(isDark)
+                                .copyWith(color: Colors.black)),
                         SizedBox(width: 8.w),
                         Expanded(
                           child: TextField(
@@ -708,10 +703,8 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                                 setState(() => _policyError = null);
                               }
                             },
-                            style: GoogleFonts.lora(
-                                fontSize: 20.sp,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black),
+                            style: AppTextStyles.numericLarge(isDark)
+                                .copyWith(color: Colors.black),
                             decoration: const InputDecoration(
                                 border: InputBorder.none, hintText: '0'),
                           ),
@@ -798,7 +791,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   Expanded(
                     child: Text(
                       'Only one withdrawal request per metal is allowed per calendar day for security purposes.',
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 11.sp,
                         color: const Color(0xFF92400E),
                         height: 1.5,
@@ -989,7 +982,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   Expanded(
                     child: Text(
                       'On-hold qty reflects pending orders or locks',
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 11.sp,
                         color: Colors.black38,
                         fontStyle: FontStyle.italic,

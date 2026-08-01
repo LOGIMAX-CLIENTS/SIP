@@ -138,6 +138,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
                     icon: Icons.repeat_rounded,
                     label: 'Frequency',
                     value: details.frequency,
+                    isNumeric: false,
                   ),
                   _divider(),
                   _buildDetailRow(
@@ -150,6 +151,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
                     icon: Icons.diamond_rounded,
                     label: 'Commodity',
                     value: details.commodityName,
+                    isNumeric: false,
                   ),
                   if (details.day != null) ...[
                     _divider(),
@@ -157,6 +159,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
                       icon: Icons.today_rounded,
                       label: 'Day',
                       value: details.day!,
+                      isNumeric: false,
                     ),
                   ],
                   if (details.date != null) ...[
@@ -244,11 +247,27 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
     );
   }
 
+  /// [isNumeric] selects the value's font family: numeric/amount/rate/date/ID
+  /// values (default) use Lora; textual/categorical values (e.g. Frequency
+  /// name, Commodity name, Day name) should pass isNumeric: false to use
+  /// Playfair Display.
   Widget _buildDetailRow({
     required IconData icon,
     required String label,
     required String value,
+    bool isNumeric = true,
   }) {
+    final valueStyle = isNumeric
+        ? GoogleFonts.lora(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A1A2E),
+          )
+        : GoogleFonts.playfairDisplay(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A1A2E),
+          );
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 10.h),
       child: Row(
@@ -266,7 +285,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
           Expanded(
             child: Text(
               label,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 13.sp,
                 color: Colors.black45,
                 fontWeight: FontWeight.w500,
@@ -275,11 +294,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
           ),
           Text(
             value,
-            style: GoogleFonts.lora(
-              fontSize: 13.sp,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF1A1A2E),
-            ),
+            style: valueStyle,
           ),
         ],
       ),
@@ -310,7 +325,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
           Expanded(
             child: Text(
               'Status',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 13.sp,
                 color: Colors.black45,
                 fontWeight: FontWeight.w500,
@@ -326,7 +341,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
             ),
             child: Text(
               status,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 12.sp,
                 fontWeight: FontWeight.w700,
                 color: color,
@@ -378,7 +393,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
                 children: [
                   Text(
                     label,
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 14.sp,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF1A1A2E),
@@ -387,7 +402,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
                   SizedBox(height: 2.h),
                   Text(
                     subtitle,
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 11.sp,
                       color: Colors.black38,
                     ),
@@ -418,14 +433,14 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
         ),
         title: Text(
           'Pause Savings?',
-          style: TextStyle(
+          style: GoogleFonts.playfairDisplay(
             fontSize: 16.sp,
             fontWeight: FontWeight.w700,
           ),
         ),
         content: Text(
           'Your auto savings will be temporarily paused. You can resume anytime.',
-          style: TextStyle(
+          style: GoogleFonts.playfairDisplay(
             fontSize: 13.sp,
             color: Colors.black54,
           ),
@@ -435,7 +450,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: Text(
               'Cancel',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 color: Colors.black45,
                 fontWeight: FontWeight.w600,
               ),
@@ -448,7 +463,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
             },
             child: Text(
               'Pause',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 color: const Color(0xFFD97706),
                 fontWeight: FontWeight.w700,
               ),
@@ -498,14 +513,14 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
         ),
         title: Text(
           'Resume Savings?',
-          style: TextStyle(
+          style: GoogleFonts.playfairDisplay(
             fontSize: 16.sp,
             fontWeight: FontWeight.w700,
           ),
         ),
         content: Text(
           'Your auto savings will resume as per the original schedule.',
-          style: TextStyle(
+          style: GoogleFonts.playfairDisplay(
             fontSize: 13.sp,
             color: Colors.black54,
           ),
@@ -515,7 +530,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: Text(
               'Cancel',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 color: Colors.black45,
                 fontWeight: FontWeight.w600,
               ),
@@ -528,7 +543,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
             },
             child: Text(
               'Resume',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 color: const Color(0xFF16A34A),
                 fontWeight: FontWeight.w700,
               ),
@@ -577,7 +592,7 @@ class _ManageSavingsScreenState extends ConsumerState<ManageSavingsScreen> {
           SizedBox(height: 12.h),
           Text(
             _errorMsg ?? 'Something went wrong',
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 14.sp,
               fontWeight: FontWeight.w600,
               color: Colors.black45,

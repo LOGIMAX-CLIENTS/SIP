@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import 'package:pinput/pinput.dart';
 import '../controller/auth_controller.dart';
 import '../../../shared/widgets/custom_button.dart';
@@ -187,11 +188,8 @@ class _EmailOtpSheetState extends ConsumerState<EmailOtpSheet> {
                 focusedPinTheme: PinTheme(
                   width: 45.w,
                   height: 52.h,
-                  textStyle: GoogleFonts.lora(
-                    fontSize: 20.sp,
-                    fontWeight: FontWeight.w800,
-                    color: accentGreen,
-                  ),
+                  textStyle: AppTextStyles.valueLarge(isDark)
+                      .copyWith(color: accentGreen),
                   decoration: BoxDecoration(
                     border: Border.all(color: accentGreen, width: 1.5),
                     borderRadius: BorderRadius.circular(12.r),

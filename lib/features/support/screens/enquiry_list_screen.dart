@@ -8,6 +8,7 @@ import 'package:startgold/shared/theme/app_theme.dart';
 import 'package:startgold/shared/widgets/animations.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
 import 'package:startgold/routes/app_router.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 
 class EnquiryListScreen extends ConsumerWidget {
   const EnquiryListScreen({super.key});
@@ -49,11 +50,7 @@ class EnquiryListScreen extends ConsumerWidget {
             icon: const Icon(Icons.add_rounded, color: Colors.white),
             label: Text(
               'New Enquiry',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 15.sp,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
+              style: AppTextStyles.button(false),
             ),
           ),
         ),
@@ -130,6 +127,7 @@ class EnquiryListScreen extends ConsumerWidget {
   }
 
   Widget _buildEmpty(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Center(
       child: Padding(
         padding: EdgeInsets.all(40.w),
@@ -149,11 +147,7 @@ class EnquiryListScreen extends ConsumerWidget {
             SizedBox(height: 20.h),
             Text(
               'No Enquiries Yet',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 18.sp,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF1A2332),
-              ),
+              style: AppTextStyles.titleMedium(isDark),
             ),
             SizedBox(height: 8.h),
             Text(

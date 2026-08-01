@@ -249,7 +249,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                       children: [
                         Text(
                           'Nominee Added',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontSize: 13.sp,
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF166534),
@@ -258,7 +258,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                         SizedBox(height: 2.h),
                         Text(
                           'Your nominee details are up to date',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontSize: 11.sp,
                             color: const Color(0xFF166534).withOpacity(0.7),
                           ),

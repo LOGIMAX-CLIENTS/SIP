@@ -133,7 +133,7 @@ class _BankDetailsSheetState extends State<BankDetailsSheet> {
                   ),
                   Text(
                     'Bank Account Details',
-                    style: GoogleFonts.lora(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 18.sp,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF1A1A2E),
@@ -142,7 +142,8 @@ class _BankDetailsSheetState extends State<BankDetailsSheet> {
                   SizedBox(height: 4.h),
                   Text(
                     'Required to register your Netbanking AutoPay mandate.',
-                    style: TextStyle(fontSize: 12.sp, color: Colors.black54),
+                    style: GoogleFonts.playfairDisplay(
+                        fontSize: 12.sp, color: Colors.black54),
                   ),
                   SizedBox(height: 20.h),
                   TextFormField(
@@ -206,7 +207,9 @@ class _BankDetailsSheetState extends State<BankDetailsSheet> {
                         child: RadioListTile<String>(
                           contentPadding: EdgeInsets.zero,
                           dense: true,
-                          title: Text('Savings', style: TextStyle(fontSize: 13.sp)),
+                          title: Text('Savings',
+                              style: GoogleFonts.playfairDisplay(
+                                  fontSize: 13.sp)),
                           value: 'savings',
                           groupValue: _accountType,
                           onChanged: (v) => setState(() => _accountType = v!),
@@ -216,7 +219,9 @@ class _BankDetailsSheetState extends State<BankDetailsSheet> {
                         child: RadioListTile<String>(
                           contentPadding: EdgeInsets.zero,
                           dense: true,
-                          title: Text('Current', style: TextStyle(fontSize: 13.sp)),
+                          title: Text('Current',
+                              style: GoogleFonts.playfairDisplay(
+                                  fontSize: 13.sp)),
                           value: 'current',
                           groupValue: _accountType,
                           onChanged: (v) => setState(() => _accountType = v!),

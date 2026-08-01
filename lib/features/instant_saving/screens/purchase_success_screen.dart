@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../routes/app_router.dart';
@@ -300,6 +301,7 @@ class PurchaseSuccessScreen extends ConsumerWidget {
                     value: _formatPaymentMode(paymentMode),
                     primaryText: primaryText,
                     secondaryText: secondaryText,
+                    isNumericValue: false,
                   ),
               ],
             ),
@@ -320,7 +322,9 @@ class PurchaseSuccessScreen extends ConsumerWidget {
     required Color secondaryText,
     bool showCopy = false,
     String fullValue = '',
+    bool isNumericValue = true,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 10.h),
       child: Row(
@@ -338,11 +342,8 @@ class PurchaseSuccessScreen extends ConsumerWidget {
           Expanded(
             child: Text(
               label,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w500,
-                color: secondaryText,
-              ),
+              style: AppTextStyles.bodySmall(isDark)
+                  .copyWith(color: secondaryText),
             ),
           ),
           Flexible(
@@ -350,11 +351,17 @@ class PurchaseSuccessScreen extends ConsumerWidget {
               value,
               textAlign: TextAlign.end,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.lora(
-                fontSize: 14.sp,
-                fontWeight: FontWeight.w700,
-                color: primaryText,
-              ),
+              style: isNumericValue
+                  ? GoogleFonts.lora(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                      color: primaryText,
+                    )
+                  : GoogleFonts.playfairDisplay(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                      color: primaryText,
+                    ),
             ),
           ),
           if (showCopy) ...[

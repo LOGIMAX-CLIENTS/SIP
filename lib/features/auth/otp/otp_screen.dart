@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import 'package:pinput/pinput.dart';
 import '../../../core/security/screenshot_security_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -269,7 +270,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                                   MainAxisAlignment.spaceEvenly,
                               preFilledWidget: Text(
                                 '•',
-                                style: GoogleFonts.playfairDisplay(
+                                style: GoogleFonts.lora(
                                   fontSize: 22.sp,
                                   color:
                                       primaryTextColor.withOpacity(0.25),
@@ -288,11 +289,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                               focusedPinTheme: PinTheme(
                                 width: 45.w,
                                 height: 52.h,
-                                textStyle: GoogleFonts.lora(
-                                  fontSize: 20.sp,
-                                  fontWeight: FontWeight.w800,
-                                  color: accentGreen,
-                                ),
+                                textStyle: AppTextStyles.valueLarge(isDark)
+                                    .copyWith(color: accentGreen),
                                 decoration: BoxDecoration(
                                   border: Border(
                                       bottom: BorderSide(

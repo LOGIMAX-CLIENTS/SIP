@@ -102,7 +102,7 @@ class CountdownOfferExisting extends StatelessWidget {
           blendMode: BlendMode.srcIn,
           child: Text(
             offer.offerName.toUpperCase(),
-            style: GoogleFonts.lora(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 17.sp,
               fontWeight: FontWeight.w700,
               color: Colors.white,

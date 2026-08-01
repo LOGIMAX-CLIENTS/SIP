@@ -85,7 +85,7 @@ class _SipSuccessScreenState extends State<SipSuccessScreen>
                     Text(
                       message,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 14.sp,
                         color: Colors.black45,
                         fontWeight: FontWeight.w500,
@@ -109,7 +109,7 @@ class _SipSuccessScreenState extends State<SipSuccessScreen>
                             SizedBox(width: 8.w),
                             Text(
                               subscriptionId,
-                              style: TextStyle(
+                              style: GoogleFonts.lora(
                                 fontSize: 13.sp,
                                 fontWeight: FontWeight.w700,
                                 color: const Color(0xFF064E3B),

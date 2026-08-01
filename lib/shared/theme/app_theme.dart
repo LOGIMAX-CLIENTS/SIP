@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Brand Palette
@@ -37,7 +38,7 @@ class AppTheme {
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'PlayfairDisplay',
+      fontFamily: GoogleFonts.playfairDisplay().fontFamily,
       brightness: Brightness.light,
       primaryColor: primaryGreen,
       scaffoldBackgroundColor: Colors.transparent,
@@ -48,19 +49,19 @@ class AppTheme {
         secondary: electricCyan,
         surface: glassWhite,
       ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700),
-        displayMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700),
-        displaySmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700),
-        headlineLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700),
-        headlineMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w600),
-        headlineSmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w600),
-        titleLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w600),
-        titleMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w500),
-        titleSmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w500),
-        bodyLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w400),
-        bodyMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w400),
-        bodySmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w400),
+      textTheme: TextTheme(
+        displayLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700),
+        displayMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700),
+        displaySmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700),
+        headlineLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700),
+        headlineMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w600),
+        headlineSmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w600),
+        titleLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w600),
+        titleMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w500),
+        titleSmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w500),
+        bodyLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w400),
+        bodyMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w400),
+        bodySmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w400),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -73,7 +74,7 @@ class AppTheme {
           foregroundColor: Colors.white,
           minimumSize: Size(double.infinity, 64.h),
           textStyle: TextStyle(
-            fontFamily: 'PlayfairDisplay',
+            fontFamily: GoogleFonts.playfairDisplay().fontFamily,
             fontWeight: FontWeight.w700,
             fontSize: 16.sp,
           ),
@@ -91,7 +92,7 @@ class AppTheme {
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'PlayfairDisplay',
+      fontFamily: GoogleFonts.playfairDisplay().fontFamily,
       brightness: Brightness.dark,
       primaryColor: primaryGreen,
       scaffoldBackgroundColor: midnightNavy,
@@ -102,19 +103,19 @@ class AppTheme {
         primary: primaryGreen,
         secondary: auroraPurple,
       ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700, color: Colors.white),
-        displayMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700, color: Colors.white),
-        displaySmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700, color: Colors.white),
-        headlineLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w700, color: Colors.white),
-        headlineMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w600, color: Colors.white),
-        headlineSmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w600, color: Colors.white),
-        titleLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w600, color: Colors.white),
-        titleMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w500, color: Colors.white),
-        titleSmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w500, color: Colors.white),
-        bodyLarge: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w400, color: Colors.white70),
-        bodyMedium: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w400, color: Colors.white70),
-        bodySmall: TextStyle(fontFamily: 'PlayfairDisplay', fontWeight: FontWeight.w400, color: Colors.white70),
+      textTheme: TextTheme(
+        displayLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700, color: Colors.white),
+        displayMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700, color: Colors.white),
+        displaySmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700, color: Colors.white),
+        headlineLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w700, color: Colors.white),
+        headlineMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w600, color: Colors.white),
+        headlineSmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w600, color: Colors.white),
+        titleLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w600, color: Colors.white),
+        titleMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w500, color: Colors.white),
+        titleSmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w500, color: Colors.white),
+        bodyLarge: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w400, color: Colors.white70),
+        bodyMedium: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w400, color: Colors.white70),
+        bodySmall: TextStyle(fontFamily: GoogleFonts.playfairDisplay().fontFamily, fontWeight: FontWeight.w400, color: Colors.white70),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -122,7 +123,7 @@ class AppTheme {
           foregroundColor: Colors.white,
           minimumSize: Size(double.infinity, 64.h),
           textStyle: TextStyle(
-            fontFamily: 'PlayfairDisplay',
+            fontFamily: GoogleFonts.playfairDisplay().fontFamily,
             fontWeight: FontWeight.w700,
             fontSize: 16.sp,
           ),

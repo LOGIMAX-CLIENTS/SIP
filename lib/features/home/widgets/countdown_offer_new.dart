@@ -314,7 +314,7 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
           blendMode: BlendMode.srcIn,
           child: Text(
             widget.offer.offerName.toUpperCase(),
-            style: GoogleFonts.lora(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 17.sp,
               fontWeight: FontWeight.w700,
               color: Colors.white,
@@ -471,7 +471,7 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
       children: [
         Text(
           widget.offer.descriptionTitle,
-          style: GoogleFonts.lora(
+          style: GoogleFonts.playfairDisplay(
             fontSize: 16.sp,
             fontWeight: FontWeight.w600,
             color: const Color(0xCC010101),
@@ -480,7 +480,7 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
         SizedBox(height: 4.h),
         Text(
           widget.offer.descriptionBody,
-          style: GoogleFonts.lora(
+          style: GoogleFonts.playfairDisplay(
             fontSize: 20.sp,
             fontWeight: FontWeight.w700,
             color: const Color(0xFFDE6A02),

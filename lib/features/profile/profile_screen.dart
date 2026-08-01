@@ -205,7 +205,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                         SizedBox(width: 4.w),
                                         Text(
                                           'Verified',
-                                          style: TextStyle(
+                                          style: GoogleFonts.playfairDisplay(
                                             fontSize: 10.sp,
                                             fontWeight: FontWeight.w900,
                                             color: const Color(0xFF0E5723),
@@ -718,7 +718,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 Flexible(
                                   child: Text(
                                     'Last login: ${_formatLoginDate(user.lastLoginAt!)}',
-                                    style: GoogleFonts.lora(
+                                    style: GoogleFonts.playfairDisplay(
                                       fontSize: 11.sp,
                                       color: Colors.white.withOpacity(0.6),
                                       fontWeight: FontWeight.w400,
@@ -745,7 +745,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 Flexible(
                                   child: Text(
                                     'Last failed login: ${_formatLoginDate(user.lastFailedLoginAt!)}',
-                                    style: GoogleFonts.lora(
+                                    style: GoogleFonts.playfairDisplay(
                                       fontSize: 11.sp,
                                       color: const Color(0xFFFBBF24).withOpacity(0.8),
                                       fontWeight: FontWeight.w400,
@@ -856,12 +856,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
+        title: Text('Logout',
+            style: GoogleFonts.playfairDisplay(
+                fontSize: 16.sp, fontWeight: FontWeight.w700)),
+        content: Text('Are you sure you want to logout?',
+            style: GoogleFonts.playfairDisplay(fontSize: 13.sp)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+              child: Text('Cancel',
+                  style: GoogleFonts.playfairDisplay())),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
@@ -870,7 +874,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Navigator.pushNamedAndRemoveUntil(
                   context, AppRouter.login, (route) => false);
             },
-            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+            child: Text('Logout',
+                style: GoogleFonts.playfairDisplay(color: Colors.red)),
           ),
         ],
       ),

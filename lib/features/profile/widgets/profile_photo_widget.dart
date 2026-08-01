@@ -107,7 +107,9 @@ class _ProfilePhotoWidgetState extends State<ProfilePhotoWidget> {
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt, color: AppTheme.arcticBlue),
-              title: Text('Take Photo', style: GoogleFonts.playfairDisplay()),
+              title: Text('Take Photo',
+                  style: GoogleFonts.playfairDisplay(
+                      fontSize: 14.sp, fontWeight: FontWeight.w500)),
               onTap: () {
                 Navigator.pop(context);
                 _pickImage(ImageSource.camera);
@@ -116,7 +118,9 @@ class _ProfilePhotoWidgetState extends State<ProfilePhotoWidget> {
             ListTile(
               leading:
                   const Icon(Icons.photo_library, color: AppTheme.arcticBlue),
-              title: Text('Choose from Gallery', style: GoogleFonts.playfairDisplay()),
+              title: Text('Choose from Gallery',
+                  style: GoogleFonts.playfairDisplay(
+                      fontSize: 14.sp, fontWeight: FontWeight.w500)),
               onTap: () {
                 Navigator.pop(context);
                 _pickImage(ImageSource.gallery);
@@ -124,7 +128,9 @@ class _ProfilePhotoWidgetState extends State<ProfilePhotoWidget> {
             ),
             ListTile(
               leading: const Icon(Icons.cancel, color: Colors.grey),
-              title: Text('Cancel', style: GoogleFonts.playfairDisplay()),
+              title: Text('Cancel',
+                  style: GoogleFonts.playfairDisplay(
+                      fontSize: 14.sp, fontWeight: FontWeight.w500)),
               onTap: () => Navigator.pop(context),
             ),
           ],

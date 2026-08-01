@@ -217,11 +217,8 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 ),
                 child: Text(
                   'suggested',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 10.sp,
-                    fontWeight: FontWeight.w600,
-                    color: _accentGreen,
-                  ),
+                  style: AppTextStyles.labelSmall(isDark)
+                      .copyWith(color: _accentGreen),
                 ),
               ),
           ],
@@ -314,8 +311,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
           Text(
             'Add a bank account\nto proceed with withdrawal',
             textAlign: TextAlign.center,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 12.sp,
+            style: AppTextStyles.labelMedium(isDark).copyWith(
               color: isDark ? Colors.white38 : Colors.black38,
               height: 1.5,
             ),
@@ -437,16 +433,13 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
               SizedBox(height: 16.h),
               Text(
                 'Add Account',
-                style: GoogleFonts.playfairDisplay(
-                    fontSize: 20.sp,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black),
+                style: AppTextStyles.titleLarge(isDark)
+                    .copyWith(color: isDark ? Colors.white : Colors.black),
               ),
               SizedBox(height: 4.h),
               Text(
                 'Select your preferred payout method for a quick and secure transfer.',
-                style: GoogleFonts.playfairDisplay(
-                    fontSize: 12.sp,
+                style: AppTextStyles.fieldHelper(isDark).copyWith(
                     color: isDark ? Colors.white54 : Colors.black54,
                     height: 1.5),
               ),

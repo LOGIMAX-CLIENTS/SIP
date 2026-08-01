@@ -3,6 +3,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../theme/app_text_styles.dart';
+
 /// Premium fintech action button with gradient support and in-button loading.
 ///
 /// When [isLoading] is true the button stays fully visible but disabled,
@@ -53,6 +55,7 @@ class CustomButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final effectiveBg = backgroundColor ?? Theme.of(context).primaryColor;
     final effectiveColor = textColor ?? Colors.white;
     final displayLoadingText = loadingText ?? 'Processing...';
@@ -124,9 +127,7 @@ class CustomButton extends StatelessWidget {
                     ],
                     Text(
                       _toTitleCase(text),
-                      style: TextStyle(
-                        fontSize: 18.sp,
-                        fontWeight: FontWeight.w700,
+                      style: AppTextStyles.button(isDark).copyWith(
                         letterSpacing: 0.5,
                         color: effectiveColor,
                       ),

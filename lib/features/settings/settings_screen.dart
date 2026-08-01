@@ -6,6 +6,7 @@ import '../auth/controller/auth_controller.dart';
 import '../../core/security/secure_storage_service.dart';
 import '../../routes/app_router.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/theme/app_text_styles.dart';
 import '../../core/localization/language_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -142,10 +143,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text('Settings',
-            style: GoogleFonts.playfairDisplay(
-                fontSize: 20.sp,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : Colors.black)),
+            style: AppTextStyles.titleLarge(isDark)
+                .copyWith(color: isDark ? Colors.white : Colors.black)),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

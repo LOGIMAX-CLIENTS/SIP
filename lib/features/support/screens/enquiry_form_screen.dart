@@ -6,6 +6,7 @@ import 'package:startgold/features/support/enquiry_service.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
 import 'package:startgold/shared/widgets/secure_clipboard.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 
 class EnquiryFormScreen extends ConsumerStatefulWidget {
   /// Optional: pre-select a ticket type when navigating from a specific screen.
@@ -431,11 +432,7 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
                   SizedBox(width: 10.w),
                   Text(
                     'Submit Enquiry',
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
+                    style: AppTextStyles.button(false),
                   ),
                 ],
               ),
@@ -537,11 +534,11 @@ class _SuccessSheet extends StatelessWidget {
             child: Column(
               children: [
                 if (ticketId.isNotEmpty)
-                  _info('Ticket ID', '#$ticketId'),
+                  _info('Ticket ID', '#$ticketId', numeric: true),
                 if (subject.isNotEmpty)
                   _info('Subject', subject),
                 if (submittedOn.isNotEmpty)
-                  _info('Submitted', submittedOn),
+                  _info('Submitted', submittedOn, numeric: true),
                 _infoStatus(status),
               ],
             ),
@@ -566,11 +563,7 @@ class _SuccessSheet extends StatelessWidget {
               ),
               child: Text(
                 'Done',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+                style: AppTextStyles.button(false),
               ),
             ),
           ),
@@ -579,7 +572,18 @@ class _SuccessSheet extends StatelessWidget {
     );
   }
 
-  Widget _info(String label, String value) {
+  Widget _info(String label, String value, {bool numeric = false}) {
+    final valueStyle = numeric
+        ? GoogleFonts.lora(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A2332),
+          )
+        : GoogleFonts.playfairDisplay(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A2332),
+          );
     return Padding(
       padding: EdgeInsets.only(bottom: 10.h),
       child: Row(
@@ -596,11 +600,7 @@ class _SuccessSheet extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1A2332),
-              ),
+              style: valueStyle,
               textAlign: TextAlign.end,
             ),
           ),
