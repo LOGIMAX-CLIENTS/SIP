@@ -4,6 +4,7 @@ import '../../../core/providers/user_provider.dart';
 import '../../../core/providers/commodity_provider.dart';
 import '../models/withdrawal_method.dart';
 import '../models/withdrawal_policy.dart';
+import '../models/withdrawal_balance.dart';
 
 class WithdrawalService {
   final ApiClient _apiClient = ApiClient();
@@ -140,6 +141,21 @@ class WithdrawalService {
     }
   }
 
+  /// Fetch the Total Holding / Requested / On Hold / Withdrawable breakdown
+  /// for every commodity the customer holds.
+  /// Endpoint: GET /withdrawal/eligibility
+  Future<List<WithdrawalBalance>> fetchWithdrawalEligibility() async {
+    final response = await _apiClient.get('withdrawal/eligibility');
+    if (response.data != null && response.data['success'] == true) {
+      final holdings = response.data['data']?['holdings'] as List? ?? [];
+      return holdings
+          .map((e) => WithdrawalBalance.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw Exception(
+        response.data?['message'] ?? 'Failed to fetch withdrawal balance');
+  }
+
   /// Fetch withdrawal policy for a given metal + amount.
   /// Endpoint: POST withdrawal/policy
   /// Payload:  { "id_metal": 1, "amount": 1000.00 }
@@ -181,6 +197,30 @@ final rewardBalanceProvider =
   return ref.read(withdrawalServiceProvider).fetchRewardBalance(
         metalId: metalId,
       );
+});
+
+// ── Withdrawal Balance (Total Holding / Requested / On Hold / Withdrawable) ──
+
+/// Raw per-commodity breakdown for every holding the customer has.
+/// Auto-disposes and rebuilds whenever the commodity tab changes (same
+/// invalidation trigger as [rewardBalanceProvider], which this replaces as
+/// the withdrawal screen's balance source).
+final withdrawalEligibilityProvider =
+    FutureProvider.autoDispose<List<WithdrawalBalance>>((ref) {
+  ref.watch(selectedMetalIdProvider); // rebuild on commodity switch
+  return ref.read(withdrawalServiceProvider).fetchWithdrawalEligibility();
+});
+
+/// The breakdown row for the currently selected metal only — what the
+/// withdrawal screen actually displays and validates against.
+final withdrawalBalanceProvider =
+    FutureProvider.autoDispose<WithdrawalBalance>((ref) async {
+  final metalId = ref.watch(selectedMetalIdProvider);
+  final holdings = await ref.watch(withdrawalEligibilityProvider.future);
+  return holdings.firstWhere(
+    (h) => h.commodityId?.toString() == metalId,
+    orElse: () => WithdrawalBalance.empty,
+  );
 });
 
 // ── Withdrawal Policy ─────────────────────────────────────────────────────
