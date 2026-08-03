@@ -648,8 +648,15 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   ),
                 ],
               ),
-              error: (_, __) => Text('Error loading holding',
-                  style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: Colors.black45)),
+              error: (err, stack) {
+                // The UI text is intentionally generic — log the real cause
+                // so it's visible in device/debug logs instead of only ever
+                // showing "Error loading holding" with no way to diagnose it.
+                debugPrint('withdrawalBalanceProvider failed: $err\n$stack');
+                return Text('Error loading holding',
+                    style: GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp, color: Colors.black45));
+              },
             ),
             Divider(color: Colors.black.withOpacity(0.05)),
             SizedBox(height: 24.h),
