@@ -14,6 +14,7 @@ import '../../instant_saving/controller/saving_controller.dart';
 import '../../instant_saving/models/saving_models.dart';
 import '../providers/withdrawal_provider.dart';
 import '../services/withdrawal_service.dart';
+import '../models/withdrawal_balance.dart';
 import '../../../routes/app_router.dart';
 import '../../kyc/kyc_flow.dart';
 import '../../market/models/market_rates.dart';
@@ -80,7 +81,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
     final portfolio = ref.watch(portfolioProvider);
     final withdrawalState = ref.watch(withdrawalProvider);
     final timerState = ref.watch(buyRateTimerProvider);
-    final rewardAsync = ref.watch(rewardBalanceProvider);
+    final balanceAsync = ref.watch(withdrawalBalanceProvider);
 
     // Watch config to trigger the API fetch
     final configAsync = ref.watch(savingConfigProvider);
@@ -269,7 +270,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   SizedBox(height: 24.h),
                   _buildMainInputCard(
                       selectedCommodity, market, withdrawalState,
-                      rewardAsync),
+                      balanceAsync),
                   SizedBox(height: 16.h),
                 ],
               ),
@@ -278,7 +279,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
           // ── Pinned Footer ─────────────────────────────────────────
           _buildFooter(
               withdrawalState, market, selectedCommodity,
-              isCurrentMarketClosed, rewardAsync),
+              isCurrentMarketClosed, balanceAsync),
         ],
       ),
     );
@@ -557,7 +558,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       CommodityType type,
       AsyncValue<MarketRates> market,
       WithdrawalState state,
-      AsyncValue<Map<String, dynamic>> rewardAsync) {
+      AsyncValue<WithdrawalBalance> balanceAsync) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 24.w),
@@ -585,9 +586,9 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                         fontSize: 12.sp,
                         color: Colors.black45,
                         fontWeight: FontWeight.w600)),
-                rewardAsync.maybeWhen(
-                  data: (reward) => GestureDetector(
-                    onTap: () => _showHoldingInfoSheet(context, reward, type),
+                balanceAsync.maybeWhen(
+                  data: (balance) => GestureDetector(
+                    onTap: () => _showHoldingInfoSheet(context, balance, type),
                     child: Container(
                       padding: EdgeInsets.all(5.r),
                       decoration: BoxDecoration(
@@ -606,12 +607,10 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               ],
             ),
             SizedBox(height: 8.h),
-            // ── Withdrawable balance from reward-balance API ──
-            rewardAsync.when(
-              data: (reward) {
-                final withdrawable = double.tryParse(
-                        reward['withdrawable_qty']?.toString() ?? '0') ??
-                    0.0;
+            // ── Withdrawable balance from GET /withdrawal/eligibility ──
+            balanceAsync.when(
+              data: (balance) {
+                final withdrawable = balance.withdrawable;
                 final rate = type == CommodityType.gold
                     ? market.valueOrNull?.goldBuy ?? 0
                     : market.valueOrNull?.silverBuy ?? 0;
@@ -739,11 +738,12 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       AsyncValue<MarketRates> market,
       CommodityType type,
       bool isCurrentMarketClosed,
-      AsyncValue<Map<String, dynamic>> rewardAsync) {
+      AsyncValue<WithdrawalBalance> balanceAsync) {
     // ── Client-side balance check ──────────────────────────────────────
-    final reward = rewardAsync.valueOrNull;
-    final withdrawableQty =
-        double.tryParse(reward?['withdrawable_qty']?.toString() ?? '0') ?? 0.0;
+    // Withdrawable is the authoritative figure for both display and
+    // validation here — the server re-validates against its own locked
+    // Withdrawable at submission time regardless (see initiate_withdrawal).
+    final withdrawableQty = balanceAsync.valueOrNull?.withdrawable ?? 0.0;
     final liveRate = type == CommodityType.gold
         ? market.valueOrNull?.goldBuy ?? 0.0
         : market.valueOrNull?.silverBuy ?? 0.0;
@@ -838,15 +838,14 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
   }
 
   void _showHoldingInfoSheet(
-      BuildContext context, Map<String, dynamic> reward, CommodityType type) {
-    final withdrawable =
-        double.tryParse(reward['withdrawable_qty']?.toString() ?? '0') ?? 0.0;
-    final totalQty =
-        double.tryParse(reward['total_qty']?.toString() ?? '0') ?? 0.0;
-    final onHold =
-        double.tryParse(reward['on_hold_qty']?.toString() ?? '0') ?? 0.0;
-    final commodityName = reward['commodity_name']?.toString() ??
-        (type == CommodityType.gold ? 'Gold 24K' : 'Silver 999');
+      BuildContext context, WithdrawalBalance balance, CommodityType type) {
+    final withdrawable = balance.withdrawable;
+    final totalHolding = balance.totalHolding;
+    final onHold = balance.onHold;
+    final requested = balance.requested;
+    final commodityName = balance.commodity.isNotEmpty
+        ? balance.commodity
+        : (type == CommodityType.gold ? 'Gold 24K' : 'Silver 999');
     final isGold = type == CommodityType.gold;
 
     showModalBottomSheet(
@@ -948,6 +947,20 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       value: '${withdrawable.toStringAsFixed(6)} gm',
                       valueColor: const Color(0xFF1B882C),
                     ),
+                    // Requested only shows once the customer actually has an
+                    // open, not-yet-approved withdrawal request against this
+                    // commodity — a zero row here would just be noise.
+                    if (requested > 0) ...[
+                      Divider(height: 1, color: Colors.black.withOpacity(0.05)),
+                      _holdingRow(
+                        icon: Icons.hourglass_top_rounded,
+                        iconColor: const Color(0xFF1D4ED8),
+                        bgColor: const Color(0xFF1D4ED8).withOpacity(0.08),
+                        label: 'Requested',
+                        value: '${requested.toStringAsFixed(6)} gm',
+                        valueColor: const Color(0xFF1D4ED8),
+                      ),
+                    ],
                     Divider(height: 1, color: Colors.black.withOpacity(0.05)),
                     _holdingRow(
                       icon: Icons.lock_clock_outlined,
@@ -963,7 +976,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       iconColor: const Color(0xFF5C3300),
                       bgColor: const Color(0xFFEF9B00).withOpacity(0.10),
                       label: 'Total Holding',
-                      value: '${totalQty.toStringAsFixed(6)} gm',
+                      value: '${totalHolding.toStringAsFixed(6)} gm',
                       valueColor: Colors.black87,
                     ),
                   ],
