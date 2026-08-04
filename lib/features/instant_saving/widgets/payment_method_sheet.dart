@@ -34,9 +34,27 @@ const _fallbackIcons = <String, IconData>{
 class PaymentMethodSheet extends ConsumerStatefulWidget {
   /// Callback when user taps "Proceed to Pay".
   /// Receives the selected payment method id: "upi", "card", or "netbanking".
+  /// The "netbanking" id is unchanged by [isRecurring] — only its displayed
+  /// label changes — so SipService.createSip() is what translates it to the
+  /// backend's canonical 'emandate' wire value for SIP requests.
   final void Function(String paymentMethod) onProceed;
 
-  const PaymentMethodSheet({super.key, required this.onProceed});
+  /// When true (SIP/recurring context only — never for one-time payments),
+  /// relabels the "netbanking" option as an eMandate mandate registration
+  /// rather than a per-cycle netbanking charge. Neither Razorpay nor
+  /// Cashfree support netbanking as a standalone recurring/MIR instrument —
+  /// selecting it here always registers a bank-account eMandate/eNACH
+  /// mandate authenticated via netbanking, never a repeat netbanking debit.
+  /// See docs/features/mir_requirement_review_and_validation.md in the
+  /// backend repo. Defaults to false so one-time-payment callers (Instant
+  /// Saving) are unaffected.
+  final bool isRecurring;
+
+  const PaymentMethodSheet({
+    super.key,
+    required this.onProceed,
+    this.isRecurring = false,
+  });
 
   @override
   ConsumerState<PaymentMethodSheet> createState() => _PaymentMethodSheetState();
@@ -157,7 +175,9 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
 
   Widget _buildMethodsList(List<PaymentMethod> methods) {
     // If API returned data, use it; otherwise fall back to hardcoded defaults
-    final options = methods.isNotEmpty ? methods : _defaultMethods;
+    final rawOptions = methods.isNotEmpty ? methods : _defaultMethods;
+    final options =
+        widget.isRecurring ? rawOptions.map(_relabelForRecurring).toList() : rawOptions;
 
     // Auto-select first if current selection not in list
     if (!options.any((m) => m.id == _selected) && options.isNotEmpty) {
@@ -421,6 +441,23 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Relabels the "netbanking" option for SIP/recurring context — see
+  /// [PaymentMethodSheet.isRecurring] doc comment for why. Leaves every
+  /// other option (and the "netbanking" id itself) untouched, whether the
+  /// list came from the API or [_defaultMethods].
+  PaymentMethod _relabelForRecurring(PaymentMethod method) {
+    if (method.id != 'netbanking') return method;
+    return PaymentMethod(
+      id: method.id,
+      name: 'eMandate (Netbanking)',
+      icon: method.icon,
+      description: 'Register a bank mandate — auto-debited each cycle',
+      iconUrl: method.iconUrl,
+      subtitle: 'Register a bank mandate — auto-debited each cycle',
+      badgeIcons: method.badgeIcons,
     );
   }
 

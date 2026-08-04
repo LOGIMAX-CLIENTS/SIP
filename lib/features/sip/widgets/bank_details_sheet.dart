@@ -1,15 +1,18 @@
 // lib/features/sip/widgets/bank_details_sheet.dart
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// BankDetailsSheet — Bottom Sheet for Netbanking (eMandate) bank account entry
+// BankDetailsSheet — Bottom Sheet for eMandate bank account entry
 //
-// Shown only when the customer picks "Netbanking" on PaymentMethodSheet.
-// Razorpay's eMandate/netbanking recurring product requires a bank_account
-// object (beneficiary name, account number, IFSC, account type) up front —
-// see shared/services/razorpay_recurring.py create_subscription()'s
-// 'netbanking' branch and Razorpay's eMandate create-authorization-transaction
-// docs. UPI and Card mandates need nothing extra here (collected inside
-// Razorpay Checkout instead), so this sheet only exists for this one method.
+// Shown only when the customer picks "eMandate (Netbanking)" on
+// PaymentMethodSheet (PaymentMethodSheet.isRecurring relabels the shared
+// "netbanking" option for SIP — the underlying id stays "netbanking" until
+// auto_savings_screen.dart translates it to 'emandate' for the backend).
+// Razorpay's eMandate recurring product requires a bank_account object
+// (beneficiary name, account number, IFSC, account type) up front — see
+// shared/services/razorpay_recurring.py create_subscription()'s 'emandate'
+// branch and Razorpay's eMandate create-authorization-transaction docs.
+// UPI and Card mandates need nothing extra here (collected inside Razorpay
+// Checkout instead), so this sheet only exists for this one method.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
@@ -20,7 +23,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 
-/// Bank account details collected for a Netbanking AutoPay mandate.
+/// Bank account details collected for an eMandate AutoPay mandate.
 class BankDetails {
   final String beneficiaryName;
   final String accountNumber;
@@ -141,7 +144,7 @@ class _BankDetailsSheetState extends State<BankDetailsSheet> {
                   ),
                   SizedBox(height: 4.h),
                   Text(
-                    'Required to register your Netbanking AutoPay mandate.',
+                    'Required to register your eMandate AutoPay mandate.',
                     style: GoogleFonts.playfairDisplay(
                         fontSize: 12.sp, color: Colors.black54),
                   ),
