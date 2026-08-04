@@ -1597,11 +1597,23 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   }
 
   /// Shows the Payment Methods sheet (reused from instant_saving — see
-  /// PaymentMethodSheet) so the customer can pick UPI / Card / Netbanking
-  /// before the SIP mandate is registered. Netbanking additionally needs
-  /// bank account details up front (Razorpay eMandate requirement — see
-  /// RazorpayRecurringService.create_subscription()'s 'netbanking' branch),
-  /// so that method routes through BankDetailsSheet first.
+  /// PaymentMethodSheet) so the customer can pick UPI / Card / eMandate
+  /// before the SIP mandate is registered. `isRecurring: true` relabels the
+  /// sheet's "netbanking" option as "eMandate (Netbanking)" — selecting it
+  /// registers a bank-account eMandate authenticated via netbanking, never
+  /// a repeat netbanking charge (neither Razorpay nor Cashfree support
+  /// netbanking as a standalone recurring/MIR instrument — see
+  /// docs/features/mir_requirement_review_and_validation.md in the backend
+  /// repo). That method additionally needs bank account details up front
+  /// (Razorpay eMandate requirement — see
+  /// RazorpayRecurringService.create_subscription()'s 'emandate' branch),
+  /// so it routes through BankDetailsSheet first.
+  ///
+  /// The sheet still returns the underlying id "netbanking" (unchanged, so
+  /// PaymentMethodSheet's shared fallback/API-driven option list doesn't
+  /// need a wire-format change) — translated to the backend's canonical
+  /// 'emandate' value right here, once, before it reaches _createSipPlan()
+  /// / SipService.createSip().
   ///
   /// UPI and Card proceed straight to _createSipPlan() — nothing else
   /// changes for them; in particular the Razorpay Checkout launch itself
@@ -1614,6 +1626,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => PaymentMethodSheet(
+        isRecurring: true,
         onProceed: (String paymentMethod) {
           if (paymentMethod == 'netbanking') {
             showModalBottomSheet(
@@ -1622,7 +1635,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               isScrollControlled: true,
               builder: (_) => BankDetailsSheet(
                 onSubmit: (BankDetails details) {
-                  _createSipPlan(paymentMethod: 'netbanking', bankDetails: details);
+                  _createSipPlan(paymentMethod: 'emandate', bankDetails: details);
                 },
               ),
             );

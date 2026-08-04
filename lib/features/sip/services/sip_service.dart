@@ -63,12 +63,16 @@ class SipService {
     required int amount,
     String? day,
     int? date,
-    /// 'upi' | 'card' | 'netbanking'. Omitted/null keeps the backend's own
+    /// 'upi' | 'card' | 'emandate'. Omitted/null keeps the backend's own
     /// default ('upi') — matches pre-existing behaviour for callers that
-    /// don't yet offer method selection.
+    /// don't yet offer method selection. 'emandate' is the canonical value
+    /// for bank-account mandate registration (previously sent as
+    /// 'netbanking' — the backend still accepts that as a legacy alias for
+    /// older app builds, but this client now sends 'emandate' directly; see
+    /// SIPCreateSerializer.validate() in the backend repo).
     String? paymentMethod,
-    /// Netbanking (eMandate) only — required by the backend when
-    /// paymentMethod == 'netbanking' (see SIPCreateSerializer.validate()).
+    /// eMandate only — required by the backend when paymentMethod ==
+    /// 'emandate' (see SIPCreateSerializer.validate()).
     String? bankAccountNumber,
     String? bankIfsc,
     String? bankBeneficiaryName,
@@ -92,7 +96,7 @@ class SipService {
     if (paymentMethod != null) {
       payload['payment_method'] = paymentMethod;
     }
-    if (paymentMethod == 'netbanking') {
+    if (paymentMethod == 'emandate') {
       payload['bank_account_number'] = bankAccountNumber;
       payload['bank_ifsc'] = bankIfsc;
       payload['bank_beneficiary_name'] = bankBeneficiaryName;

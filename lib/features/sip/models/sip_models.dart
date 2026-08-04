@@ -117,7 +117,9 @@ class SipCreateResponse {
   /// identified omitting this as a likely cause of "Token absent for
   /// recurring payment". Empty for Subscriptions mode and Cashfree.
   final String? customerId;
-  /// The instrument actually registered: 'upi' | 'card' | 'netbanking'.
+  /// The instrument actually registered: 'upi' | 'card' | 'emandate'
+  /// (older mandates may still echo the legacy 'netbanking' value — treat
+  /// both as the same thing for display purposes).
   /// Echoed back by the backend (see shared/services/sip.py create_scheme's
   /// return dict) for display/logging only — it does NOT change how
   /// Checkout is launched (see sip_payment_screen.dart's
