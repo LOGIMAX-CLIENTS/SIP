@@ -1,9 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/sip_models.dart';
 import '../services/sip_service.dart';
+import '../services/custom_sip_service.dart';
 
 // ─── Service Provider ───────────────────────────────────────────────────────
 final sipServiceProvider = Provider((ref) => SipService());
+
+/// Custom SIP (multi-date AutoPay) — separate service, separate backend
+/// product (see custom_sip_service.dart), same provider pattern.
+final customSipServiceProvider = Provider((ref) => CustomSipService());
 
 // ─── Config Provider ────────────────────────────────────────────────────────
 final sipConfigProvider = FutureProvider.autoDispose<SipConfig>((ref) async {
@@ -31,6 +36,16 @@ final sipDetailsProvider =
     FutureProvider<List<SipPlanDetail>>((ref) async {
   final service = ref.watch(sipServiceProvider);
   return service.getSipDetails();
+});
+
+/// Non-terminal Custom SIP schemes for this customer — used to mark
+/// already-committed dates on the Custom tab's date picker grid.
+/// Not autoDispose: invalidated explicitly after create/pause/resume/cancel
+/// so the grid reflects the latest state next time the picker opens.
+final customSipSchemesProvider =
+    FutureProvider<List<CustomSipScheme>>((ref) async {
+  final service = ref.watch(customSipServiceProvider);
+  return service.listSchemes();
 });
 
 // ─── SIP State ──────────────────────────────────────────────────────────────

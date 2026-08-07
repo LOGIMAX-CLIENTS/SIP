@@ -303,3 +303,90 @@ const List<CancelReason> sipCancelReasons = [
   CancelReason(label: 'Other saving method', value: 'Other saving method'),
   CancelReason(label: 'Goal achieved', value: 'Goal achieved'),
 ];
+
+// ─── Custom SIP Scheme Summary ──────────────────────────────────────────────
+
+/// Lightweight summary of one non-terminal Custom SIP scheme — enough for
+/// the date picker to mark which day-of-month values are already committed
+/// to a scheme (tap -> manage) vs free to select for a new one (tap ->
+/// multi-select -> create). Mirrors CustomSIPService.list_schemes()'s
+/// return shape (shared/services/custom_sip.py).
+class CustomSipScheme {
+  final int schemeId;
+  final String label;
+  final double amount;
+  final List<int> customDates;
+  final int? commodityId;
+  /// 'ACTIVE' | 'PAUSED' | 'PENDING_AUTH' | 'MANDATE_EXPIRED_PAUSED'
+  /// (terminal statuses are excluded server-side — see
+  /// CustomSIPSchemeRepository.get_non_terminal_schemes_for_customer).
+  final String status;
+
+  CustomSipScheme({
+    required this.schemeId,
+    required this.label,
+    required this.amount,
+    required this.customDates,
+    this.commodityId,
+    required this.status,
+  });
+
+  bool get isActive => status == 'ACTIVE';
+  bool get isPaused => status == 'PAUSED';
+
+  factory CustomSipScheme.fromJson(Map<String, dynamic> json) {
+    final List rawDates = json['custom_dates'] ?? [];
+    return CustomSipScheme(
+      schemeId: int.tryParse(json['scheme_id']?.toString() ?? '0') ?? 0,
+      label: json['label']?.toString() ?? 'Custom SIP',
+      amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0,
+      customDates: rawDates.map((d) => int.tryParse(d.toString()) ?? 0).toList(),
+      commodityId: int.tryParse(json['commodity_id']?.toString() ?? ''),
+      status: json['status']?.toString().toUpperCase() ?? 'ACTIVE',
+    );
+  }
+}
+
+// ─── Custom SIP Scheme Detail (full manage screen) ──────────────────────────
+
+/// Full detail for one Custom SIP scheme's manage screen — mirrors
+/// CustomSIPService.get_scheme_status()'s return dict (shared/services/
+/// custom_sip.py), same fields SipManageDetails carries for regular SIP.
+class CustomSipSchemeDetail {
+  final int schemeId;
+  final String label;
+  final String subscriptionId;
+  final String? startDate;
+  final double amount;
+  final List<int> customDates;
+  final String commodityName;
+  final String status;
+
+  CustomSipSchemeDetail({
+    required this.schemeId,
+    required this.label,
+    required this.subscriptionId,
+    this.startDate,
+    required this.amount,
+    required this.customDates,
+    required this.commodityName,
+    required this.status,
+  });
+
+  bool get isActive => status == 'ACTIVE';
+  bool get isPaused => status == 'PAUSED';
+
+  factory CustomSipSchemeDetail.fromJson(Map<String, dynamic> json) {
+    final List rawDates = json['custom_dates'] ?? [];
+    return CustomSipSchemeDetail(
+      schemeId: int.tryParse(json['scheme_id']?.toString() ?? '0') ?? 0,
+      label: json['label']?.toString() ?? 'Custom SIP',
+      subscriptionId: json['subscription_id']?.toString() ?? '',
+      startDate: json['start_date']?.toString(),
+      amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0,
+      customDates: rawDates.map((d) => int.tryParse(d.toString()) ?? 0).toList(),
+      commodityName: json['commodity_name']?.toString() ?? '',
+      status: json['status']?.toString().toUpperCase() ?? 'ACTIVE',
+    );
+  }
+}
