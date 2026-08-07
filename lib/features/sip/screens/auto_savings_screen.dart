@@ -41,6 +41,17 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   final TextEditingController _amountController = TextEditingController();
   late AnimationController _fadeController;
 
+  /// Whether the "Custom" tab is active. Not part of SipState/config.frequencies
+  /// — Custom SIP is a separate backend product (CustomSIPScheme, see
+  /// custom_sip_service.dart) with no frequency id of its own, so it's
+  /// tracked purely client-side alongside the existing Daily/Weekly/Monthly
+  /// selection (sipState.selectedFrequencyId, left untouched underneath).
+  bool _isCustomFrequency = false;
+
+  /// Day-of-month values (1-31) selected for Custom SIP — the auto saving
+  /// runs on ALL selected dates every month. 1-28 entries (backend cap).
+  final Set<int> _selectedCustomDates = {};
+
   @override
   void initState() {
     super.initState();
@@ -235,7 +246,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     // Check if selected frequency+commodity already has an active plan
     final selectedFreqId = sipState.selectedFrequencyId;
     final selectedCommodityId = sipState.selectedCommodityId;
-    final existingPlan = selectedFreqId != null
+    // Custom SIP has no frequency id / SipPlanDetail duplicate-check of its
+    // own (separate backend product — see _isCustomFrequency doc comment),
+    // so it never shows the existing-plan card, only the setup form.
+    final existingPlan = (!_isCustomFrequency && selectedFreqId != null)
         ? sipState.getActivePlanForFrequency(selectedFreqId,
             commodityId: selectedCommodityId)
         : null;
@@ -562,13 +576,16 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             ],
           ),
           child: Row(
-            children: config.frequencies.map((freq) {
-              final isSelected = sipState.selectedFrequencyId == freq.id;
+            children: [
+              ...config.frequencies.map((freq) {
+              final isSelected =
+                  !_isCustomFrequency && sipState.selectedFrequencyId == freq.id;
               final hasDuplicate = sipState.hasActivePlanForFrequency(freq.id,
                   commodityId: sipState.selectedCommodityId);
               return Expanded(
                 child: GestureDetector(
                   onTap: () {
+                    setState(() => _isCustomFrequency = false);
                     ref
                         .read(sipControllerProvider.notifier)
                         .setFrequency(freq.id);
@@ -618,7 +635,45 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                   ),
                 ),
               );
-            }).toList(),
+              }),
+              // ── Custom pill ── separate backend product (CustomSIPScheme),
+              // no frequency id — tracked via _isCustomFrequency, not
+              // sipState.selectedFrequencyId (see field doc comment above).
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isCustomFrequency = true),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: EdgeInsets.symmetric(vertical: 10.h),
+                    decoration: BoxDecoration(
+                      gradient: _isCustomFrequency
+                          ? const LinearGradient(
+                              colors: [
+                                Color(0xFF003716),
+                                Color(0xFF167525),
+                              ],
+                            )
+                          : null,
+                      borderRadius: BorderRadius.circular(50.r),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Custom',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 13.sp,
+                          fontWeight: _isCustomFrequency
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: _isCustomFrequency
+                              ? Colors.white
+                              : const Color(0xFF1A1A2E),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
       ),
     );
@@ -629,7 +684,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
   Widget _buildMainCard(SipConfig config, SipState sipState) {
     final selectedCommodity = sipState.selectedCommodityId;
-    final selectedFrequency = sipState.selectedFrequencyId;
+    // Custom SIP has no frequency id of its own — backend treats it as a
+    // MONTHLY-base scheme (shared/services/custom_sip.py create_scheme()),
+    // so denomination lookups reuse Monthly's (id 3) for a sensible min/max.
+    final selectedFrequency = _isCustomFrequency ? 3 : sipState.selectedFrequencyId;
     final isGold = config.commodities.any((c) =>
         c.id == selectedCommodity && c.name.toLowerCase().contains('gold'));
 
@@ -754,6 +812,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               ),
             ],
 
+            if (_isCustomFrequency) ...[
+              SizedBox(height: 14.h),
+              _buildCustomDatesSelector(),
+            ],
+
             SizedBox(height: 14.h),
 
             // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Denomination Chips ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
@@ -771,6 +834,49 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
 
             // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Savings Projection ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
             _buildSavingsProjection(sipState, config, sellRate, isGold: isGold),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Custom SIP date summary/picker trigger — shown only when the "Custom"
+  /// tab is active (_isCustomFrequency). Opens _showCustomDatesPicker() on
+  /// tap; the auto saving runs on ALL selected dates every month.
+  Widget _buildCustomDatesSelector() {
+    final hasSelection = _selectedCustomDates.isNotEmpty;
+    final sortedDates = _selectedCustomDates.toList()..sort();
+    return GestureDetector(
+      onTap: _showCustomDatesPicker,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(16.r),
+          border: Border.all(color: Colors.black.withOpacity(0.06)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_month_rounded,
+                size: 18.sp, color: const Color(0xFF167525)),
+            SizedBox(width: 10.w),
+            Expanded(
+              child: Text(
+                hasSelection
+                    ? 'Runs on: ${sortedDates.join(', ')} every month'
+                    : 'Select dates for Auto Savings',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 13.sp,
+                  fontWeight: hasSelection ? FontWeight.w700 : FontWeight.w500,
+                  color: hasSelection
+                      ? const Color(0xFF1A1A2E)
+                      : Colors.black45,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                size: 20.sp, color: Colors.black38),
           ],
         ),
       ),
@@ -1106,7 +1212,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       {bool isMarketClosed = false}) {
     final amount = double.tryParse(_amountController.text) ?? 0;
     final isValid = amount >= config.minAmount && amount <= config.maxAmount;
-    final hasDuplicate = sipState.selectedFrequencyId != null &&
+    final hasDuplicate = !_isCustomFrequency &&
+        sipState.selectedFrequencyId != null &&
         sipState.hasActivePlanForFrequency(sipState.selectedFrequencyId!,
             commodityId: sipState.selectedCommodityId);
     final canProceed =
@@ -1266,6 +1373,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     //   _showNomineeAlert();
     //   return;
     // }
+
+    if (_isCustomFrequency) {
+      _showCustomDatesPicker();
+      return;
+    }
 
     final frequencyId = sipState.selectedFrequencyId ?? 1;
 
@@ -1594,6 +1706,294 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         },
       ),
     );
+  }
+
+  /// Multi-select date picker for Custom SIP — unlike Monthly's single-date
+  /// grid, the auto saving runs on EVERY selected date each month (backend:
+  /// custom_dates list, 1-28 entries — see CSIPCreateSerializer). Always
+  /// UPI Autopay on the backend (no payment_method field on Custom SIP), so
+  /// this goes straight to _createCustomSipPlan() on confirm — no
+  /// PaymentMethodSheet step, unlike Daily/Weekly/Monthly.
+  /// Opens the date picker. Dates already committed to an existing
+  /// non-terminal Custom SIP scheme (customSipSchemesProvider) render as
+  /// "enabled" (amber, tap -> manage that scheme) instead of selectable —
+  /// only dates NOT yet owned by any scheme can be multi-selected to create
+  /// a new one. e.g. existing dates [3,5,9]: tapping 3 opens manage/pause/
+  /// cancel for that scheme; selecting 4,7,8 and confirming creates a
+  /// separate new Custom SIP with just those dates.
+  Future<void> _showCustomDatesPicker() async {
+    List<CustomSipScheme> schemes;
+    try {
+      schemes = await ref.refresh(customSipSchemesProvider.future);
+    } catch (_) {
+      schemes = [];
+    }
+    final Map<int, CustomSipScheme> dateOwners = {};
+    for (final s in schemes) {
+      for (final d in s.customDates) {
+        dateOwners[d] = s;
+      }
+    }
+
+    final Set<int> selected = {..._selectedCustomDates}
+      ..removeWhere((d) => dateOwners.containsKey(d));
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            padding: EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 32.h),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40.w,
+                  height: 4.h,
+                  margin: EdgeInsets.only(bottom: 16.h),
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(2.r),
+                  ),
+                ),
+                Text(
+                  'Select Dates',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1A1A2E),
+                  ),
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  dateOwners.isEmpty
+                      ? 'Your auto saving will run on ALL selected dates every month'
+                      : 'Amber dates already have a plan — tap to manage. '
+                          'Pick new dates to start another.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 12.sp,
+                    color: Colors.black45,
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    crossAxisSpacing: 6.w,
+                    mainAxisSpacing: 6.h,
+                  ),
+                  itemCount: 28,
+                  itemBuilder: (ctx, index) {
+                    final date = index + 1;
+                    final owner = dateOwners[date];
+                    final isCommitted = owner != null;
+                    final isActive = !isCommitted && selected.contains(date);
+                    return GestureDetector(
+                      onTap: () {
+                        if (isCommitted) {
+                          Navigator.pop(ctx);
+                          Navigator.pushNamed(
+                            context,
+                            AppRouter.customSipManage,
+                            arguments: {'scheme_id': owner.schemeId},
+                          ).then((_) => ref.invalidate(customSipSchemesProvider));
+                          return;
+                        }
+                        setSheetState(() {
+                          if (isActive) {
+                            selected.remove(date);
+                          } else {
+                            selected.add(date);
+                          }
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        decoration: BoxDecoration(
+                          gradient: isActive
+                              ? const LinearGradient(
+                                  colors: [
+                                    Color(0xFF003716),
+                                    Color(0xFF167525),
+                                  ],
+                                )
+                              : null,
+                          color: isCommitted
+                              ? const Color(0xFFFFF7ED)
+                              : (isActive ? null : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(10.r),
+                          border: isCommitted
+                              ? Border.all(color: const Color(0xFFD97706).withOpacity(0.5))
+                              : (!isActive
+                                  ? Border.all(color: Colors.black.withOpacity(0.04))
+                                  : null),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '$date',
+                            style: GoogleFonts.lora(
+                              fontSize: 13.sp,
+                              fontWeight: (isActive || isCommitted)
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isActive
+                                  ? Colors.white
+                                  : (isCommitted
+                                      ? const Color(0xFFD97706)
+                                      : const Color(0xFF1A1A2E)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                SizedBox(height: 16.h),
+                SafeArea(
+                  top: false,
+                  child: CustomButton(
+                    text: 'Confirm',
+                    svgIconPath: 'assets/buttons/tick.svg',
+                    onPressed: selected.isNotEmpty
+                        ? () {
+                            setState(() {
+                              _selectedCustomDates
+                                ..clear()
+                                ..addAll(selected);
+                            });
+                            Navigator.pop(ctx);
+                            _createCustomSipPlan();
+                          }
+                        : null,
+                    gradient: selected.isNotEmpty
+                        ? const LinearGradient(
+                            colors: [Color(0xFF003716), Color(0xFF167525)],
+                          )
+                        : null,
+                    backgroundColor: const Color(0xFF064E3B).withOpacity(0.3),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Creates a Custom SIP plan and routes to the same Cashfree-checkout /
+  /// success flow as _createSipPlan() — CustomSipService.createCustomSip()
+  /// returns a SipCreateResponse shaped identically (see
+  /// shared/services/custom_sip.py create_scheme()'s return dict), so this
+  /// mirrors _createSipPlan()'s navigation and KYC-retry logic exactly.
+  Future<void> _createCustomSipPlan() async {
+    final sipState = ref.read(sipControllerProvider);
+    final notifier = ref.read(sipControllerProvider.notifier);
+    notifier.setCreating(true);
+
+    try {
+      final service = ref.read(customSipServiceProvider);
+      final response = await service.createCustomSip(
+        commodityId: sipState.selectedCommodityId ?? 1,
+        amount: sipState.amount.toInt(),
+        customDates: _selectedCustomDates.toList()..sort(),
+      );
+
+      notifier.setCreating(false);
+
+      if (response.success) {
+        // Refresh so the just-picked dates show as committed (amber) the
+        // next time the date picker opens, instead of still selectable.
+        ref.invalidate(customSipSchemesProvider);
+        if (mounted) {
+          if (response.sessionId != null && response.orderId != null) {
+            Navigator.pushNamed(
+              context,
+              AppRouter.sipPayment,
+              arguments: {
+                'order_id': response.orderId,
+                'session_id': response.sessionId,
+                'authorization_link': response.authorizationLink,
+                'environment': response.environment ?? 'SANDBOX',
+                'subscription_id': response.subscriptionId,
+                'amount': sipState.amount,
+                'payment_gateway': response.paymentGateway,
+                'key_id': response.keyId,
+                'mode': response.mode,
+                'customer_id': response.customerId,
+                'payment_method': response.paymentMethod,
+              },
+            );
+          } else {
+            Navigator.pushNamed(
+              context,
+              AppRouter.sipSuccess,
+              arguments: {
+                'subscription_id': response.subscriptionId,
+                'message': response.message,
+              },
+            );
+          }
+        }
+      } else if (response.errorCode == 'KYC_REQUIRED') {
+        if (!mounted) return;
+        final verified = await KycVerificationFlow.start(
+          context,
+          ref,
+          requestFrom: 'sip',
+        );
+        if (!mounted) return;
+        if (verified) {
+          await _createCustomSipPlan();
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
+      } else {
+        if (mounted) {
+          AppToast.show(
+            context,
+            response.message.isNotEmpty
+                ? response.message
+                : 'Failed to create Custom SIP plan',
+            type: ToastType.error,
+          );
+        }
+      }
+    } on KycRequiredFailure catch (e) {
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await KycVerificationFlow.start(
+        context,
+        ref,
+        requestFrom: 'sip',
+      );
+      if (!mounted) return;
+      if (verified) {
+        await _createCustomSipPlan();
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
+      }
+    } catch (e) {
+      notifier.setCreating(false);
+      SecureLogger.e('CustomSIP: Create failed: $e');
+      if (mounted) {
+        AppToast.show(
+          context,
+          e.toString().replaceAll('Exception: ', ''),
+          type: ToastType.error,
+        );
+      }
+    }
   }
 
   /// Shows the Payment Methods sheet (reused from instant_saving — see
