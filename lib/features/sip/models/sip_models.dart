@@ -46,22 +46,31 @@ class SipConfig {
   final double maxAmount;
   final List<SipFrequency> frequencies;
   final List<SipCommodity> commodities;
+  /// Payment method ids the active SIP Autopay gateway supports for mandate
+  /// registration — e.g. ['upi', 'netbanking']. Card is intentionally
+  /// excluded from Setup Auto Savings (see backend SIPSchemeService.get_config()).
+  final List<String> supportedPaymentMethods;
 
   SipConfig({
     required this.minAmount,
     required this.maxAmount,
     required this.frequencies,
     required this.commodities,
+    this.supportedPaymentMethods = const ['upi', 'netbanking'],
   });
 
   factory SipConfig.fromJson(Map<String, dynamic> json) {
     final List freqList = json['frequencies'] ?? [];
     final List commodityList = json['commodities'] ?? [];
+    final List? methodList = json['supported_payment_methods'];
     return SipConfig(
       minAmount: (json['min_amount'] ?? 0).toDouble(),
       maxAmount: (json['max_amount'] ?? 0).toDouble(),
       frequencies: freqList.map((e) => SipFrequency.fromJson(e)).toList(),
       commodities: commodityList.map((e) => SipCommodity.fromJson(e)).toList(),
+      supportedPaymentMethods: methodList != null
+          ? methodList.map((e) => e.toString()).toList()
+          : const ['upi', 'netbanking'],
     );
   }
 }

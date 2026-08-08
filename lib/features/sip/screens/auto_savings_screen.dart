@@ -18,9 +18,10 @@ import '../../../core/security/secure_logger.dart';
 import '../../../core/error/failures.dart';
 import '../../../routes/app_router.dart';
 import '../../kyc/kyc_flow.dart';
+import '../../profile/profile_controller.dart' as pc;
 import '../controller/sip_controller.dart';
 import '../models/sip_models.dart';
-import '../widgets/bank_details_sheet.dart';
+import '../../profile/models/bank_account.dart';
 import '../../instant_saving/widgets/payment_method_sheet.dart';
 // import '../../nominee/controller/nominee_controller.dart'; // Commented ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nominee feature will be updated
 
@@ -1365,7 +1366,30 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
   // SETUP FLOW
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
-  void _onSetupTapped(SipConfig config, SipState sipState) {
+  Future<void> _onSetupTapped(SipConfig config, SipState sipState) async {
+    // ── Proactive KYC gate ──────────────────────────────────────────────
+    // The backend's own KYC_REQUIRED rejection (handled deeper in
+    // _createSipPlan/_createCustomSipPlan) stays as a backstop, but we
+    // check up front here so the customer never reaches the bank-picker/
+    // payment-method steps only to be bounced back out.
+    //
+    // Force a fresh fetch before reading kycStatus — profileProvider may
+    // have been populated earlier in the session (e.g. on the Profile
+    // screen, or at login) and never invalidated since. Reading a stale
+    // cached value here would send an already-fully-verified customer into
+    // the KYC hub unnecessarily (it would still show both PAN and Aadhaar
+    // as Verified once it re-fetches live, but only after an avoidable
+    // detour — that's the bug this fixes, not a KYC-status bug).
+    if (!mounted) return;
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    if (!mounted) return;
+    final kycVerified = ref.read(pc.profileProvider).user.kycStatus == 1;
+    if (!kycVerified) {
+      final verified =
+          await KycVerificationFlow.start(context, ref, requestFrom: 'sip');
+      if (!mounted || !verified) return;
+    }
+
     // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Nominee gate: block SIP creation if nominee not added ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
     // Commented ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nominee feature will be updated
     // final hasNominee = ref.read(hasNomineeProvider);
@@ -1865,14 +1889,23 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                     text: 'Confirm',
                     svgIconPath: 'assets/buttons/tick.svg',
                     onPressed: selected.isNotEmpty
-                        ? () {
+                        ? () async {
                             setState(() {
                               _selectedCustomDates
                                 ..clear()
                                 ..addAll(selected);
                             });
                             Navigator.pop(ctx);
-                            _createCustomSipPlan();
+                            if (!mounted) return;
+                            final result = await Navigator.pushNamed(
+                              context,
+                              AppRouter.bankAccountPicker,
+                            );
+                            final account = result as BankAccount?;
+                            if (account == null || !mounted) return;
+                            _createCustomSipPlan(
+                              bankAccountId: int.tryParse(account.idBank),
+                            );
                           }
                         : null,
                     gradient: selected.isNotEmpty
@@ -1896,7 +1929,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   /// returns a SipCreateResponse shaped identically (see
   /// shared/services/custom_sip.py create_scheme()'s return dict), so this
   /// mirrors _createSipPlan()'s navigation and KYC-retry logic exactly.
-  Future<void> _createCustomSipPlan() async {
+  Future<void> _createCustomSipPlan({int? bankAccountId}) async {
     final sipState = ref.read(sipControllerProvider);
     final notifier = ref.read(sipControllerProvider.notifier);
     notifier.setCreating(true);
@@ -1907,6 +1940,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         commodityId: sipState.selectedCommodityId ?? 1,
         amount: sipState.amount.toInt(),
         customDates: _selectedCustomDates.toList()..sort(),
+        bankAccountId: bankAccountId,
       );
 
       notifier.setCreating(false);
@@ -1954,7 +1988,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         );
         if (!mounted) return;
         if (verified) {
-          await _createCustomSipPlan();
+          await _createCustomSipPlan(bankAccountId: bankAccountId);
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
         }
@@ -1979,7 +2013,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       );
       if (!mounted) return;
       if (verified) {
-        await _createCustomSipPlan();
+        await _createCustomSipPlan(bankAccountId: bankAccountId);
       } else {
         AppToast.show(context, e.message, type: ToastType.error);
       }
@@ -1996,18 +2030,22 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     }
   }
 
-  /// Shows the Payment Methods sheet (reused from instant_saving — see
-  /// PaymentMethodSheet) so the customer can pick UPI / Card / eMandate
-  /// before the SIP mandate is registered. `isRecurring: true` relabels the
-  /// sheet's "netbanking" option as "eMandate (Netbanking)" — selecting it
-  /// registers a bank-account eMandate authenticated via netbanking, never
-  /// a repeat netbanking charge (neither Razorpay nor Cashfree support
-  /// netbanking as a standalone recurring/MIR instrument — see
+  /// Bank picker → Payment Methods sheet, then registers the SIP mandate.
+  ///
+  /// The customer first picks a registered/BAV-verified bank account (see
+  /// [BankAccountPickerScreen]) — recorded on the scheme for every
+  /// method. Then the Payment Methods sheet (reused from instant_saving —
+  /// PaymentMethodSheet) offers only [SipConfig.supportedPaymentMethods]
+  /// (UPI / Netbanking — Card is excluded, see backend
+  /// SIPSchemeService.get_config()). `isRecurring: true` relabels
+  /// "netbanking" as "eMandate (Netbanking)" — selecting it registers a
+  /// bank-account eMandate authenticated via netbanking, never a repeat
+  /// netbanking charge (neither Razorpay nor Cashfree support netbanking as
+  /// a standalone recurring/MIR instrument — see
   /// docs/features/mir_requirement_review_and_validation.md in the backend
-  /// repo). That method additionally needs bank account details up front
-  /// (Razorpay eMandate requirement — see
-  /// RazorpayRecurringService.create_subscription()'s 'emandate' branch),
-  /// so it routes through BankDetailsSheet first.
+  /// repo). That method uses the already-selected bank account's details —
+  /// no more ad-hoc typed form (BankDetailsSheet) — since the customer must
+  /// have already picked one of their saved accounts to reach this sheet.
   ///
   /// The sheet still returns the underlying id "netbanking" (unchanged, so
   /// PaymentMethodSheet's shared fallback/API-driven option list doesn't
@@ -2015,33 +2053,38 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   /// 'emandate' value right here, once, before it reaches _createSipPlan()
   /// / SipService.createSip().
   ///
-  /// UPI and Card proceed straight to _createSipPlan() — nothing else
-  /// changes for them; in particular the Razorpay Checkout launch itself
+  /// UPI proceeds straight to _createSipPlan() — nothing else changes for
+  /// it; in particular the Razorpay Checkout launch itself
   /// (sip_payment_screen.dart) is untouched, since the recurring order's
   /// own 'method' field is what determines what Checkout presents.
-  void _selectPaymentMethodAndCreate() {
+  Future<void> _selectPaymentMethodAndCreate() async {
     if (!mounted) return;
+    // No explicit generic here — this app's routes are registered via
+    // MaterialApp's `routes:` map, so Navigator always builds a
+    // MaterialPageRoute<dynamic> for them regardless of the pushNamed<T>
+    // call site; requesting pushNamed<BankAccount> fails its runtime type
+    // check against that <dynamic> route. Cast the popped result instead.
+    final result = await Navigator.pushNamed(context, AppRouter.bankAccountPicker);
+    final account = result as BankAccount?;
+    if (account == null || !mounted) return;
+
+    final config = ref.read(sipConfigProvider).valueOrNull;
+    final bankAccountId = int.tryParse(account.idBank);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => PaymentMethodSheet(
         isRecurring: true,
+        allowedMethodIds: config?.supportedPaymentMethods,
         onProceed: (String paymentMethod) {
-          if (paymentMethod == 'netbanking') {
-            showModalBottomSheet(
-              context: context,
-              backgroundColor: Colors.transparent,
-              isScrollControlled: true,
-              builder: (_) => BankDetailsSheet(
-                onSubmit: (BankDetails details) {
-                  _createSipPlan(paymentMethod: 'emandate', bankDetails: details);
-                },
-              ),
-            );
-          } else {
-            _createSipPlan(paymentMethod: paymentMethod);
-          }
+          final resolvedMethod =
+              paymentMethod == 'netbanking' ? 'emandate' : paymentMethod;
+          _createSipPlan(
+            paymentMethod: resolvedMethod,
+            bankAccountId: bankAccountId,
+          );
         },
       ),
     );
@@ -2049,7 +2092,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
 
   Future<void> _createSipPlan({
     String? paymentMethod,
-    BankDetails? bankDetails,
+    int? bankAccountId,
   }) async {
     final sipState = ref.read(sipControllerProvider);
     final notifier = ref.read(sipControllerProvider.notifier);
@@ -2064,10 +2107,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         day: sipState.selectedDay,
         date: sipState.selectedDate,
         paymentMethod: paymentMethod,
-        bankAccountNumber: bankDetails?.accountNumber,
-        bankIfsc: bankDetails?.ifsc,
-        bankBeneficiaryName: bankDetails?.beneficiaryName,
-        bankAccountType: bankDetails?.accountType,
+        bankAccountId: bankAccountId,
       );
 
       notifier.setCreating(false);
@@ -2121,7 +2161,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         );
         if (!mounted) return;
         if (verified) {
-          await _createSipPlan();
+          await _createSipPlan(
+            paymentMethod: paymentMethod,
+            bankAccountId: bankAccountId,
+          );
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
         }
@@ -2152,7 +2195,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       );
       if (!mounted) return;
       if (verified) {
-        await _createSipPlan();
+        await _createSipPlan(
+          paymentMethod: paymentMethod,
+          bankAccountId: bankAccountId,
+        );
       } else {
         AppToast.show(context, e.message, type: ToastType.error);
       }
