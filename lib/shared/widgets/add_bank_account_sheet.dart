@@ -7,6 +7,7 @@ import '../../core/providers/user_provider.dart';
 import '../../core/error/failures.dart';
 import '../../features/withdrawal/services/withdrawal_service.dart';
 import '../../features/profile/services/bank_details_service.dart';
+import '../../features/profile/screens/bank_penny_verify_screen.dart';
 import 'custom_button.dart';
 import 'app_toast.dart';
 import 'secure_clipboard.dart';
@@ -217,6 +218,25 @@ void showAddBankAccountSheet(
                                     result['message'] ??
                                         'Bank account verified successfully',
                                     type: ToastType.success,
+                                  );
+                                }
+                                // ── ₹1 verify layer — runs after BAV succeeds ──
+                                // id_payout is CustomerBank.cbank_id (see
+                                // CashfreeService.verify_bank()'s response —
+                                // the key name is a holdover from its payout-
+                                // beneficiary registration, not a payout itself).
+                                final cbankId = (result['data']
+                                        as Map<String, dynamic>?)?['id_payout']
+                                    ?.toString();
+                                if (cbankId != null &&
+                                    cbankId.isNotEmpty &&
+                                    context.mounted) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => BankPennyVerifyScreen(
+                                          cbankId: cbankId),
+                                    ),
                                   );
                                 }
                               } else {
