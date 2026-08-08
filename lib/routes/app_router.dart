@@ -44,6 +44,7 @@ import '../features/referral/referee_list_screen.dart';
 import '../features/sip/screens/auto_savings_screen.dart';
 import '../features/sip/screens/manage_savings_screen.dart';
 import '../features/sip/screens/manage_custom_savings_screen.dart';
+import '../features/sip/screens/bank_account_picker_screen.dart';
 import '../features/sip/screens/sip_cancel_screen.dart';
 import '../features/sip/screens/sip_payment_screen.dart';
 import '../features/sip/screens/sip_success_screen.dart';
@@ -103,6 +104,7 @@ class AppRouter {
   static const String autoSavings = '/auto-savings';
   static const String sipManage = '/sip-manage';
   static const String customSipManage = '/custom-sip-manage';
+  static const String bankAccountPicker = '/bank-account-picker';
   static const String sipCancel = '/sip-cancel';
   static const String sipPayment = '/sip-payment';
   static const String sipSuccess = '/sip-success';
@@ -309,6 +311,7 @@ class AppRouter {
             schemeId: int.tryParse(args['scheme_id']?.toString() ?? '0') ?? 0,
           );
         },
+        bankAccountPicker: (context) => const BankAccountPickerScreen(),
         sipCancel: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??

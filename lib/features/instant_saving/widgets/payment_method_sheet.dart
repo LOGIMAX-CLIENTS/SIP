@@ -50,10 +50,18 @@ class PaymentMethodSheet extends ConsumerStatefulWidget {
   /// Saving) are unaffected.
   final bool isRecurring;
 
+  /// When set, only methods whose id is in this list are shown (e.g.
+  /// ['upi', 'netbanking'] to hide Card for SIP flows gated on a registered
+  /// bank account). Null/empty means no filtering — every fetched/default
+  /// method is shown, matching pre-existing behaviour for callers that
+  /// don't pass this.
+  final List<String>? allowedMethodIds;
+
   const PaymentMethodSheet({
     super.key,
     required this.onProceed,
     this.isRecurring = false,
+    this.allowedMethodIds,
   });
 
   @override
@@ -176,8 +184,13 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
   Widget _buildMethodsList(List<PaymentMethod> methods) {
     // If API returned data, use it; otherwise fall back to hardcoded defaults
     final rawOptions = methods.isNotEmpty ? methods : _defaultMethods;
-    final options =
-        widget.isRecurring ? rawOptions.map(_relabelForRecurring).toList() : rawOptions;
+    final allowed = widget.allowedMethodIds;
+    final filteredOptions = (allowed == null || allowed.isEmpty)
+        ? rawOptions
+        : rawOptions.where((m) => allowed.contains(m.id)).toList();
+    final options = widget.isRecurring
+        ? filteredOptions.map(_relabelForRecurring).toList()
+        : filteredOptions;
 
     // Auto-select first if current selection not in list
     if (!options.any((m) => m.id == _selected) && options.isNotEmpty) {

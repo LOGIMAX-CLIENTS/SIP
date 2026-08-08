@@ -71,8 +71,14 @@ class SipService {
     /// older app builds, but this client now sends 'emandate' directly; see
     /// SIPCreateSerializer.validate() in the backend repo).
     String? paymentMethod,
-    /// eMandate only — required by the backend when paymentMethod ==
-    /// 'emandate' (see SIPCreateSerializer.validate()).
+    /// Registered bank account (from the Bank Listing picker) — recorded on
+    /// the scheme for every method; for 'emandate' it also supplies the
+    /// mandate's bank_details, taking priority over the raw bank_* fields
+    /// below (see SIPCreateSerializer.validate()).
+    int? bankAccountId,
+    /// eMandate only — legacy ad-hoc entry, required by the backend when
+    /// paymentMethod == 'emandate' AND bankAccountId is absent (see
+    /// SIPCreateSerializer.validate()).
     String? bankAccountNumber,
     String? bankIfsc,
     String? bankBeneficiaryName,
@@ -95,6 +101,9 @@ class SipService {
     }
     if (paymentMethod != null) {
       payload['payment_method'] = paymentMethod;
+    }
+    if (bankAccountId != null) {
+      payload['bank_account_id'] = bankAccountId;
     }
     if (paymentMethod == 'emandate') {
       payload['bank_account_number'] = bankAccountNumber;
