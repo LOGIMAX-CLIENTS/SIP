@@ -160,6 +160,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.bankDetails),
                           ),
                           _buildMenuItem(
+                            'Bank Account Verification',
+                            'assets/withdraw/bank.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.bankVerificationHub),
+                          ),
+                          _buildMenuItem(
                             'Transaction History',
                             'assets/sidemenu/transhistory.svg',
                             onTap: () => Navigator.pushNamed(

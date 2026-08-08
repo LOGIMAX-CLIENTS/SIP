@@ -19,6 +19,10 @@ import '../features/auth/registration/registration_screen.dart';
 import '../features/auth/registration/registration_success_screen.dart';
 import '../features/profile/account_details_screen.dart';
 import '../features/profile/bank_details_screen.dart';
+import '../features/profile/screens/bank_verification_hub_screen.dart';
+import '../features/profile/screens/bav_history_screen.dart';
+import '../features/profile/screens/penny_verify_history_screen.dart';
+import '../features/profile/screens/refund_history_screen.dart';
 import '../features/withdrawal/screens/withdrawal_screen.dart';
 import '../features/withdrawal/screens/withdrawal_confirmation_screen.dart';
 import '../features/withdrawal/screens/upi_selection_screen.dart';
@@ -105,6 +109,10 @@ class AppRouter {
   static const String sipManage = '/sip-manage';
   static const String customSipManage = '/custom-sip-manage';
   static const String bankAccountPicker = '/bank-account-picker';
+  static const String bankVerificationHub = '/bank-verification-hub';
+  static const String bavHistory = '/bank-verification/bav-history';
+  static const String pennyVerifyHistory = '/bank-verification/penny-history';
+  static const String refundHistory = '/bank-verification/refund-history';
   static const String sipCancel = '/sip-cancel';
   static const String sipPayment = '/sip-payment';
   static const String sipSuccess = '/sip-success';
@@ -312,6 +320,10 @@ class AppRouter {
           );
         },
         bankAccountPicker: (context) => const BankAccountPickerScreen(),
+        bankVerificationHub: (context) => const BankVerificationHubScreen(),
+        bavHistory: (context) => const BavHistoryScreen(),
+        pennyVerifyHistory: (context) => const PennyVerifyHistoryScreen(),
+        refundHistory: (context) => const RefundHistoryScreen(),
         sipCancel: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??
