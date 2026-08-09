@@ -21,6 +21,17 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
   /// Used to prevent re-refreshing when multiple 401s arrive sequentially
   /// (with QueuedInterceptor, they are processed one after another).
   static DateTime? _lastRefreshTime;
+
+  /// Extracts a human-readable message from a 409 error response body.
+  static String? _extractServerMessage(dynamic data) {
+    if (data is Map) {
+      return (data['error']?['message'] as String?) ??
+          (data['message'] as String?) ??
+          '';
+    }
+    return null;
+  }
+
   // ── Public Key Bootstrap ─────────────────────────────────────────────────
   /// Fetches the RSA public key from the server and caches it.
   /// Safe to call multiple times – skips fetch if already loaded.
@@ -247,6 +258,34 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
       }
     }
 
+    // ── Shared: reject as session-invalidated + show the dialog ───────────
+    // Used both by the direct 409 branch above and by any post-refresh
+    // retry that comes back 409 (the refreshed token still carries the
+    // invalidated session_id — the backend refresh endpoint doesn't check
+    // session validity, so refresh itself can succeed even though the
+    // session was already killed by a login elsewhere).
+    Future<void> rejectAsSessionInvalidated(
+      DioException sourceErr,
+      ErrorInterceptorHandler h, {
+      String? message,
+    }) async {
+      SecureLogger.e('SESSION INVALIDATED: 409 Conflict on retry — $message');
+      final isFirstTrigger = await SessionManager.forceLogout();
+      if (isFirstTrigger) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          SessionInvalidatedDialog.show(message: message);
+        });
+      }
+      h.reject(
+        DioException(
+          requestOptions: sourceErr.requestOptions,
+          response: sourceErr.response,
+          error: 'Session invalidated. Please log in again.',
+          type: DioExceptionType.cancel,
+        ),
+      );
+    }
+
     // 4. Silent Token Refresh on 401 (with concurrency lock)
     if (err.response?.statusCode == 401) {
       // Skip token refresh if session is already force-invalidated
@@ -275,7 +314,15 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
               CertificatePinning.setup(retryDio);
               final retryResponse = await retryDio.fetch(retryOptions);
               return handler.resolve(retryResponse);
-            } catch (e) {
+            } on DioException catch (e) {
+              // The refreshed token can still carry an invalidated
+              // session_id — the refresh endpoint doesn't check session
+              // validity. Route that case through the same dialog flow
+              // instead of just passing the stale 401 back up.
+              if (e.response?.statusCode == 409) {
+                return rejectAsSessionInvalidated(e, handler,
+                    message: _extractServerMessage(e.response?.data));
+              }
               SecureLogger.e('TOKEN REFRESH: Retry after wait failed: $e');
               return handler.next(err);
             }
@@ -304,7 +351,11 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
             CertificatePinning.setup(retryDio);
             final retryResponse = await retryDio.fetch(retryOptions);
             return handler.resolve(retryResponse);
-          } catch (e) {
+          } on DioException catch (e) {
+            if (e.response?.statusCode == 409) {
+              return rejectAsSessionInvalidated(e, handler,
+                  message: _extractServerMessage(e.response?.data));
+            }
             SecureLogger.e('TOKEN REFRESH: Retry with recent token failed: $e');
             // Token truly expired — clear timestamp and fall through to full refresh
             _lastRefreshTime = null;
@@ -363,15 +414,34 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
               SecureLogger.d(
                   'TOKEN REFRESH: Success. Retrying original request.');
 
-              // Unlock waiting 401s — they can now retry with new token
+              // Unlock waiting 401s — they can now retry with new token.
+              // The lock is now FULLY consumed: nothing below this point
+              // may touch `_refreshLock` again (a second .complete() call
+              // on an already-completed-and-nulled Completer would crash
+              // with a null-check error and leave this request hanging
+              // forever, since the crash happens before handler.reject/
+              // resolve/next is ever called).
               _refreshLock!.complete(true);
               _refreshLock = null;
 
               final retryOptions = err.requestOptions;
               retryOptions.headers['Authorization'] = 'Bearer $newAccess';
 
-              final retryResponse = await refreshDio.fetch(retryOptions);
-              return handler.resolve(retryResponse);
+              try {
+                final retryResponse = await refreshDio.fetch(retryOptions);
+                return handler.resolve(retryResponse);
+              } on DioException catch (e) {
+                // Refresh succeeded, but the new token still carries the
+                // (already invalidated) old session_id — the retried
+                // request comes back 409. Show the dialog instead of
+                // letting this bubble up as a generic failure.
+                if (e.response?.statusCode == 409) {
+                  return rejectAsSessionInvalidated(e, handler,
+                      message: _extractServerMessage(e.response?.data));
+                }
+                SecureLogger.e('TOKEN REFRESH: Retry after refresh failed: $e');
+                return handler.next(err);
+              }
             } else {
               // Refresh returned 200 but no access token in response
               SecureLogger.e(
@@ -387,9 +457,25 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
             _refreshLock = null;
             await SessionManager.logout();
           }
+        } on DioException catch (e) {
+          // The refresh endpoint itself can reject with 409 when the
+          // session backing this refresh token was invalidated by a
+          // login elsewhere — show the dialog instead of a silent logout.
+          if (e.response?.statusCode == 409) {
+            _refreshLock?.complete(false);
+            _refreshLock = null;
+            return rejectAsSessionInvalidated(e, handler,
+                message: _extractServerMessage(e.response?.data));
+          }
+          SecureLogger.e('TOKEN REFRESH: Failed with error: $e. Logging out.');
+          _refreshLock?.complete(false);
+          _refreshLock = null;
+          await SessionManager.logout();
         } catch (e) {
           SecureLogger.e('TOKEN REFRESH: Failed with error: $e. Logging out.');
-          _refreshLock!.complete(false);
+          // Defensive: the lock may already be null if this exception
+          // somehow originated after a successful .complete(true) above.
+          _refreshLock?.complete(false);
           _refreshLock = null;
           await SessionManager.logout();
         }

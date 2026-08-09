@@ -43,9 +43,23 @@ class SessionInvalidatedDialog {
     await SessionManager.logout();
     SecureLogger.d('SESSION: Invalidated — storage cleared, dialog showing.');
 
+    // The navigator may not be ready yet — e.g. this can race with the
+    // app-lock screen being pushed asynchronously right after app resume.
+    // Retry for a few seconds instead of silently giving up (which would
+    // permanently waste the one-shot trigger and never show the dialog).
+    var attempts = 0;
+    while ((navigatorKey.currentState == null ||
+            navigatorKey.currentContext == null ||
+            navigatorKey.currentState?.mounted != true) &&
+        attempts < 20) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      attempts++;
+    }
+
     final nav = navigatorKey.currentState;
     final ctx = navigatorKey.currentContext;
-    if (nav == null || ctx == null || !nav.mounted) {
+    if (nav == null || ctx == null || !nav.mounted || !ctx.mounted) {
+      SecureLogger.e('SESSION: Navigator never became ready — dialog not shown.');
       _isShowing = false;
       return;
     }

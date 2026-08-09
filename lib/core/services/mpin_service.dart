@@ -261,6 +261,20 @@ class MpinNotifier extends StateNotifier<MpinState> {
         );
       }
       return false;
+    } on SessionInvalidatedFailure catch (_) {
+      // _apiClient.post() converts the interceptor's rejected DioException
+      // into a SessionInvalidatedFailure before it reaches us — so the
+      // DioException 409 branch above never actually matches this path.
+      // The interceptor already shows the force-logout dialog and rejects
+      // the request. Do NOT set any error here — it would cause a
+      // duplicate/confusing toast on top of the dialog.
+      state = state.copyWith(
+        isLoading: false,
+        mpin: '',
+        isComplete: false,
+        // No error — the interceptor dialog handles everything.
+      );
+      return false;
     } catch (e) {
       final msg = e.toString().replaceFirst('Exception: ', '');
       // Safety net: if error message mentions session expiry, treat as SESSION_EXPIRED
