@@ -11,6 +11,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../../core/providers/user_provider.dart';
 import '../../../core/security/app_lifecycle_observer.dart';
+import '../../../core/security/secure_logger.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
@@ -192,6 +193,11 @@ class _BankPennyVerifyScreenState extends ConsumerState<BankPennyVerifyScreen> {
 
   void _onRazorpayError(PaymentFailureResponse response) {
     AppLifecycleObserver.suppressAppLock = false;
+    final err = response.error;
+    SecureLogger.e(
+        'BANK PENNY VERIFY: ❌ Razorpay FAILURE → code=${response.code} rawMessage=${response.message} '
+        'description=${err?['description']} source=${err?['source']} step=${err?['step']} '
+        'reason=${err?['reason']} metadata=${err?['metadata']}');
     _confirmAndFinish(fallbackErrorMsg: response.message ?? 'Payment failed.');
     _razorpay.clear();
   }
