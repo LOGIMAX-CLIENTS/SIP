@@ -47,8 +47,9 @@ class SipConfig {
   final List<SipFrequency> frequencies;
   final List<SipCommodity> commodities;
   /// Payment method ids the active SIP Autopay gateway supports for mandate
-  /// registration — e.g. ['upi', 'netbanking']. Card is intentionally
-  /// excluded from Setup Auto Savings (see backend SIPSchemeService.get_config()).
+  /// registration. Card is only included when Razorpay is the active
+  /// gateway (its TPV supports Debit Cards); Cashfree omits it (its TPV
+  /// docs never mention card support) — see backend SIPSchemeService.get_config().
   final List<String> supportedPaymentMethods;
 
   SipConfig({

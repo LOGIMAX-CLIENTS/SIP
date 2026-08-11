@@ -1734,10 +1734,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
 
   /// Multi-select date picker for Custom SIP — unlike Monthly's single-date
   /// grid, the auto saving runs on EVERY selected date each month (backend:
-  /// custom_dates list, 1-28 entries — see CSIPCreateSerializer). Always
-  /// UPI Autopay on the backend (no payment_method field on Custom SIP), so
-  /// this goes straight to _createCustomSipPlan() on confirm — no
-  /// PaymentMethodSheet step, unlike Daily/Weekly/Monthly.
+  /// custom_dates list, 1-28 entries — see CSIPCreateSerializer). Same
+  /// bank-picker -> PaymentMethodSheet -> create flow as Daily/Weekly/Monthly
+  /// (see _selectPaymentMethodAndCreate()) — Custom SIP now supports
+  /// UPI/Card/eMandate too (backend: CSIPCreateSerializer.payment_method).
   /// Opens the date picker. Dates already committed to an existing
   /// non-terminal Custom SIP scheme (customSipSchemesProvider) render as
   /// "enabled" (amber, tap -> manage that scheme) instead of selectable —
@@ -1903,8 +1903,27 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                             );
                             final account = result as BankAccount?;
                             if (account == null || !mounted) return;
-                            _createCustomSipPlan(
-                              bankAccountId: int.tryParse(account.idBank),
+                            final bankAccountId = int.tryParse(account.idBank);
+
+                            final config = ref.read(sipConfigProvider).valueOrNull;
+                            if (!mounted) return;
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              isScrollControlled: true,
+                              builder: (_) => PaymentMethodSheet(
+                                isRecurring: true,
+                                allowedMethodIds: config?.supportedPaymentMethods,
+                                onProceed: (String paymentMethod) {
+                                  final resolvedMethod = paymentMethod == 'netbanking'
+                                      ? 'emandate'
+                                      : paymentMethod;
+                                  _createCustomSipPlan(
+                                    bankAccountId: bankAccountId,
+                                    paymentMethod: resolvedMethod,
+                                  );
+                                },
+                              ),
                             );
                           }
                         : null,
@@ -1929,7 +1948,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   /// returns a SipCreateResponse shaped identically (see
   /// shared/services/custom_sip.py create_scheme()'s return dict), so this
   /// mirrors _createSipPlan()'s navigation and KYC-retry logic exactly.
-  Future<void> _createCustomSipPlan({int? bankAccountId}) async {
+  Future<void> _createCustomSipPlan({
+    int? bankAccountId,
+    String? paymentMethod,
+  }) async {
     final sipState = ref.read(sipControllerProvider);
     final notifier = ref.read(sipControllerProvider.notifier);
     notifier.setCreating(true);
@@ -1941,6 +1963,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         amount: sipState.amount.toInt(),
         customDates: _selectedCustomDates.toList()..sort(),
         bankAccountId: bankAccountId,
+        paymentMethod: paymentMethod,
       );
 
       notifier.setCreating(false);
@@ -1988,7 +2011,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         );
         if (!mounted) return;
         if (verified) {
-          await _createCustomSipPlan(bankAccountId: bankAccountId);
+          await _createCustomSipPlan(
+            bankAccountId: bankAccountId,
+            paymentMethod: paymentMethod,
+          );
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
         }
@@ -2013,7 +2039,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       );
       if (!mounted) return;
       if (verified) {
-        await _createCustomSipPlan(bankAccountId: bankAccountId);
+        await _createCustomSipPlan(
+          bankAccountId: bankAccountId,
+          paymentMethod: paymentMethod,
+        );
       } else {
         AppToast.show(context, e.message, type: ToastType.error);
       }

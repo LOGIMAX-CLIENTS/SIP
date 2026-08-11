@@ -26,12 +26,15 @@ class CustomSipService {
     required List<int> customDates,
     String? label,
     /// Registered bank account (from the Bank Listing picker) — recorded on
-    /// the scheme for reconciliation. Custom SIP is UPI-only, so this never
-    /// drives mandate registration — see CSIPCreateSerializer.
+    /// the scheme for reconciliation. Required (source of bank_details) when
+    /// paymentMethod == 'emandate'; optional (TPV only) otherwise — see
+    /// CSIPCreateSerializer.
     int? bankAccountId,
+    /// 'upi' (default) | 'card' | 'emandate' — see CSIPCreateSerializer.
+    String? paymentMethod,
   }) async {
     SecureLogger.d(
-        'CustomSIP: Creating plan – commodity=$commodityId, dates=$customDates');
+        'CustomSIP: Creating plan – commodity=$commodityId, dates=$customDates, paymentMethod=$paymentMethod');
 
     final Map<String, dynamic> payload = {
       'commodity_id': commodityId,
@@ -39,6 +42,7 @@ class CustomSipService {
       'custom_dates': customDates,
       if (label != null && label.isNotEmpty) 'label': label,
       if (bankAccountId != null) 'bank_account_id': bankAccountId,
+      if (paymentMethod != null) 'payment_method': paymentMethod,
     };
 
     final response = await _apiClient.post('sip/custom/create', data: payload);
