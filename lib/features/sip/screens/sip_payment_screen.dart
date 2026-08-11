@@ -373,8 +373,11 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     _sdkCallbackReceived = true;
     AppLifecycleObserver.suppressAppLock = false;
     final errorMsg = _friendlyRazorpayErrorMessage(response);
+    final err = response.error;
     SecureLogger.e(
-        'SIP PAYMENT: ❌ Razorpay FAILURE → code=${response.code} rawMessage=${response.message}');
+        'SIP PAYMENT: ❌ Razorpay FAILURE → code=${response.code} rawMessage=${response.message} '
+        'description=${err?['description']} source=${err?['source']} step=${err?['step']} '
+        'reason=${err?['reason']} metadata=${err?['metadata']}');
 
     if (!mounted) return;
 
