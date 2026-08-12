@@ -1,19 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../routes/app_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../shared/widgets/gradient_header.dart';
+import '../../../shared/widgets/numeric_styled_text.dart';
+import '../models/bank_verification_history.dart';
+import '../services/bank_verification_history_service.dart';
 
-/// Profile > "Bank Account Verification" hub — links to the 3 history
-/// screens for the BAV / Rs.1 payment / refund verification layers.
-class BankVerificationHubScreen extends StatelessWidget {
+/// Profile > "Bank Account Verification" — one card per verification
+/// attempt, each card holding up to 3 lines: BAV / Rs.1 Payment / Rs.1
+/// Refund. Replaces the previous 3-card nav hub with a single page.
+class BankVerificationHubScreen extends ConsumerWidget {
   const BankVerificationHubScreen({super.key});
 
   static const _accentGreen = Color(0xFF1B882C);
 
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return '--';
+    return DateFormat('dd/MM/yyyy, h:mm a').format(dt.toLocal());
+  }
+
+  Color _statusColor(BankTimelineEntry entry) {
+    final s = entry.status.toLowerCase();
+    if (s == 'approved' || s == 'paid' || s == 'success') return _accentGreen;
+    if (s == 'rejected' || s == 'failed') return Colors.red;
+    if (s == 'not initiated') return Colors.grey;
+    return Colors.orange; // pending / initiated
+  }
+
+  IconData _kindIcon(BankTimelineKind kind) {
+    switch (kind) {
+      case BankTimelineKind.bav:
+        return Icons.account_balance_rounded;
+      case BankTimelineKind.pennyPayment:
+        return Icons.currency_rupee_rounded;
+      case BankTimelineKind.pennyRefund:
+        return Icons.replay_circle_filled_rounded;
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bavAsync = ref.watch(bavHistoryProvider);
+    final pennyAsync = ref.watch(pennyVerifyHistoryProvider);
+
+    final isLoading = bavAsync.isLoading || pennyAsync.isLoading;
+    final hasError = bavAsync.hasError || pennyAsync.hasError;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -21,40 +55,38 @@ class BankVerificationHubScreen extends StatelessWidget {
         children: [
           GradientHeader(title: 'Bank Account Verification'),
           Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.all(20.w),
-              children: [
-                _buildItem(
-                  context,
-                  isDark,
-                  icon: Icons.fact_check_rounded,
-                  title: 'Bank Account Verification History',
-                  subtitle: 'Every BAV attempt on your bank accounts',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRouter.bavHistory),
-                ),
-                SizedBox(height: 14.h),
-                _buildItem(
-                  context,
-                  isDark,
-                  icon: Icons.currency_rupee_rounded,
-                  title: 'Bank Account Rs.1 Payment Verification History',
-                  subtitle: 'Rs.1 payments made to verify your accounts',
-                  onTap: () => Navigator.pushNamed(
-                      context, AppRouter.pennyVerifyHistory),
-                ),
-                SizedBox(height: 14.h),
-                _buildItem(
-                  context,
-                  isDark,
-                  icon: Icons.replay_circle_filled_rounded,
-                  title: 'Bank Account Refund Verification History',
-                  subtitle: 'Refund status of every Rs.1 verification payment',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRouter.refundHistory),
-                ),
-              ],
+            child: RefreshIndicator(
+              onRefresh: () async {
+                ref.invalidate(bavHistoryProvider);
+                ref.invalidate(pennyVerifyHistoryProvider);
+              },
+              child: isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: _accentGreen))
+                  : hasError
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            SizedBox(height: 120.h),
+                            Center(
+                              child: Text(
+                                'Could not load verification history.',
+                                style: GoogleFonts.playfairDisplay(
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.black54),
+                              ),
+                            ),
+                          ],
+                        )
+                      : _buildCards(
+                          context,
+                          isDark,
+                          BankVerificationCard.build(
+                            bavAsync.value ?? [],
+                            pennyAsync.value ?? [],
+                          ),
+                        ),
             ),
           ),
         ],
@@ -62,72 +94,153 @@ class BankVerificationHubScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildItem(
+  Widget _buildCards(
     BuildContext context,
-    bool isDark, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16.r),
-        child: Container(
-          padding: EdgeInsets.all(16.w),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
-            borderRadius: BorderRadius.circular(16.r),
-            border: Border.all(
-                color: isDark ? Colors.white10 : Colors.black.withOpacity(0.08)),
-            boxShadow: isDark
-                ? []
-                : [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+    bool isDark,
+    List<BankVerificationCard> cards,
+  ) {
+    if (cards.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(height: 80.h),
+          Center(
+            child: Text(
+              'No bank account verification activity yet.',
+              style: GoogleFonts.playfairDisplay(
+                  fontSize: 14.sp,
+                  color: isDark ? Colors.white54 : Colors.black54),
+            ),
           ),
-          child: Row(
+        ],
+      );
+    }
+
+    return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.all(20.w),
+      itemCount: cards.length,
+      itemBuilder: (context, index) => _buildCard(cards[index], isDark),
+    );
+  }
+
+  Widget _buildCard(BankVerificationCard card, bool isDark) {
+    final lines = [card.bav, card.payment, card.refund]
+        .whereType<BankTimelineEntry>()
+        .toList();
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 16.h),
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(
+            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.08)),
+        boxShadow: isDark
+            ? []
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          NumericStyledText(
+            card.bankLabel,
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w800,
+            color: isDark ? Colors.white : const Color(0xFF1E293B),
+          ),
+          SizedBox(height: 10.h),
+          for (int i = 0; i < lines.length; i++) ...[
+            if (i > 0) ...[
+              SizedBox(height: 8.h),
+              Divider(
+                  height: 1,
+                  color: isDark ? Colors.white12 : Colors.black.withOpacity(0.06)),
+              SizedBox(height: 8.h),
+            ],
+            _buildLine(lines[i], isDark),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLine(BankTimelineEntry entry, bool isDark) {
+    final color = _statusColor(entry);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.all(8.w),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(9.r),
+          ),
+          child: Icon(_kindIcon(entry.kind), color: color, size: 16.sp),
+        ),
+        SizedBox(width: 10.w),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: EdgeInsets.all(10.w),
-                decoration: BoxDecoration(
-                  color: _accentGreen.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10.r),
-                ),
-                child: Icon(icon, color: _accentGreen, size: 22.sp),
-              ),
-              SizedBox(width: 14.w),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      entry.title,
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 3.h),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(100.r),
+                    ),
+                    child: Text(entry.displayStatus,
                         style: GoogleFonts.playfairDisplay(
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
-                        )),
-                    SizedBox(height: 4.h),
-                    Text(subtitle,
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 11.sp,
-                          color: isDark ? Colors.white54 : Colors.black54,
-                        )),
-                  ],
-                ),
+                            fontSize: 10.sp,
+                            fontWeight: FontWeight.w800,
+                            color: color)),
+                  ),
+                ],
               ),
-              Icon(Icons.arrow_forward_rounded,
-                  size: 18.sp, color: Colors.black26),
+              SizedBox(height: 4.h),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  NumericStyledText(
+                    _formatDate(entry.dateTime),
+                    fontSize: 11.sp,
+                    color: isDark ? Colors.white54 : Colors.black54,
+                  ),
+                  if (entry.provider != null)
+                    Text(
+                      entry.provider!,
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 11.sp,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white54 : Colors.black54,
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 }

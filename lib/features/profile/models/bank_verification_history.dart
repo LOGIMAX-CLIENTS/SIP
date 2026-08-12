@@ -6,6 +6,7 @@ class BavHistoryItem {
   final bool? nameMatched;
   final double? nameMatchScore;
   final DateTime? attemptedOn;
+  final String? provider;
 
   BavHistoryItem({
     required this.kycId,
@@ -14,6 +15,7 @@ class BavHistoryItem {
     this.nameMatched,
     this.nameMatchScore,
     this.attemptedOn,
+    this.provider,
   });
 
   bool get isApproved => status.toLowerCase() == 'approved';
@@ -28,6 +30,7 @@ class BavHistoryItem {
       attemptedOn: json['attempted_on'] != null
           ? DateTime.tryParse(json['attempted_on'].toString())
           : null,
+      provider: json['provider']?.toString(),
     );
   }
 }
@@ -47,6 +50,7 @@ class PennyVerifyHistoryItem {
   final String? refundId;
   final String refundStatus; // "Not Initiated" | "Pending" | "Success" | "Failed"
   final DateTime? refundedOn;
+  final String? gatewayProvider; // "Razorpay" | "Cashfree"
 
   PennyVerifyHistoryItem({
     required this.cbpvId,
@@ -60,6 +64,7 @@ class PennyVerifyHistoryItem {
     this.refundId,
     required this.refundStatus,
     this.refundedOn,
+    this.gatewayProvider,
   });
 
   bool get isPaid => status.toLowerCase() == 'paid';
@@ -82,6 +87,156 @@ class PennyVerifyHistoryItem {
       refundedOn: json['refunded_on'] != null
           ? DateTime.tryParse(json['refunded_on'].toString())
           : null,
+      gatewayProvider: json['gateway_provider']?.toString(),
     );
+  }
+}
+
+enum BankTimelineKind { bav, pennyPayment, pennyRefund }
+
+/// One row in the merged Bank Account Verification timeline — combines BAV
+/// attempts and Rs.1 payment/refund attempts into a single chronological
+/// feed (Profile > Bank Account Verification).
+class BankTimelineEntry {
+  final BankTimelineKind kind;
+  final String title;
+  final String status;
+  final String? provider;
+  final String? subtitle;
+  final DateTime? dateTime;
+
+  BankTimelineEntry({
+    required this.kind,
+    required this.title,
+    required this.status,
+    required this.dateTime,
+    this.provider,
+    this.subtitle,
+  });
+
+  /// User-facing status label — same underlying value, worded per the
+  /// action each timeline row represents (e.g. a paid Rs.1 row reads
+  /// "Debited", a successful refund reads "Refunded").
+  String get displayStatus {
+    final s = status.toLowerCase();
+    switch (kind) {
+      case BankTimelineKind.bav:
+        if (s == 'approved') return 'Verified';
+        return status;
+      case BankTimelineKind.pennyPayment:
+        if (s == 'paid') return 'Debited';
+        return status;
+      case BankTimelineKind.pennyRefund:
+        if (s == 'success') return 'Refunded';
+        return status;
+    }
+  }
+}
+
+/// One verification ATTEMPT for one bank account — a single card holding
+/// up to 3 lines (BAV / Rs.1 Payment / Rs.1 Refund) for that attempt.
+/// BAV rows and Rs.1 rows come from two independent tables with no shared
+/// attempt id, so a Rs.1 row is paired with the BAV row for the same
+/// account (accountLast4) whose attempt happened just before it — real
+/// flow always runs BAV to APPROVED before a Rs.1 payment is even allowed
+/// (see BankPennyVerifyService.initiate()'s cbank_is_verify gate), so
+/// "closest preceding BAV row" is the correct match, not a guess.
+class BankVerificationCard {
+  final String bankLabel;
+  final BankTimelineEntry? bav;
+  final BankTimelineEntry? payment;
+  final BankTimelineEntry? refund;
+  final DateTime? sortDate;
+
+  BankVerificationCard({
+    required this.bankLabel,
+    required this.sortDate,
+    this.bav,
+    this.payment,
+    this.refund,
+  });
+
+  /// Groups BAV + Rs.1 payment/refund rows into per-attempt cards, newest
+  /// first. Every Rs.1 row becomes its own card (paired with the nearest
+  /// preceding BAV row for the same account, if any); any BAV row never
+  /// consumed by a Rs.1 pairing becomes its own standalone card.
+  static List<BankVerificationCard> build(
+    List<BavHistoryItem> bav,
+    List<PennyVerifyHistoryItem> penny,
+  ) {
+    final sortedBav = [...bav]..sort((a, b) {
+        if (a.attemptedOn == null) return 1;
+        if (b.attemptedOn == null) return -1;
+        return a.attemptedOn!.compareTo(b.attemptedOn!); // oldest first
+      });
+    final usedBav = <int>{}; // kycId of BAV rows already paired
+
+    BankTimelineEntry bavEntry(BavHistoryItem item) => BankTimelineEntry(
+          kind: BankTimelineKind.bav,
+          title: 'Bank Account Verification',
+          status: item.status,
+          provider: item.provider,
+          dateTime: item.attemptedOn,
+        );
+
+    final cards = <BankVerificationCard>[];
+
+    for (final item in penny) {
+      // Nearest BAV attempt (same account) at or before this Rs.1 attempt.
+      BavHistoryItem? matched;
+      for (final b in sortedBav) {
+        if (usedBav.contains(b.kycId)) continue;
+        if (b.accountLast4 == null || b.accountLast4 != item.accountLast4) continue;
+        if (item.createdOn != null && b.attemptedOn != null &&
+            b.attemptedOn!.isAfter(item.createdOn!)) {
+          break; // sortedBav is oldest-first — later rows are only later
+        }
+        matched = b;
+      }
+      if (matched != null) usedBav.add(matched.kycId);
+
+      final bankLabel =
+          '${item.bankName ?? 'Bank Account'}${item.accountLast4 != null ? ' •• ${item.accountLast4}' : ''}';
+
+      cards.add(BankVerificationCard(
+        bankLabel: bankLabel,
+        sortDate: item.createdOn,
+        bav: matched != null ? bavEntry(matched) : null,
+        payment: BankTimelineEntry(
+          kind: BankTimelineKind.pennyPayment,
+          title: 'Rs.1 Verification Payment',
+          status: item.status,
+          provider: item.gatewayProvider,
+          dateTime: item.createdOn,
+        ),
+        refund: BankTimelineEntry(
+          kind: BankTimelineKind.pennyRefund,
+          title: 'Rs.1 Verification Refund',
+          status: item.refundStatus,
+          provider: item.gatewayProvider,
+          dateTime: item.refundedOn ?? item.createdOn,
+        ),
+      ));
+    }
+
+    // BAV attempts never paired with a Rs.1 row — standalone cards.
+    for (final item in bav) {
+      if (usedBav.contains(item.kycId)) continue;
+      cards.add(BankVerificationCard(
+        bankLabel: item.accountLast4 != null
+            ? 'Bank Account •• ${item.accountLast4}'
+            : 'Bank Account',
+        sortDate: item.attemptedOn,
+        bav: bavEntry(item),
+      ));
+    }
+
+    cards.sort((a, b) {
+      if (a.sortDate == null && b.sortDate == null) return 0;
+      if (a.sortDate == null) return 1;
+      if (b.sortDate == null) return -1;
+      return b.sortDate!.compareTo(a.sortDate!); // newest first
+    });
+    return cards;
   }
 }
