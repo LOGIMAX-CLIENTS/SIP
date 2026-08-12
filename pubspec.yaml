@@ -1,7 +1,7 @@
 name: startgold
 description: "A secure Fintech project."
 publish_to: 'none'
-version: 1.0.0+16
+version: 0.0.2+18
 
 environment:
   sdk: '>=3.4.1 <4.0.0'
