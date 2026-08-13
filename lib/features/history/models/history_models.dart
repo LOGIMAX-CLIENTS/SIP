@@ -160,11 +160,15 @@ class TimelineStep {
   final String stepName;
   final String status;
   final String time;
+  /// Failure reason (e.g. "Invalid IFSC code") — only ever populated on a
+  /// "Failed" step; empty for every other step.
+  final String reason;
 
   TimelineStep({
     required this.stepName,
     required this.status,
     required this.time,
+    this.reason = '',
   });
 
   factory TimelineStep.fromJson(Map<String, dynamic> json) {
@@ -172,6 +176,7 @@ class TimelineStep {
       stepName: json['step_name'] ?? '',
       status: json['status'] ?? '',
       time: json['time'] ?? '',
+      reason: json['reason'] ?? '',
     );
   }
 }

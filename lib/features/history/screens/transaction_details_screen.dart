@@ -527,6 +527,17 @@ class _TransactionDetailsScreenState
                     style: GoogleFonts.lora(
                         fontSize: 12.sp, color: mutedTextColor),
                   ),
+                  if (step.reason.isNotEmpty) ...[
+                    SizedBox(height: 4.h),
+                    Text(
+                      step.reason,
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 12.sp,
+                        color: stepColor,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
