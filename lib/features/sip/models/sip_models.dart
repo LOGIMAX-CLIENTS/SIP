@@ -371,6 +371,8 @@ class CustomSipSchemeDetail {
   final List<int> customDates;
   final String commodityName;
   final String status;
+  final DateTime? cancelEligibleAt;
+  final bool canCancelNow;
 
   CustomSipSchemeDetail({
     required this.schemeId,
@@ -381,6 +383,8 @@ class CustomSipSchemeDetail {
     required this.customDates,
     required this.commodityName,
     required this.status,
+    this.cancelEligibleAt,
+    this.canCancelNow = true,
   });
 
   bool get isActive => status == 'ACTIVE';
@@ -397,6 +401,12 @@ class CustomSipSchemeDetail {
       customDates: rawDates.map((d) => int.tryParse(d.toString()) ?? 0).toList(),
       commodityName: json['commodity_name']?.toString() ?? '',
       status: json['status']?.toString().toUpperCase() ?? 'ACTIVE',
+      cancelEligibleAt: DateTime.tryParse(
+              json['cancel_eligible_at']?.toString() ?? '')
+          ?.toLocal(),
+      canCancelNow: json['can_cancel_now'] == null
+          ? true
+          : json['can_cancel_now'] == true,
     );
   }
 }

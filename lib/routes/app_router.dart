@@ -336,6 +336,10 @@ class AppRouter {
             canCancelNow: args['can_cancel_now'] == null
                 ? true
                 : args['can_cancel_now'] == true,
+            isCustom: args['is_custom'] == true,
+            schemeId: args['scheme_id'] == null
+                ? null
+                : int.tryParse(args['scheme_id'].toString()),
           );
         },
         sipPayment: (context) {
