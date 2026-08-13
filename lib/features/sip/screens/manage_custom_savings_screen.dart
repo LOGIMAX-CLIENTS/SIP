@@ -14,9 +14,10 @@ import '../models/sip_models.dart';
 /// details + Pause/Resume/Cancel/Support), mirroring ManageSavingsScreen's
 /// layout for regular SIP. Custom SIP has no single Day/Date value (it can
 /// run on several dates each month), so this shows a "Custom Dates" row
-/// instead, and Cancel is an inline reason list (toggled in place) rather
-/// than a separate route, since Custom SIP has no cancel-eligibility-window
-/// concept the way regular SIP's SipCancelScreen models.
+/// instead. Cancel navigates to CustomSipCancelScreen — a separate route
+/// mirroring regular SIP's SipCancelScreen — rather than toggling reasons
+/// inline; Custom SIP still has no cancel-eligibility-window concept, so
+/// that screen has no blocked-state gate the way SipCancelScreen does.
 class ManageCustomSavingsScreen extends ConsumerStatefulWidget {
   final int schemeId;
 
@@ -31,7 +32,6 @@ class _ManageCustomSavingsScreenState
     extends ConsumerState<ManageCustomSavingsScreen> {
   bool _isLoading = true;
   bool _isActioning = false;
-  bool _showCancelReasons = false;
   CustomSipSchemeDetail? _details;
   String? _errorMsg;
 
@@ -173,101 +173,58 @@ class _ManageCustomSavingsScreenState
 
             SizedBox(height: 28.h),
 
-            // ── Actions / Cancel-reason toggle ─────────
-            if (!_showCancelReasons) ...[
-              if (isActive || isPaused) ...[
-                if (isActive)
-                  _buildActionButton(
-                    icon: Icons.pause_circle_rounded,
-                    label: 'Pause Savings',
-                    subtitle: 'Temporarily stop this Custom SIP',
-                    color: const Color(0xFFD97706),
-                    onTap: () => _confirmPause(),
-                  ),
-                if (isPaused)
-                  _buildActionButton(
-                    icon: Icons.play_circle_rounded,
-                    label: 'Resume Savings',
-                    subtitle: 'Continue this Custom SIP',
-                    color: const Color(0xFF16A34A),
-                    onTap: () => _confirmResume(),
-                  ),
-                SizedBox(height: 12.h),
+            // ── Actions ─────────
+            if (isActive || isPaused) ...[
+              if (isActive)
                 _buildActionButton(
-                  icon: Icons.cancel_rounded,
-                  label: 'Cancel Savings',
-                  subtitle: 'Stop and free up these dates',
-                  color: const Color(0xFFDC2626),
-                  onTap: () => setState(() => _showCancelReasons = true),
+                  icon: Icons.pause_circle_rounded,
+                  label: 'Pause Savings',
+                  subtitle: 'Temporarily stop this Custom SIP',
+                  color: const Color(0xFFD97706),
+                  onTap: () => _confirmPause(),
                 ),
-                SizedBox(height: 12.h),
+              if (isPaused)
                 _buildActionButton(
-                  icon: Icons.support_agent_rounded,
-                  label: 'Get Support',
-                  subtitle: 'Need help with your savings?',
-                  color: const Color(0xFF2563EB),
-                  onTap: () {
-                    Navigator.pushNamed(
-                      context,
-                      AppRouter.enquiryForm,
-                      arguments: {'initial_type': 'Custom SIP'},
-                    );
-                  },
+                  icon: Icons.play_circle_rounded,
+                  label: 'Resume Savings',
+                  subtitle: 'Continue this Custom SIP',
+                  color: const Color(0xFF16A34A),
+                  onTap: () => _confirmResume(),
                 ),
-              ],
-            ] else ...[
-              Text(
-                'Why are you cancelling?',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 15.sp,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF1A1A2E),
-                ),
+              SizedBox(height: 12.h),
+              _buildActionButton(
+                icon: Icons.cancel_rounded,
+                label: 'Cancel Savings',
+                subtitle: 'Stop and free up these dates',
+                color: const Color(0xFFDC2626),
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    AppRouter.sipCancel,
+                    arguments: {
+                      'subscription_id': details.subscriptionId,
+                      'is_custom': true,
+                      'scheme_id': widget.schemeId,
+                      'cancel_eligible_at':
+                          details.cancelEligibleAt?.toIso8601String(),
+                      'can_cancel_now': details.canCancelNow,
+                    },
+                  ).then((_) => _loadDetails());
+                },
               ),
-              SizedBox(height: 4.h),
-              Text(
-                'Dates ${sortedDates.join(', ')} become available for a new plan.',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 12.sp,
-                  color: Colors.black45,
-                ),
-              ),
-              SizedBox(height: 16.h),
-              ...sipCancelReasons.map((r) => Padding(
-                    padding: EdgeInsets.only(bottom: 8.h),
-                    child: OutlinedButton(
-                      onPressed:
-                          _isActioning ? null : () => _executeCancel(r.value),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: Size(double.infinity, 46.h),
-                        alignment: Alignment.centerLeft,
-                        side: BorderSide(color: Colors.black.withOpacity(0.1)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14.r),
-                        ),
-                      ),
-                      child: Text(
-                        r.label,
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 13.sp,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF1A1A2E),
-                        ),
-                      ),
-                    ),
-                  )),
-              TextButton(
-                onPressed: _isActioning
-                    ? null
-                    : () => setState(() => _showCancelReasons = false),
-                child: Text(
-                  'Back',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 13.sp,
-                    color: Colors.black45,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              SizedBox(height: 12.h),
+              _buildActionButton(
+                icon: Icons.support_agent_rounded,
+                label: 'Get Support',
+                subtitle: 'Need help with your savings?',
+                color: const Color(0xFF2563EB),
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    AppRouter.enquiryForm,
+                    arguments: {'initial_type': 'Custom SIP'},
+                  );
+                },
               ),
             ],
 
@@ -582,34 +539,6 @@ class _ManageCustomSavingsScreenState
     }
   }
 
-  // ─── Cancel ─────────────────────────────────────────────────────────────
-  Future<void> _executeCancel(String reason) async {
-    setState(() => _isActioning = true);
-    try {
-      final service = ref.read(customSipServiceProvider);
-      final response = await service.cancelScheme(
-        schemeId: widget.schemeId,
-        reason: reason,
-      );
-      if (mounted) {
-        AppToast.show(
-          context,
-          (response['message'] ?? 'Cancelled successfully').toString(),
-          type: ToastType.success,
-        );
-        ref.invalidate(customSipSchemesProvider);
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      SecureLogger.e('CustomSIP: Cancel failed: $e');
-      if (mounted) {
-        AppToast.show(context, 'Failed to cancel plan. Please try again.',
-            type: ToastType.error);
-      }
-    } finally {
-      if (mounted) setState(() => _isActioning = false);
-    }
-  }
 
   Widget _buildError() {
     return Center(

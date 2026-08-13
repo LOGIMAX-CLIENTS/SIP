@@ -13,23 +13,32 @@ import '../models/sip_models.dart';
 
 /// Cancel Savings screen â€“ reason selection + confirmation.
 ///
-/// â€¢ Cannot cancel within 24 hours of creation. [cancelEligibleAt] is
-///   computed server-side (SIPSchemeService.get_manage_details) from the
-///   same creation timestamp cancel_by_subscription_id() enforces, so the
-///   displayed date/time can never drift from the actual rule. Re-checked
-///   dynamically against DateTime.now() on every build, not just once at
-///   navigation time.
+/// Shared between regular (Daily/Weekly/Monthly) SIP and Custom SIP — set
+/// [isCustom] + [schemeId] to route the cancel action to the Custom SIP
+/// scheme-based endpoint instead of the regular subscription-id endpoint.
+///
+/// â€¢ Cannot cancel within 24 hours of creation — same rule for both regular
+///   SIP and Custom SIP. [cancelEligibleAt] is computed server-side
+///   (SIPSchemeService.get_manage_details / CustomSIPService.get_scheme_status)
+///   from the same creation timestamp each service's cancel method enforces,
+///   so the displayed date/time can never drift from the actual rule.
+///   Re-checked dynamically against DateTime.now() on every build, not just
+///   once at navigation time.
 /// â€¢ Reason is mandatory (only relevant once cancellation is allowed).
 class SipCancelScreen extends ConsumerStatefulWidget {
   final String subscriptionId;
   final DateTime? cancelEligibleAt;
   final bool canCancelNow;
+  final bool isCustom;
+  final int? schemeId;
 
   const SipCancelScreen({
     super.key,
     required this.subscriptionId,
     this.cancelEligibleAt,
     this.canCancelNow = true,
+    this.isCustom = false,
+    this.schemeId,
   });
 
   @override
@@ -346,16 +355,29 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
   Future<void> _executeCancel() async {
     setState(() => _isCancelling = true);
     try {
-      final service = ref.read(sipServiceProvider);
-      final response = await service.cancelSip(
-        subscriptionId: widget.subscriptionId,
-        reason: _selectedReason!,
-      );
+      final Map<String, dynamic> response;
+      if (widget.isCustom) {
+        final service = ref.read(customSipServiceProvider);
+        response = await service.cancelScheme(
+          schemeId: widget.schemeId!,
+          reason: _selectedReason!,
+        );
+      } else {
+        final service = ref.read(sipServiceProvider);
+        response = await service.cancelSip(
+          subscriptionId: widget.subscriptionId,
+          reason: _selectedReason!,
+        );
+      }
 
       if (mounted) {
         final success = response['success'] == true;
         if (success) {
-          ref.invalidate(sipDetailsProvider);
+          if (widget.isCustom) {
+            ref.invalidate(customSipSchemesProvider);
+          } else {
+            ref.invalidate(sipDetailsProvider);
+          }
           AppToast.show(
             context,
             response['message'] ?? 'Savings cancelled successfully',
