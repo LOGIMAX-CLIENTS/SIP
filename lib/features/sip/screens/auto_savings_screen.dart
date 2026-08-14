@@ -1752,8 +1752,14 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     } catch (_) {
       schemes = [];
     }
+    // Only ACTIVE/PAUSED schemes lock their dates — PENDING_AUTH means an
+    // incomplete mandate, same convention regular SIP's isOccupying uses,
+    // so a customer with a stuck registration can retry on the same dates
+    // instead of being permanently locked out with no visible way to
+    // reclaim them.
     final Map<int, CustomSipScheme> dateOwners = {};
     for (final s in schemes) {
+      if (!s.isOccupying) continue;
       for (final d in s.customDates) {
         dateOwners[d] = s;
       }
