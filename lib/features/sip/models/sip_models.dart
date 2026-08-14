@@ -344,6 +344,14 @@ class CustomSipScheme {
   bool get isActive => status == 'ACTIVE';
   bool get isPaused => status == 'PAUSED';
 
+  /// Whether this scheme is occupying its custom_dates (blocks new
+  /// creation on those dates). Only ACTIVE and PAUSED block — PENDING_AUTH
+  /// means an incomplete mandate, same convention as regular SIP's
+  /// SipPlanDetail.isOccupying (sip_models.dart) — a customer with a
+  /// stuck/incomplete mandate can retry on the same dates instead of
+  /// being locked out with no visible way to reclaim them.
+  bool get isOccupying => isActive || isPaused;
+
   factory CustomSipScheme.fromJson(Map<String, dynamic> json) {
     final List rawDates = json['custom_dates'] ?? [];
     return CustomSipScheme(
