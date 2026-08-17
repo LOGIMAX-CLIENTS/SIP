@@ -1,7 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/sip_models.dart';
+import '../models/sip_transaction_filter.dart';
+import '../models/sip_transaction_filter_options_model.dart';
 import '../services/sip_service.dart';
 import '../services/custom_sip_service.dart';
+import '../../history/models/history_models.dart' show TransactionItem;
 
 // ─── Service Provider ───────────────────────────────────────────────────────
 final sipServiceProvider = Provider((ref) => SipService());
@@ -198,13 +201,169 @@ final sipControllerProvider =
   return SipNotifier();
 });
 
-// ─── SIP Transaction History ────────────────────────────────────────────────
-/// Raw SIP transaction data — returns the full API response map.
-/// Invalidated on every screen entry to always get fresh data.
-final sipTransactionsProvider =
-    FutureProvider<Map<String, dynamic>>((ref) async {
+// ─── SIP Transaction History (lazy-loaded, per-frequency-tab) ──────────────
+/// Lazy-loaded, page-accumulating SIP Transaction History state for ONE
+/// frequency tab (Daily/Weekly/Monthly/Custom). Mirrors HistoryPageState
+/// (history_controller.dart) — [transactions]/[groupedData] hold every page
+/// fetched so far for this tab (merged, not replaced), so scrolling back up
+/// never re-fetches already-loaded rows.
+class SipHistoryPageState {
+  final List<TransactionItem> transactions;
+  final Map<String, List<TransactionItem>> groupedData;
+  final bool isLoading; // first page in flight
+  final bool isLoadingMore; // a subsequent page in flight
+  final bool hasMore;
+  final int page; // last successfully loaded page number (0 = none yet)
+  final String? error;
+
+  const SipHistoryPageState({
+    this.transactions = const [],
+    this.groupedData = const {},
+    this.isLoading = false,
+    this.isLoadingMore = false,
+    this.hasMore = true,
+    this.page = 0,
+    this.error,
+  });
+
+  bool get isEmpty => transactions.isEmpty;
+
+  SipHistoryPageState copyWith({
+    List<TransactionItem>? transactions,
+    Map<String, List<TransactionItem>>? groupedData,
+    bool? isLoading,
+    bool? isLoadingMore,
+    bool? hasMore,
+    int? page,
+    String? error,
+    bool clearError = false,
+  }) {
+    return SipHistoryPageState(
+      transactions: transactions ?? this.transactions,
+      groupedData: groupedData ?? this.groupedData,
+      isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasMore: hasMore ?? this.hasMore,
+      page: page ?? this.page,
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+}
+
+class SipHistoryNotifier extends StateNotifier<SipHistoryPageState> {
+  static const int pageSize = 20;
+
+  final SipService _service;
+  final String _frequency;
+
+  /// Currently-applied filter (commodity/status/date range) for this tab.
+  /// Every page fetch — initial, "load more", or a fresh filter application
+  /// — sends this to the backend, so lazy-loading and filtering compose
+  /// correctly (scrolling while filtered keeps fetching more *filtered*
+  /// pages, not the unfiltered stream).
+  SipTransactionFilter _filter = SipTransactionFilter.empty;
+  SipTransactionFilter get currentFilter => _filter;
+
+  SipHistoryNotifier(this._service, this._frequency)
+      : super(const SipHistoryPageState()) {
+    _fetchFirstPage();
+  }
+
+  Future<void> loadInitial() => _fetchFirstPage();
+
+  /// Applies [filter] server-side: fetches page 1 with the new filter
+  /// criteria from the backend (replacing all currently-loaded pages for
+  /// this tab), then continues lazy-loading with the same criteria as the
+  /// user scrolls.
+  Future<void> applyFilter(SipTransactionFilter filter) {
+    _filter = filter;
+    return _fetchFirstPage();
+  }
+
+  Future<void> _fetchFirstPage() async {
+    state = const SipHistoryPageState(isLoading: true);
+    try {
+      final response = await _service.getSipTransactions(
+        frequency: _frequency,
+        page: 1,
+        limit: pageSize,
+        commodity: _filter.commodity,
+        status: _filter.status,
+        dateFrom: _filter.dateFromParam,
+        dateTo: _filter.dateToParam,
+      );
+      state = SipHistoryPageState(
+        transactions: response.transactions,
+        groupedData: response.groupedData,
+        hasMore: response.hasMore,
+        page: 1,
+      );
+    } catch (e) {
+      state = SipHistoryPageState(error: e.toString());
+    }
+  }
+
+  /// Fetches and appends the next page (using the currently-applied filter,
+  /// if any). No-ops while a fetch is already in flight or once the backend
+  /// reports no more pages — this is what prevents duplicate requests from
+  /// repeated scroll-near-bottom events.
+  Future<void> loadMore() async {
+    if (state.isLoading || state.isLoadingMore || !state.hasMore) return;
+
+    state = state.copyWith(isLoadingMore: true);
+    try {
+      final nextPage = state.page + 1;
+      final response = await _service.getSipTransactions(
+        frequency: _frequency,
+        page: nextPage,
+        limit: pageSize,
+        commodity: _filter.commodity,
+        status: _filter.status,
+        dateFrom: _filter.dateFromParam,
+        dateTo: _filter.dateToParam,
+      );
+
+      // Merge by date key — a date group can legitimately span a page
+      // boundary, so append rather than overwrite.
+      final merged = Map<String, List<TransactionItem>>.from(state.groupedData);
+      response.groupedData.forEach((dateKey, items) {
+        merged.update(dateKey, (existing) => [...existing, ...items],
+            ifAbsent: () => items);
+      });
+
+      state = state.copyWith(
+        transactions: [...state.transactions, ...response.transactions],
+        groupedData: merged,
+        hasMore: response.hasMore,
+        page: nextPage,
+        isLoadingMore: false,
+      );
+    } catch (_) {
+      // Keep already-loaded data; drop the spinner so the user can retry by
+      // scrolling again (hasMore is left untouched).
+      state = state.copyWith(isLoadingMore: false);
+    }
+  }
+
+  Future<void> refresh() => _fetchFirstPage();
+}
+
+/// Keyed by frequency ("Daily" | "Weekly" | "Monthly" | "Custom") so each
+/// SIP Transactions tab lazy-loads and filters independently. Not
+/// autoDispose — SipTransactionHistoryScreen explicitly invalidates all four
+/// on screen entry (matches this screen's "always fetch fresh" requirement)
+/// rather than relying on dispose/recreate timing.
+final sipHistoryProvider = StateNotifierProvider.family<SipHistoryNotifier,
+    SipHistoryPageState, String>((ref, frequency) {
+  return SipHistoryNotifier(ref.read(sipServiceProvider), frequency);
+});
+
+/// Dynamic filter option set (frequencies, commodities, statuses) for the
+/// SIP Transactions filter sheet. Mirrors historyFilterOptionsProvider.
+final sipHistoryFilterOptionsProvider =
+    FutureProvider.autoDispose<SipTransactionFilterOptions>((ref) async {
   final service = ref.watch(sipServiceProvider);
-  return service.getSipTransactions();
+  return service.getSipTransactionFilterOptions();
 });
 
 // ─── SIP Transaction Details ────────────────────────────────────────────────

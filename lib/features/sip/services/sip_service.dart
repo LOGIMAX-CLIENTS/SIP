@@ -1,6 +1,8 @@
 import '../../../core/network/api_client.dart';
 import '../../../core/security/secure_logger.dart';
 import '../models/sip_models.dart';
+import '../models/sip_transaction_filter_options_model.dart';
+import '../../history/models/history_models.dart';
 
 /// SIP API service.
 ///
@@ -205,13 +207,34 @@ class SipService {
   }
 
   // ─── SIP Transaction History ─────────────────────────────────────────
-  /// Fetches SIP transaction history.
+  /// Fetches one page of SIP transaction history for [frequency]
+  /// (Daily/Weekly/Monthly/Custom — required, since each tab lazy-loads
+  /// independently). [commodity]/[status]/[dateFrom]/[dateTo] are the SIP
+  /// Transactions filter sheet's server-side filter params — applied across
+  /// the customer's full history for that frequency before pagination, same
+  /// principle as HistoryService.getTransactionHistory.
   ///
-  /// Reuses the same [HistoryResponse] model from the history module
-  /// since the response structure is identical.
-  Future<Map<String, dynamic>> getSipTransactions() async {
-    SecureLogger.d('SIP: Fetching SIP transaction history');
-    final response = await _apiClient.post('sip/transactions');
+  /// Reuses the same [HistoryResponse] model from the history module since
+  /// the response structure (grouped_transactions + pagination) is identical.
+  Future<HistoryResponse> getSipTransactions({
+    required String frequency,
+    int page = 1,
+    int limit = 20,
+    String? commodity,
+    String? status,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    SecureLogger.d('SIP: Fetching SIP transaction history (freq=$frequency, page=$page)');
+    final response = await _apiClient.post('sip/transactions', data: {
+      'frequency': frequency,
+      'page': page,
+      'limit': limit,
+      if (commodity != null && commodity.isNotEmpty) 'commodity': commodity,
+      if (status != null && status.isNotEmpty) 'status': status,
+      if (dateFrom != null) 'date_from': dateFrom,
+      if (dateTo != null) 'date_to': dateTo,
+    });
     if (response.data != null) {
       if (response.data['success'] == false) {
         final errorMsg = response.data['error']?['message'] ??
@@ -219,9 +242,32 @@ class SipService {
             'Failed to load SIP transactions';
         throw Exception(errorMsg);
       }
-      return response.data;
+      if (response.data['data'] != null) {
+        return HistoryResponse.fromJson(response.data['data']);
+      }
     }
     throw Exception('Failed to load SIP transactions');
+  }
+
+  // ─── SIP Transaction Filter Options ───────────────────────────────────
+  /// Fetches the dynamic filter option set (frequencies, commodities,
+  /// statuses) for the SIP Transactions filter sheet. Backend-driven so new
+  /// values appear without a mobile app release.
+  Future<SipTransactionFilterOptions> getSipTransactionFilterOptions() async {
+    SecureLogger.d('SIP: Fetching SIP transaction filter options');
+    final response = await _apiClient.post('sip/transaction-filter-options');
+    if (response.data != null) {
+      if (response.data['success'] == false) {
+        final errorMsg = response.data['error']?['message'] ??
+            response.data['error']?['internal_message'] ??
+            'Failed to load filter options';
+        throw Exception(errorMsg);
+      }
+      if (response.data['data'] != null) {
+        return SipTransactionFilterOptions.fromJson(response.data['data']);
+      }
+    }
+    throw Exception('Failed to load filter options');
   }
 
   // ─── SIP Transaction Details ─────────────────────────────────────────
