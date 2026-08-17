@@ -512,13 +512,13 @@ Fetches the SIP transaction history for the current user. Returns grouped transa
 | Response Field | Type | Description |
 |---|---|---|
 | `plans` | Array | List of SIP plans (used to build frequency tabs + commodity chips) |
-| `plans[].frequency` | String | `"Daily"`, `"Weekly"`, or `"Monthly"` — used for tab segmentation |
+| `plans[].frequency` | String | `"Daily"`, `"Weekly"`, `"Monthly"`, or `"Custom"` — used for tab segmentation |
 | `plans[].commodity_name` | String | Plan commodity name (e.g., "Gold 24K", "Silver") |
 | `grouped_transactions` | Object | Transactions grouped by display date key |
 | `grouped_transactions[date]` | Array | List of transactions for that date |
 | `transaction_id` | String | Unique transaction identifier |
 | `title` | String | Transaction title |
-| `subtitle` | String | **Must include frequency** (e.g., "Daily Gold Auto-Savings", "Weekly Silver Auto-Savings") — used for filtering |
+| `subtitle` | String | **Must include frequency** (e.g., "Daily Gold Auto-Savings", "Weekly Silver Auto-Savings", "Custom Gold Auto-Savings") — used for filtering |
 | `type` | String | Always `"sip"` for SIP transactions |
 | `amount` | Number | Transaction amount in ₹ |
 | `weight_grams` | String | Weight of commodity purchased |
@@ -527,12 +527,13 @@ Fetches the SIP transaction history for the current user. Returns grouped transa
 | `metal_name` | String | `"Gold 24K"` or `"Silver"` |
 
 > **App Behavior — Frequency Segmentation:**
-> - **Primary**: Transactions are segmented by frequency (Daily / Weekly / Monthly) tabs.
+> - **Primary**: Transactions are segmented by frequency (Daily / Weekly / Monthly / Custom) tabs.
 > - If only one frequency exists → no tabs, just a frequency badge.
-> - If multiple frequencies exist → TabBar with Daily | Weekly | Monthly.
+> - If multiple frequencies exist → TabBar with Daily | Weekly | Monthly | Custom, in that order.
 > - **Secondary**: Within each frequency tab, if both Gold and Silver exist → horizontal toggle chips ("All" | "Gold 24K" | "Silver").
 > - API is called fresh every time the screen is entered (no caching).
-> - The `subtitle` field **must contain the frequency name** (e.g., "Daily", "Weekly", "Monthly") as it is used for client-side filtering.
+> - The `subtitle` field **must contain the frequency name** (e.g., "Daily", "Weekly", "Monthly", "Custom") as it is used for client-side filtering.
+> - **Custom SIP transactions**: Custom SIP (multi-date AutoPay, see §CustomSIPScheme / `sip/custom/*` endpoints) is a separate backend product from regular Daily/Weekly/Monthly SIP. For it to appear as a "Custom" tab here, the backend must merge its transactions into this same `grouped_transactions` feed (and add a `{"frequency": "Custom", "commodity_name": ...}` entry per commodity to `plans`) — the mobile app does not call a separate endpoint for Custom SIP history.
 
 ---
 

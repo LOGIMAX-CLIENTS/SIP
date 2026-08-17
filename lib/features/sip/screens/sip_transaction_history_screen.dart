@@ -15,7 +15,7 @@ import '../../history/models/history_models.dart';
 /// SIP Transaction History screen.
 ///
 /// • Fetches fresh data every time the screen is entered.
-/// • Primary segmentation: frequency (Daily / Weekly / Monthly).
+/// • Primary segmentation: frequency (Daily / Weekly / Monthly / Custom).
 /// • Secondary filter: commodity (Gold / Silver) via toggle chips — shown
 ///   only when the selected frequency has multiple commodities.
 /// • Transaction card design mirrors the main Transaction History page.
@@ -123,6 +123,8 @@ class _SipTransactionHistoryScreenState
           frequencySet.add('Weekly');
         } else if (sub.contains('monthly')) {
           frequencySet.add('Monthly');
+        } else if (sub.contains('custom')) {
+          frequencySet.add('Custom');
         }
       }
     }
@@ -133,9 +135,9 @@ class _SipTransactionHistoryScreenState
           context, historyResponse.groupedData, isDark, transactions);
     }
 
-    // Sort: Daily → Weekly → Monthly
+    // Sort: Daily → Weekly → Monthly → Custom
     final orderedFreqs = <String>[];
-    for (final f in ['Daily', 'Weekly', 'Monthly']) {
+    for (final f in ['Daily', 'Weekly', 'Monthly', 'Custom']) {
       if (frequencySet.contains(f)) orderedFreqs.add(f);
     }
     // Add any remaining that don't match the above
