@@ -14,7 +14,8 @@ import '../models/sip_models.dart';
 /// Auto Savings Overview (Profile → Auto Savings)
 ///
 /// Displays the user's active SIP plans organized by frequency tabs
-/// (Daily / Weekly / Monthly) with Gold/Silver commodity radio selector.
+/// (Daily / Weekly / Monthly / Custom) with Gold/Silver commodity radio
+/// selector.
 /// Mirrors the reference design: pill tabs, invest type radio, and
 /// plan detail card with status badge.
 class SipOverviewScreen extends ConsumerStatefulWidget {
@@ -25,7 +26,7 @@ class SipOverviewScreen extends ConsumerStatefulWidget {
 }
 
 class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
-  /// Currently selected frequency name (Daily / Weekly / Monthly).
+  /// Currently selected frequency name (Daily / Weekly / Monthly / Custom).
   String _selectedFrequency = 'Daily';
 
   /// Currently selected commodity name for display filtering.
@@ -36,12 +37,21 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
   void initState() {
     super.initState();
     // Always fetch fresh data on screen entry
-    Future.microtask(() => ref.invalidate(sipDetailsProvider));
+    Future.microtask(() {
+      ref.invalidate(sipDetailsProvider);
+      ref.invalidate(customSipSchemeDetailsProvider);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final plansAsync = ref.watch(sipDetailsProvider);
+    // Custom SIP is a separate backend product from regular Daily/Weekly/
+    // Monthly plans (see CustomSipService doc comment) — loaded permissively
+    // so a slow/failed fetch degrades to "no Custom plan" instead of
+    // blocking the Daily/Weekly/Monthly tabs that already loaded fine.
+    final customPlans =
+        ref.watch(customSipSchemeDetailsProvider).valueOrNull ?? [];
 
     return Container(
       decoration: BoxDecoration(gradient: AppTheme.lightGradient),
@@ -55,7 +65,7 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
             ),
             Expanded(
               child: plansAsync.when(
-                data: (plans) => _buildContent(plans),
+                data: (plans) => _buildContent(plans, customPlans),
                 loading: () => const Center(
                   child: CircularProgressIndicator(
                     color: Color(0xFF064E3B),
@@ -73,34 +83,35 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
   }
 
   // ─── Main Content ─────────────────────────────────────────────────────
-  Widget _buildContent(List<SipPlanDetail> plans) {
-    // Derive available frequencies from active plans
-    final freqSet = <String>{};
-    for (final p in plans) {
-      if (p.frequency.isNotEmpty) freqSet.add(p.frequency);
-    }
+  Widget _buildContent(
+      List<SipPlanDetail> plans, List<CustomSipSchemeDetail> customPlans) {
+    // All frequencies for tabs (show all four always)
+    final allFrequencies = ['Daily', 'Weekly', 'Monthly', 'Custom'];
 
-    // Ordered frequencies
-    final orderedFreqs = <String>[];
-    for (final f in ['Daily', 'Weekly', 'Monthly']) {
-      if (freqSet.contains(f)) orderedFreqs.add(f);
-    }
-    for (final f in freqSet) {
-      if (!orderedFreqs.contains(f)) orderedFreqs.add(f);
-    }
+    final isCustomTab = _selectedFrequency == 'Custom';
 
-    // All frequencies for tabs (show all three always)
-    final allFrequencies = ['Daily', 'Weekly', 'Monthly'];
+    // Find plans matching the current selection. Custom SIP is a separate
+    // backend product (CustomSipSchemeDetail, not SipPlanDetail — see
+    // customSipSchemeDetailsProvider), so it's filtered from its own list.
+    final matchingCustomPlans = isCustomTab
+        ? customPlans.where((p) {
+            final commodityMatch = p.commodityName
+                .toLowerCase()
+                .contains(_selectedCommodity.toLowerCase());
+            return commodityMatch && (p.isActive || p.isPaused);
+          }).toList()
+        : <CustomSipSchemeDetail>[];
 
-    // Find plans matching the current selection
-    final matchingPlans = plans.where((p) {
-      final freqMatch =
-          p.frequency.toLowerCase() == _selectedFrequency.toLowerCase();
-      final commodityMatch = p.commodityName
-          .toLowerCase()
-          .contains(_selectedCommodity.toLowerCase());
-      return freqMatch && commodityMatch && (p.isActive || p.isPaused);
-    }).toList();
+    final matchingPlans = isCustomTab
+        ? <SipPlanDetail>[]
+        : plans.where((p) {
+            final freqMatch =
+                p.frequency.toLowerCase() == _selectedFrequency.toLowerCase();
+            final commodityMatch = p.commodityName
+                .toLowerCase()
+                .contains(_selectedCommodity.toLowerCase());
+            return freqMatch && commodityMatch && (p.isActive || p.isPaused);
+          }).toList();
 
     // Derive available commodities
     final commodities = <String>['Gold', 'Silver'];
@@ -140,7 +151,15 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
           SizedBox(height: 24.h),
 
           // ── Plan Card or Empty State ──────────────────────────
-          if (matchingPlans.isNotEmpty)
+          if (isCustomTab)
+            if (matchingCustomPlans.isNotEmpty)
+              ...matchingCustomPlans.map((plan) => Padding(
+                    padding: EdgeInsets.only(bottom: 16.h),
+                    child: _buildCustomPlanCard(plan),
+                  ))
+            else
+              _buildNoPlanState()
+          else if (matchingPlans.isNotEmpty)
             ...matchingPlans.map((plan) => Padding(
                   padding: EdgeInsets.only(bottom: 16.h),
                   child: _buildPlanCard(plan),
@@ -374,6 +393,125 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
               _buildDetailRow(
                   'Savings Amount', '₹${plan.amount.toStringAsFixed(0)}'),
               _buildDetailRow('Frequency', plan.frequency),
+              _buildDetailRow('Reference ID', plan.subscriptionId),
+
+              // Status with colored badge
+              Padding(
+                padding: EdgeInsets.only(bottom: 8.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Status',
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 12.sp,
+                        color: Colors.black45,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20.r),
+                        border:
+                            Border.all(color: statusColor.withOpacity(0.25)),
+                      ),
+                      child: Text(
+                        plan.status.toUpperCase(),
+                        style: GoogleFonts.lora(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w800,
+                          color: statusColor,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Custom SIP Plan Card ──────────────────────────────────────────────
+  /// Mirrors _buildPlanCard's layout for CustomSipSchemeDetail — separate
+  /// backend product (see customSipSchemeDetailsProvider), so it has its own
+  /// "Dates" row instead of "Frequency" (Custom SIP runs on multiple
+  /// day-of-month values, not a single Daily/Weekly/Monthly cadence).
+  Widget _buildCustomPlanCard(CustomSipSchemeDetail plan) {
+    final isGold = plan.commodityName.toLowerCase().contains('gold');
+    final statusColor = plan.isActive
+        ? const Color(0xFF16A34A)
+        : plan.isPaused
+            ? const Color(0xFFD97706)
+            : const Color(0xFF2563EB);
+    final sortedDates = plan.customDates.toList()..sort();
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 20.w),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.pushNamed(
+            context,
+            AppRouter.customSipManage,
+            arguments: {'scheme_id': plan.schemeId},
+          );
+        },
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(20.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20.r),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Title Row with image ──────────────────────────
+              Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12.r),
+                    child: Image.asset(
+                      isGold ? 'assets/sip/gold.jpg' : 'assets/sip/silver.jpg',
+                      width: 44.w,
+                      height: 44.w,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  SizedBox(width: 12.w),
+                  Expanded(
+                    child: NumericStyledText(
+                      'You\'ve already subscribed to a\nCustom ${plan.commodityName} Auto-Savings plan',
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1A1A2E),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 20.h),
+
+              // ── Detail Rows ───────────────────────────────────
+              _buildDetailRow(
+                  'Started On', _formatDate(plan.startDate ?? '')),
+              _buildDetailRow(
+                  'Savings Amount', '₹${plan.amount.toStringAsFixed(0)}'),
+              _buildDetailRow('Dates', '${sortedDates.join(', ')} every month'),
               _buildDetailRow('Reference ID', plan.subscriptionId),
 
               // Status with colored badge
