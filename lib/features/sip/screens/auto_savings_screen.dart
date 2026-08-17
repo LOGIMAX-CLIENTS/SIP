@@ -189,8 +189,17 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           ),
         ],
       ),
+      // Custom SIP always shows "Setup Auto Savings" (-> opens the date
+      // picker, which itself handles existing-plan dates vs new ones — see
+      // _showCustomDatesPicker), never "Manage Savings". Custom has no
+      // frequency id of its own, so sipState.selectedFrequencyId here would
+      // otherwise still hold whatever regular frequency (Daily/Weekly/
+      // Monthly) was last selected before switching to the Custom tab —
+      // checking hasActivePlanForFrequency against that stale id would wrongly
+      // route to managing THAT plan instead of Custom's own.
       bottomNavigationBar: configAsync.hasValue
-          ? (sipState.selectedFrequencyId != null &&
+          ? (!_isCustomFrequency &&
+                  sipState.selectedFrequencyId != null &&
                   sipState.hasActivePlanForFrequency(
                       sipState.selectedFrequencyId!,
                       commodityId: sipState.selectedCommodityId)
@@ -1740,7 +1749,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   /// UPI/Card/eMandate too (backend: CSIPCreateSerializer.payment_method).
   /// Opens the date picker. Dates already committed to an existing
   /// non-terminal Custom SIP scheme (customSipSchemesProvider) render as
-  /// "enabled" (amber, tap -> manage that scheme) instead of selectable —
+  /// "enabled" (green, tap -> manage that scheme) instead of selectable —
   /// only dates NOT yet owned by any scheme can be multi-selected to create
   /// a new one. e.g. existing dates [3,5,9]: tapping 3 opens manage/pause/
   /// cancel for that scheme; selecting 4,7,8 and confirming creates a
@@ -1805,7 +1814,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 Text(
                   dateOwners.isEmpty
                       ? 'Your auto saving will run on ALL selected dates every month'
-                      : 'Amber dates already have a plan — tap to manage. '
+                      : 'Green dates already have a plan — tap to manage. '
                           'Pick new dates to start another.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.playfairDisplay(
@@ -1859,11 +1868,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                                 )
                               : null,
                           color: isCommitted
-                              ? const Color(0xFFFFF7ED)
+                              ? const Color(0xFFF0FDF4)
                               : (isActive ? null : const Color(0xFFF1F5F9)),
                           borderRadius: BorderRadius.circular(10.r),
                           border: isCommitted
-                              ? Border.all(color: const Color(0xFFD97706).withOpacity(0.5))
+                              ? Border.all(color: const Color(0xFF16A34A).withOpacity(0.5))
                               : (!isActive
                                   ? Border.all(color: Colors.black.withOpacity(0.04))
                                   : null),
@@ -1879,7 +1888,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                               color: isActive
                                   ? Colors.white
                                   : (isCommitted
-                                      ? const Color(0xFFD97706)
+                                      ? const Color(0xFF16A34A)
                                       : const Color(0xFF1A1A2E)),
                             ),
                           ),
@@ -1975,7 +1984,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       notifier.setCreating(false);
 
       if (response.success) {
-        // Refresh so the just-picked dates show as committed (amber) the
+        // Refresh so the just-picked dates show as committed (green) the
         // next time the date picker opens, instead of still selectable.
         ref.invalidate(customSipSchemesProvider);
         if (mounted) {
