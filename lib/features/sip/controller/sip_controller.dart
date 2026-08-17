@@ -48,6 +48,27 @@ final customSipSchemesProvider =
   return service.listSchemes();
 });
 
+/// Full detail (commodity name, start date, dates) for every non-terminal
+/// Custom SIP scheme this customer owns — used by SipOverviewScreen's
+/// "Custom" tab, which needs fields listSchemes()'s summary doesn't carry.
+/// Per-scheme failures are skipped rather than failing the whole list, since
+/// one bad scheme shouldn't blank the tab for the customer's other schemes.
+final customSipSchemeDetailsProvider =
+    FutureProvider<List<CustomSipSchemeDetail>>((ref) async {
+  final service = ref.watch(customSipServiceProvider);
+  final schemes = await service.listSchemes();
+  final details = await Future.wait(
+    schemes.map((s) async {
+      try {
+        return await service.getSchemeStatus(schemeId: s.schemeId);
+      } catch (_) {
+        return null;
+      }
+    }),
+  );
+  return details.whereType<CustomSipSchemeDetail>().toList();
+});
+
 // ─── SIP State ──────────────────────────────────────────────────────────────
 
 class SipState {
