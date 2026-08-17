@@ -2,22 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../shared/widgets/numeric_styled_text.dart';
 import 'package:intl/intl.dart';
+import '../../../shared/widgets/numeric_styled_text.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../controller/sip_controller.dart';
+import '../models/sip_transaction_filter.dart';
+import '../models/sip_transaction_filter_options_model.dart';
 import '../../history/models/history_models.dart';
+import '../../history/models/history_filter_options_model.dart' show FilterOption;
+import './sip_transaction_filter_sheet.dart';
 
 /// SIP Transaction History screen.
 ///
 /// • Fetches fresh data every time the screen is entered.
-/// • Primary segmentation: frequency (Daily / Weekly / Monthly / Custom).
-/// • Secondary filter: commodity (Gold / Silver) via toggle chips — shown
-///   only when the selected frequency has multiple commodities.
+/// • Primary segmentation: frequency (Daily / Weekly / Monthly / Custom) —
+///   always rendered as 4 tabs; each tab lazy-loads and filters
+///   independently via [sipHistoryProvider] (family keyed by frequency),
+///   mirroring the general Transaction History screen's pagination pattern.
+/// • Secondary filter: commodity toggle chips (per tab, server-side) plus a
+///   header filter sheet for status/date range — both backed by
+///   `sip/transaction-filter-options`.
 /// • Transaction card design mirrors the main Transaction History page.
 class SipTransactionHistoryScreen extends ConsumerStatefulWidget {
   const SipTransactionHistoryScreen({super.key});
@@ -30,36 +38,65 @@ class SipTransactionHistoryScreen extends ConsumerStatefulWidget {
 class _SipTransactionHistoryScreenState
     extends ConsumerState<SipTransactionHistoryScreen>
     with TickerProviderStateMixin {
-  static const _green = Color(0xFF1B882C);
-  static const _darkGreen = Color(0xFF003716);
-  static const _teal = Color(0xFF0D9488);
+  static const List<String> _frequencies = [
+    'Daily',
+    'Weekly',
+    'Monthly',
+    'Custom',
+  ];
 
-  TabController? _tabController;
-
-  /// Frequency segments present in the response (e.g., ["Daily", "Weekly"]).
-  List<String> _frequencies = [];
-
-  /// Secondary commodity filter within the selected frequency tab.
-  /// null = show all commodities.
-  String? _selectedCommodity;
+  late final TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    // Always fetch fresh data on screen entry
-    Future.microtask(() => ref.invalidate(sipTransactionsProvider));
+    _tabController = TabController(length: _frequencies.length, vsync: this);
+    // Rebuild the header filter button's badge/tap-target when the selected
+    // tab changes — each tab has its own independent filter state.
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
+    // Always fetch fresh data on screen entry, for every tab.
+    Future.microtask(() {
+      for (final freq in _frequencies) {
+        ref.invalidate(sipHistoryProvider(freq));
+      }
+    });
   }
 
   @override
   void dispose() {
-    _tabController?.dispose();
+    _tabController.dispose();
     super.dispose();
+  }
+
+  String get _currentFrequency => _frequencies[_tabController.index];
+
+  // ── Open filter sheet (status + date range) for the current tab ──────
+  Future<void> _openFilterSheet(
+    AsyncValue<SipTransactionFilterOptions> filterOptionsAsync,
+  ) async {
+    final notifier = ref.read(sipHistoryProvider(_currentFrequency).notifier);
+    final result = await showSipTransactionFilterSheet(
+      context: context,
+      current: notifier.currentFilter,
+      filterOptions: ref.read(sipHistoryFilterOptionsProvider),
+    );
+    if (result != null && mounted) {
+      notifier.applyFilter(result);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final txAsync = ref.watch(sipTransactionsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final filterOptionsAsync = ref.watch(sipHistoryFilterOptionsProvider);
+    // Watching the current tab's state (not just reading it) so the header
+    // filter badge updates the instant applyFilter() lands, without needing
+    // a separate listener wired up just for the button.
+    ref.watch(sipHistoryProvider(_currentFrequency));
+    final currentFilterCount =
+        ref.read(sipHistoryProvider(_currentFrequency).notifier).currentFilter.activeCount;
 
     return Container(
       decoration: BoxDecoration(gradient: AppTheme.lightGradient),
@@ -70,18 +107,15 @@ class _SipTransactionHistoryScreenState
             GradientHeader(
               title: 'SIP Transactions',
               onBack: () => Navigator.pop(context),
+              trailing: _buildFilterButton(currentFilterCount, filterOptionsAsync),
             ),
+            _buildFrequencyTabs(isDark),
             Expanded(
-              child: txAsync.when(
-                data: (response) => _buildBody(context, response, isDark),
-                loading: () => const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF064E3B),
-                    strokeWidth: 2.5,
-                  ),
-                ),
-                error: (err, _) => _buildErrorState(
-                    err.toString().replaceAll('Exception: ', ''), isDark),
+              child: TabBarView(
+                controller: _tabController,
+                children: _frequencies
+                    .map((freq) => _SipHistoryTabView(frequency: freq))
+                    .toList(),
               ),
             ),
           ],
@@ -90,123 +124,37 @@ class _SipTransactionHistoryScreenState
     );
   }
 
-  // ── Body ────────────────────────────────────────────────────────────
-  Widget _buildBody(
-      BuildContext context, Map<String, dynamic> response, bool isDark) {
-    final data = response['data'] as Map<String, dynamic>? ?? {};
-
-    // Build HistoryResponse from grouped transactions
-    final historyResponse = HistoryResponse.fromJson({'data': data});
-    final transactions = historyResponse.transactions;
-
-    if (transactions.isEmpty) return _buildEmptyState(isDark);
-
-    // ── Extract frequency segments from API plans or transaction subtitles ──
-    final plansList = data['plans'] as List<dynamic>? ?? [];
-    final frequencySet = <String>{};
-
-    // From plans array
-    for (final p in plansList) {
-      if (p is Map<String, dynamic>) {
-        final freq = p['frequency']?.toString() ?? '';
-        if (freq.isNotEmpty) frequencySet.add(freq);
-      }
-    }
-
-    // Fallback: derive from transaction subtitles (e.g. "Daily Gold Auto-Savings")
-    if (frequencySet.isEmpty) {
-      for (final tx in transactions) {
-        final sub = tx.subtitle.toLowerCase();
-        if (sub.contains('daily')) {
-          frequencySet.add('Daily');
-        } else if (sub.contains('weekly')) {
-          frequencySet.add('Weekly');
-        } else if (sub.contains('monthly')) {
-          frequencySet.add('Monthly');
-        } else if (sub.contains('custom')) {
-          frequencySet.add('Custom');
-        }
-      }
-    }
-
-    // If still empty, just show everything without tabs
-    if (frequencySet.isEmpty) {
-      return _buildTransactionList(
-          context, historyResponse.groupedData, isDark, transactions);
-    }
-
-    // Sort: Daily → Weekly → Monthly → Custom
-    final orderedFreqs = <String>[];
-    for (final f in ['Daily', 'Weekly', 'Monthly', 'Custom']) {
-      if (frequencySet.contains(f)) orderedFreqs.add(f);
-    }
-    // Add any remaining that don't match the above
-    for (final f in frequencySet) {
-      if (!orderedFreqs.contains(f)) orderedFreqs.add(f);
-    }
-
-    // Rebuild tab controller if frequencies changed
-    if (_frequencies.length != orderedFreqs.length ||
-        !_listEquals(_frequencies, orderedFreqs)) {
-      _frequencies = orderedFreqs;
-      _tabController?.dispose();
-      _tabController = TabController(length: _frequencies.length, vsync: this);
-      _tabController!.addListener(() {
-        if (!_tabController!.indexIsChanging) {
-          setState(() => _selectedCommodity = null); // Reset commodity filter
-        }
-      });
-    }
-
-    // Single frequency — no tabs needed
-    if (_frequencies.length == 1) {
-      final freqTxns = _filterByFrequency(transactions, _frequencies[0]);
-      final commodities = _uniqueCommodities(freqTxns);
-      final filtered = _applyCommodityFilter(freqTxns);
-      final grouped = _groupByDate(filtered);
-
-      return Column(
-        children: [
-          _buildFrequencyBadge(_frequencies[0], isDark),
-          if (commodities.length > 1)
-            _buildCommoditySelector(commodities, isDark),
-          Expanded(
-            child: grouped.isEmpty
-                ? _buildEmptyState(isDark)
-                : _buildList(context, grouped, isDark),
-          ),
-        ],
-      );
-    }
-
-    // Multiple frequencies — use TabBar
-    return Column(
-      children: [
-        _buildFrequencyTabs(isDark),
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: _frequencies.map((freq) {
-              final freqTxns = _filterByFrequency(transactions, freq);
-              final commodities = _uniqueCommodities(freqTxns);
-              final filtered = _applyCommodityFilter(freqTxns);
-              final grouped = _groupByDate(filtered);
-
-              return Column(
-                children: [
-                  if (commodities.length > 1)
-                    _buildCommoditySelector(commodities, isDark),
-                  Expanded(
-                    child: grouped.isEmpty
-                        ? _buildEmptyState(isDark)
-                        : _buildList(context, grouped, isDark),
-                  ),
-                ],
-              );
-            }).toList(),
+  // ── Header filter button ──────────────────────────────────────────────
+  Widget _buildFilterButton(
+      int count, AsyncValue<SipTransactionFilterOptions> filterOptionsAsync) {
+    return GestureDetector(
+      onTap: () => _openFilterSheet(filterOptionsAsync),
+      child: Container(
+        margin: EdgeInsets.only(right: 16.w),
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
+        decoration: BoxDecoration(
+          color: count > 0
+              ? Colors.white.withOpacity(0.25)
+              : Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(20.r),
+          border: Border.all(
+            color: Colors.white.withOpacity(count > 0 ? 0.5 : 0.2),
           ),
         ),
-      ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.tune_rounded, size: 15.sp, color: Colors.white),
+            SizedBox(width: 5.w),
+            NumericStyledText(
+              count > 0 ? 'Filter ($count)' : 'Filter',
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -230,13 +178,10 @@ class _SipTransactionHistoryScreenState
         child: Row(
           children: List.generate(_frequencies.length, (index) {
             final freq = _frequencies[index];
-            final isSelected = _tabController?.index == index;
+            final isSelected = _tabController.index == index;
             return Expanded(
               child: GestureDetector(
-                onTap: () {
-                  _tabController?.animateTo(index);
-                  setState(() => _selectedCommodity = null);
-                },
+                onTap: () => setState(() => _tabController.animateTo(index)),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: EdgeInsets.symmetric(vertical: 10.h),
@@ -271,50 +216,258 @@ class _SipTransactionHistoryScreenState
       ),
     );
   }
+}
 
-  // ── Single frequency badge (pill style — when only one segment exists)
-  Widget _buildFrequencyBadge(String frequency, bool isDark) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(40.w, 12.h, 40.w, 4.h),
-      child: Container(
-        padding: EdgeInsets.all(4.w),
-        decoration: BoxDecoration(
-          color: isDark ? Colors.white.withOpacity(0.08) : Colors.white,
-          borderRadius: BorderRadius.circular(50.r),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
+// ── One tab's lazy-loaded, filterable transaction list ─────────────────────
+class _SipHistoryTabView extends ConsumerStatefulWidget {
+  final String frequency;
+
+  const _SipHistoryTabView({required this.frequency});
+
+  @override
+  ConsumerState<_SipHistoryTabView> createState() =>
+      _SipHistoryTabViewState();
+}
+
+class _SipHistoryTabViewState extends ConsumerState<_SipHistoryTabView>
+    with AutomaticKeepAliveClientMixin {
+  static const _green = Color(0xFF1B882C);
+  static const _darkGreen = Color(0xFF003716);
+  static const _teal = Color(0xFF0D9488);
+
+  late final ScrollController _scrollController;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController()..addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Fires ~300px before the physical bottom so the next batch is ready
+  /// before the user actually hits the end. [SipHistoryNotifier.loadMore]
+  /// itself guards against duplicate in-flight requests and stops once the
+  /// backend reports no more pages.
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 300) {
+      ref.read(sipHistoryProvider(widget.frequency).notifier).loadMore();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin
+    final state = ref.watch(sipHistoryProvider(widget.frequency));
+    final filterOptionsAsync = ref.watch(sipHistoryFilterOptionsProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (state.error != null) {
+      return _buildErrorState(state.error!, isDark);
+    }
+    if (state.isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFF064E3B),
+          strokeWidth: 2.5,
         ),
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(vertical: 10.h),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF003716), Color(0xFF167525)],
+      );
+    }
+
+    final commodities = filterOptionsAsync.valueOrNull?.commodities ?? const [];
+    final notifier = ref.read(sipHistoryProvider(widget.frequency).notifier);
+    final filter = notifier.currentFilter;
+    final selectedCommodity = filter.commodity;
+
+    return Column(
+      children: [
+        if (commodities.isNotEmpty)
+          _buildCommoditySelector(commodities, selectedCommodity, notifier),
+        // Date/Status chips from the filter sheet — commodity isn't repeated
+        // here since the toggle row above already shows it selected.
+        if (filter.fromDate != null || filter.toDate != null || (filter.status?.isNotEmpty ?? false))
+          _buildActiveChipsRow(filter, notifier, isDark),
+        Expanded(
+          child: state.isEmpty
+              ? _buildEmptyState(isDark)
+              : _buildList(context, state.groupedData, state.isLoadingMore, isDark),
+        ),
+      ],
+    );
+  }
+
+  // ── Active filter chips row (Date/Status — from the filter sheet) ────
+  Widget _buildActiveChipsRow(
+      SipTransactionFilter filter, SipHistoryNotifier notifier, bool isDark) {
+    final chips = <Widget>[];
+
+    if (filter.fromDate != null || filter.toDate != null) {
+      final fmt = DateFormat('dd MMM');
+      String label;
+      if (filter.fromDate != null && filter.toDate != null) {
+        label = '${fmt.format(filter.fromDate!)} – ${fmt.format(filter.toDate!)}';
+      } else if (filter.fromDate != null) {
+        label = 'From ${fmt.format(filter.fromDate!)}';
+      } else {
+        label = 'Until ${fmt.format(filter.toDate!)}';
+      }
+      chips.add(_buildActiveChip(
+        label: label,
+        icon: Icons.calendar_today_rounded,
+        color: const Color(0xFF7C3AED),
+        onRemove: () => notifier.applyFilter(filter.copyWith(clearDates: true)),
+      ));
+    }
+
+    if (filter.status != null && filter.status!.isNotEmpty) {
+      chips.add(_buildActiveChip(
+        label: _capitalise(filter.status!),
+        icon: Icons.verified_rounded,
+        color: _statusColor(filter.status!),
+        onRemove: () => notifier.applyFilter(filter.copyWith(clearStatus: true)),
+      ));
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 4.h),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+            decoration: BoxDecoration(
+              color: _green.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(20.r),
             ),
-            borderRadius: BorderRadius.circular(50.r),
+            child: NumericStyledText(
+              '${filter.activeCount} Filter${filter.activeCount > 1 ? 's' : ''}',
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w700,
+              color: _green,
+            ),
           ),
-          child: Center(
-            child: Text(
-              frequency,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+          SizedBox(width: 8.w),
+          ...chips.map((c) => Padding(
+                padding: EdgeInsets.only(right: 6.w),
+                child: c,
+              )),
+          GestureDetector(
+            onTap: () => notifier.applyFilter(
+                filter.copyWith(clearDates: true, clearStatus: true)),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDC2626).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20.r),
+                border:
+                    Border.all(color: const Color(0xFFDC2626).withOpacity(0.2)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.close_rounded,
+                      size: 12.sp, color: const Color(0xFFDC2626)),
+                  SizedBox(width: 4.w),
+                  Text(
+                    'Clear All',
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFFDC2626),
+                    ),
+                  ),
+                ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveChip({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onRemove,
+  }) {
+    return Material(
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(20.r),
+      child: InkWell(
+        onTap: null,
+        borderRadius: BorderRadius.circular(20.r),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20.r),
+            border: Border.all(color: color.withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(left: 10.w, top: 6.h, bottom: 6.h),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 12.sp, color: color),
+                    SizedBox(width: 5.w),
+                    NumericStyledText(
+                      label,
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: onRemove,
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(20.r),
+                  bottomRight: Radius.circular(20.r),
+                ),
+                child: SizedBox(
+                  width: 28.w,
+                  height: 30.h,
+                  child: Center(
+                    child: Container(
+                      padding: EdgeInsets.all(3.r),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 11.sp,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // ── Commodity Toggle Chips ─────────────────────────────────────────
-  Widget _buildCommoditySelector(List<String> commodities, bool isDark) {
+  // ── Commodity Toggle Chips (backend-driven, server-side filter) ──────
+  Widget _buildCommoditySelector(
+    List<FilterOption> commodities,
+    String? selected,
+    SipHistoryNotifier notifier,
+  ) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 4.h),
@@ -322,16 +475,18 @@ class _SipTransactionHistoryScreenState
         children: [
           _buildChip(
             label: 'All',
-            isSelected: _selectedCommodity == null,
-            onTap: () => setState(() => _selectedCommodity = null),
+            isSelected: selected == null,
+            onTap: () => notifier
+                .applyFilter(notifier.currentFilter.copyWith(clearCommodity: true)),
           ),
           SizedBox(width: 8.w),
           ...commodities.map((c) => Padding(
                 padding: EdgeInsets.only(right: 8.w),
                 child: _buildChip(
-                  label: c,
-                  isSelected: _selectedCommodity == c,
-                  onTap: () => setState(() => _selectedCommodity = c),
+                  label: c.label,
+                  isSelected: selected == c.value,
+                  onTap: () => notifier
+                      .applyFilter(notifier.currentFilter.copyWith(commodity: c.value)),
                 ),
               )),
         ],
@@ -384,40 +539,37 @@ class _SipTransactionHistoryScreenState
     );
   }
 
-  // ── Transactions List + Content ────────────────────────────────────
-  Widget _buildTransactionList(
-      BuildContext context,
-      Map<String, List<TransactionItem>> grouped,
-      bool isDark,
-      List<TransactionItem> allTxns) {
-    final commodities = _uniqueCommodities(allTxns);
-    final filtered = _applyCommodityFilter(allTxns);
-    final filteredGrouped = _groupByDate(filtered);
-
-    return Column(
-      children: [
-        if (commodities.length > 1)
-          _buildCommoditySelector(commodities, isDark),
-        Expanded(
-          child: filteredGrouped.isEmpty
-              ? _buildEmptyState(isDark)
-              : _buildList(context, filteredGrouped, isDark),
-        ),
-      ],
-    );
-  }
-
+  // ── Transactions List ─────────────────────────────────────────────────
   Widget _buildList(BuildContext context,
-      Map<String, List<TransactionItem>> grouped, bool isDark) {
+      Map<String, List<TransactionItem>> grouped, bool isLoadingMore, bool isDark) {
     final dateKeys = grouped.keys.toList();
+    final itemCount = dateKeys.length + (isLoadingMore ? 1 : 0);
     return ListView.builder(
+      controller: _scrollController,
       padding: EdgeInsets.only(top: 4.h, bottom: 140.h),
-      itemCount: dateKeys.length,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
+        if (index >= dateKeys.length) return _buildBottomLoader();
         final dateKey = dateKeys[index];
         final items = grouped[dateKey]!;
         return _buildDateGroup(context, dateKey, items, isDark);
       },
+    );
+  }
+
+  Widget _buildBottomLoader() {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 20.h),
+      child: Center(
+        child: SizedBox(
+          width: 22.w,
+          height: 22.w,
+          child: const CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Color(0xFF064E3B),
+          ),
+        ),
+      ),
     );
   }
 
@@ -506,14 +658,12 @@ class _SipTransactionHistoryScreenState
         },
         child: Row(
           children: [
-            // SIP Icon
             SvgPicture.asset(
               _getSipIcon(tx.metalName),
               width: 44.w,
               height: 44.w,
             ),
             SizedBox(width: 14.w),
-            // Left info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,7 +720,6 @@ class _SipTransactionHistoryScreenState
                 ],
               ),
             ),
-            // Right: amount + weight
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -658,7 +807,7 @@ class _SipTransactionHistoryScreenState
           ),
           SizedBox(height: 8.h),
           Text(
-            message,
+            message.replaceAll('Exception: ', ''),
             style: GoogleFonts.playfairDisplay(
               fontSize: 14.sp,
               color: isDark ? Colors.white54 : Colors.black54,
@@ -667,7 +816,8 @@ class _SipTransactionHistoryScreenState
           ),
           SizedBox(height: 20.h),
           GestureDetector(
-            onTap: () => ref.invalidate(sipTransactionsProvider),
+            onTap: () =>
+                ref.read(sipHistoryProvider(widget.frequency).notifier).refresh(),
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
               decoration: BoxDecoration(
@@ -694,50 +844,6 @@ class _SipTransactionHistoryScreenState
         ],
       ),
     );
-  }
-
-  // ── Data Helpers ───────────────────────────────────────────────────
-
-  /// Filter transactions by frequency using the subtitle field.
-  List<TransactionItem> _filterByFrequency(
-      List<TransactionItem> all, String frequency) {
-    final freqLower = frequency.toLowerCase();
-    return all.where((tx) {
-      return tx.subtitle.toLowerCase().contains(freqLower);
-    }).toList();
-  }
-
-  /// Extract unique commodity names from a list of transactions.
-  List<String> _uniqueCommodities(List<TransactionItem> txns) {
-    final set = <String>{};
-    for (final tx in txns) {
-      set.add(tx.metalName);
-    }
-    return set.toList();
-  }
-
-  /// Apply the current commodity filter.
-  List<TransactionItem> _applyCommodityFilter(List<TransactionItem> txns) {
-    if (_selectedCommodity == null) return txns;
-    return txns.where((tx) => tx.metalName == _selectedCommodity).toList();
-  }
-
-  /// Re-group a flat transaction list by their date key.
-  Map<String, List<TransactionItem>> _groupByDate(List<TransactionItem> txns) {
-    final map = <String, List<TransactionItem>>{};
-    for (final tx in txns) {
-      final key = tx.date.isNotEmpty ? tx.date : tx.displayDate;
-      map.putIfAbsent(key, () => []).add(tx);
-    }
-    return map;
-  }
-
-  bool _listEquals(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────

@@ -441,9 +441,31 @@ record accordingly.
 
 ### `POST /sip/transactions`
 
-Fetches the SIP transaction history for the current user. Returns grouped transactions by date.
+Fetches one page of SIP transaction history for the current user, scoped to a single frequency tab and optionally filtered. Returns grouped transactions by date plus pagination metadata — mirrors `POST /transactions/history`'s lazy-loading + server-side filtering pattern (§ general Transaction History).
 
-**Request:** No body required.
+**Request (all fields optional except `frequency`):**
+```json
+{
+  "frequency": "Daily",
+  "page": 1,
+  "limit": 20,
+  "commodity": "Gold 24K",
+  "status": "success",
+  "date_from": "01-04-2026",
+  "date_to": "30-04-2026"
+}
+```
+
+| Request Field | Type | Description |
+|---|---|---|
+| `frequency` | String | `"Daily"`, `"Weekly"`, `"Monthly"`, or `"Custom"` — required; each tab lazy-loads independently, so the client always sends the tab it's requesting |
+| `page` | Int | Default `1` |
+| `limit` | Int | Default `20`, clamped server-side to 1–100 |
+| `commodity` | String | Exact `metal_name` match (e.g. `"Gold 24K"`), from `commodities` in the filter-options response |
+| `status` | String | `success` \| `pending` \| `failed` \| `cancelled` |
+| `date_from` / `date_to` | String | `"DD-MM-YYYY"`, inclusive |
+
+Filters are applied server-side across the customer's **full** history for that frequency, before pagination — so a filtered request on page 2 returns the correct next 20 *filtered* rows, not page 2 of the unfiltered stream.
 
 **Response:**
 ```json
@@ -455,6 +477,14 @@ Fetches the SIP transaction history for the current user. Returns grouped transa
       { "frequency": "Daily", "commodity_name": "Silver" },
       { "frequency": "Weekly", "commodity_name": "Gold 24K" }
     ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total_count": 45,
+      "total_pages": 3,
+      "has_next": true,
+      "has_prev": false
+    },
     "grouped_transactions": {
       "28 Apr 2026": [
         {
@@ -511,14 +541,15 @@ Fetches the SIP transaction history for the current user. Returns grouped transa
 
 | Response Field | Type | Description |
 |---|---|---|
-| `plans` | Array | List of SIP plans (used to build frequency tabs + commodity chips) |
-| `plans[].frequency` | String | `"Daily"`, `"Weekly"`, `"Monthly"`, or `"Custom"` — used for tab segmentation |
+| `plans` | Array | List of SIP plans, computed from the customer's **full unfiltered** history — used by the client to know which combinations exist. Never affected by the current request's filters, so it stays stable while paginating/filtering. |
+| `plans[].frequency` | String | `"Daily"`, `"Weekly"`, `"Monthly"`, or `"Custom"` |
 | `plans[].commodity_name` | String | Plan commodity name (e.g., "Gold 24K", "Silver") |
-| `grouped_transactions` | Object | Transactions grouped by display date key |
+| `pagination` | Object | `{page, limit, total_count, total_pages, has_next, has_prev}` — same shape as `/transactions/history` |
+| `grouped_transactions` | Object | The **current page's** transactions grouped by display date key |
 | `grouped_transactions[date]` | Array | List of transactions for that date |
 | `transaction_id` | String | Unique transaction identifier |
 | `title` | String | Transaction title |
-| `subtitle` | String | **Must include frequency** (e.g., "Daily Gold Auto-Savings", "Weekly Silver Auto-Savings", "Custom Gold Auto-Savings") — used for filtering |
+| `subtitle` | String | Includes the frequency keyword (e.g., "Daily Gold Auto-Savings", "Custom Gold Auto-Savings") — informational; filtering itself is server-side via the `frequency` request field, not client-side subtitle matching |
 | `type` | String | Always `"sip"` for SIP transactions |
 | `amount` | Number | Transaction amount in ₹ |
 | `weight_grams` | String | Weight of commodity purchased |
@@ -527,13 +558,45 @@ Fetches the SIP transaction history for the current user. Returns grouped transa
 | `metal_name` | String | `"Gold 24K"` or `"Silver"` |
 
 > **App Behavior — Frequency Segmentation:**
-> - **Primary**: Transactions are segmented by frequency (Daily / Weekly / Monthly / Custom) tabs.
-> - If only one frequency exists → no tabs, just a frequency badge.
-> - If multiple frequencies exist → TabBar with Daily | Weekly | Monthly | Custom, in that order.
-> - **Secondary**: Within each frequency tab, if both Gold and Silver exist → horizontal toggle chips ("All" | "Gold 24K" | "Silver").
-> - API is called fresh every time the screen is entered (no caching).
-> - The `subtitle` field **must contain the frequency name** (e.g., "Daily", "Weekly", "Monthly", "Custom") as it is used for client-side filtering.
-> - **Custom SIP transactions**: Custom SIP (multi-date AutoPay, see §CustomSIPScheme / `sip/custom/*` endpoints) is a separate backend product from regular Daily/Weekly/Monthly SIP. For it to appear as a "Custom" tab here, the backend must merge its transactions into this same `grouped_transactions` feed (and add a `{"frequency": "Custom", "commodity_name": ...}` entry per commodity to `plans`) — the mobile app does not call a separate endpoint for Custom SIP history.
+> - **Primary**: The client always renders 4 tabs — Daily | Weekly | Monthly | Custom — each lazy-loading and filtering independently (its own `page`/`has_next` state), rather than deriving tab visibility from `plans[]`. An empty tab just shows the empty state.
+> - **Secondary**: Within each tab, commodity toggle chips ("All" | values from `/sip/transaction-filter-options`.`commodities`) apply the `commodity` request field server-side.
+> - A header filter sheet (status + date range, options from `/sip/transaction-filter-options`) applies `status`/`date_from`/`date_to` server-side, per tab.
+> - The list lazy-loads via infinite scroll: near the bottom, the client requests `page + 1` with the same filters; stops once `pagination.has_next` is `false`.
+> - API is called fresh (page 1, all 4 tabs) every time the screen is entered (no caching).
+> - **Custom SIP transactions**: Custom-Date SIP is stored on the same `SIPScheme` row as regular Monthly SIP (`aps_scheme_type=CUSTOM`, `aps_frequency=MONTHLY`) — the backend discriminates on `aps_scheme_type` when building `frequency`/`subtitle` so Custom SIP payments land in the `"Custom"` tab instead of merging into `"Monthly"`.
+
+### `POST /sip/transaction-filter-options`
+
+Dynamic filter option set for the SIP Transactions filter sheet — mirrors `POST /transactions/filter-options`.
+
+**Request:** No body required.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "frequencies": [
+      { "value": "Daily", "label": "Daily" },
+      { "value": "Weekly", "label": "Weekly" },
+      { "value": "Monthly", "label": "Monthly" },
+      { "value": "Custom", "label": "Custom" }
+    ],
+    "commodities": [
+      { "value": "Gold 24K", "label": "Gold 24K" },
+      { "value": "Silver", "label": "Silver" }
+    ],
+    "statuses": [
+      { "value": "success", "label": "Success", "color": "#10B981" },
+      { "value": "pending", "label": "Pending", "color": "#F59E0B" },
+      { "value": "failed", "label": "Failed", "color": "#DC2626" },
+      { "value": "cancelled", "label": "Cancelled", "color": "#DC2626" }
+    ]
+  }
+}
+```
+
+`frequencies` is included for completeness but isn't currently consumed by the client (the 4 tabs are static) — reserved for a future backend-driven tab list.
 
 ---
 
