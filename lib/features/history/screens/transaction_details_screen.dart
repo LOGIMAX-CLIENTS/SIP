@@ -279,6 +279,15 @@ class _TransactionDetailsScreenState
       Color textColor,
       Color mutedTextColor,
       bool isDark) {
+    // Tone the footer status message off the LATEST timeline step (e.g.
+    // amber for "Processing: Pending", green once everything succeeds) —
+    // plain muted-gray text was too low-contrast to read at a glance
+    // against the card, especially for a message this important.
+    final footerTone = _statusTone(
+      details.timeline.isNotEmpty ? details.timeline.last.status : '',
+      isDark,
+    );
+
     return Container(
       padding: EdgeInsets.all(20.w),
       decoration: BoxDecoration(
@@ -309,13 +318,33 @@ class _TransactionDetailsScreenState
           SizedBox(height: 8.h),
           Divider(color: borderColor, height: 1),
           SizedBox(height: 8.h),
-          Text(
-            details.footerMessage,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 13.sp,
-              color: mutedTextColor,
+          if (details.footerMessage.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+              decoration: BoxDecoration(
+                color: footerTone.badgeBgColor,
+                borderRadius: BorderRadius.circular(10.r),
+                border: Border.all(color: footerTone.color.withOpacity(0.3)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(footerTone.icon, size: 16.sp, color: footerTone.color),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: Text(
+                      details.footerMessage,
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w600,
+                        color: footerTone.badgeTextColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           SizedBox(height: 12.h),
           Row(
             children: [
@@ -420,14 +449,12 @@ class _TransactionDetailsScreenState
     );
   }
 
-  Widget _buildTimelineStep(TimelineStep step,
-      {bool isFirst = false,
-      bool isLast = false,
-      required Color textColor,
-      required Color mutedTextColor,
-      required bool isDark}) {
-    // Determine colors and icon based on status
-    final statusLower = step.status.toLowerCase();
+  /// Status -> (line/icon color, badge background, badge text, icon),
+  /// shared between each timeline step and the footer status message so
+  /// both agree on what "pending"/"failed"/"success" look like.
+  ({Color color, Color badgeBgColor, Color badgeTextColor, IconData icon})
+      _statusTone(String status, bool isDark) {
+    final statusLower = status.toLowerCase();
     final bool isFailed = statusLower == 'failed' ||
         statusLower == 'failure' ||
         statusLower == 'cancelled';
@@ -435,38 +462,52 @@ class _TransactionDetailsScreenState
         statusLower == 'pending' || statusLower == 'processing';
     final bool isOnHold = statusLower == 'on hold';
 
-    // Status-specific styling
-    final Color stepColor;
-    final Color badgeBgColor;
-    final Color badgeTextColor;
-    final IconData stepIcon;
-
     if (isFailed) {
-      stepColor = const Color(0xFFDC2626);
-      badgeBgColor = const Color(0xFFDC2626).withOpacity(0.12);
-      badgeTextColor =
-          isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
-      stepIcon = Icons.cancel_rounded;
+      return (
+        color: const Color(0xFFDC2626),
+        badgeBgColor: const Color(0xFFDC2626).withOpacity(0.12),
+        badgeTextColor:
+            isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+        icon: Icons.cancel_rounded,
+      );
     } else if (isPending) {
-      stepColor = const Color(0xFFF59E0B);
-      badgeBgColor = const Color(0xFFF59E0B).withOpacity(0.12);
-      badgeTextColor =
-          isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
-      stepIcon = Icons.schedule_rounded;
+      return (
+        color: const Color(0xFFF59E0B),
+        badgeBgColor: const Color(0xFFF59E0B).withOpacity(0.12),
+        badgeTextColor:
+            isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+        icon: Icons.schedule_rounded,
+      );
     } else if (isOnHold) {
-      stepColor = const Color(0xFFD97706);
-      badgeBgColor = const Color(0xFFD97706).withOpacity(0.12);
-      badgeTextColor =
-          isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
-      stepIcon = Icons.pause_circle_rounded;
-    } else {
-      // Success / default
-      stepColor = const Color(0xFF10B981);
-      badgeBgColor = const Color(0xFF10B981).withOpacity(0.15);
-      badgeTextColor =
-          isDark ? const Color(0xFF10B981) : const Color(0xFF059669);
-      stepIcon = Icons.check_circle;
+      return (
+        color: const Color(0xFFD97706),
+        badgeBgColor: const Color(0xFFD97706).withOpacity(0.12),
+        badgeTextColor:
+            isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+        icon: Icons.pause_circle_rounded,
+      );
     }
+    // Success / default
+    return (
+      color: const Color(0xFF10B981),
+      badgeBgColor: const Color(0xFF10B981).withOpacity(0.15),
+      badgeTextColor:
+          isDark ? const Color(0xFF10B981) : const Color(0xFF059669),
+      icon: Icons.check_circle,
+    );
+  }
+
+  Widget _buildTimelineStep(TimelineStep step,
+      {bool isFirst = false,
+      bool isLast = false,
+      required Color textColor,
+      required Color mutedTextColor,
+      required bool isDark}) {
+    final tone = _statusTone(step.status, isDark);
+    final stepColor = tone.color;
+    final stepIcon = tone.icon;
+    final badgeBgColor = tone.badgeBgColor;
+    final badgeTextColor = tone.badgeTextColor;
 
     return IntrinsicHeight(
       child: Row(
