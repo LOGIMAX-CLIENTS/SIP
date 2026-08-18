@@ -457,7 +457,8 @@ class _TransactionDetailsScreenState
     final statusLower = status.toLowerCase();
     final bool isFailed = statusLower == 'failed' ||
         statusLower == 'failure' ||
-        statusLower == 'cancelled';
+        statusLower == 'cancelled' ||
+        statusLower == 'rejected';
     final bool isPending =
         statusLower == 'pending' || statusLower == 'processing';
     final bool isOnHold = statusLower == 'on hold';
