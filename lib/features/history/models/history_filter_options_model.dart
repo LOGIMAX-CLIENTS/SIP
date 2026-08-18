@@ -103,6 +103,7 @@ String defaultStatusColorHex(String raw) {
       return '#D97706';
     case 'cancelled':
     case 'failed':
+    case 'rejected':
       return '#DC2626';
     default:
       return '#1B882C';
