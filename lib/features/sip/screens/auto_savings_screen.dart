@@ -1741,6 +1741,32 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     );
   }
 
+  /// Small colored-dot + label legend item for the Custom SIP date picker
+  /// (see _showCustomDatesPicker) — explains what each date color means:
+  /// active plan (green), paused plan (amber), or the customer's own
+  /// in-progress new-plan selection (dark green).
+  Widget _buildDateLegendItem({required Color color, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8.w,
+          height: 8.w,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        SizedBox(width: 4.w),
+        Text(
+          label,
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 10.sp,
+            fontWeight: FontWeight.w600,
+            color: Colors.black54,
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Multi-select date picker for Custom SIP — unlike Monthly's single-date
   /// grid, the auto saving runs on EVERY selected date each month (backend:
   /// custom_dates list, 1-28 entries — see CSIPCreateSerializer). Same
@@ -1749,11 +1775,12 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   /// UPI/Card/eMandate too (backend: CSIPCreateSerializer.payment_method).
   /// Opens the date picker. Dates already committed to an existing
   /// non-terminal Custom SIP scheme (customSipSchemesProvider) render as
-  /// "enabled" (green, tap -> manage that scheme) instead of selectable —
-  /// only dates NOT yet owned by any scheme can be multi-selected to create
-  /// a new one. e.g. existing dates [3,5,9]: tapping 3 opens manage/pause/
-  /// cancel for that scheme; selecting 4,7,8 and confirming creates a
-  /// separate new Custom SIP with just those dates.
+  /// "enabled" — green for an ACTIVE scheme, amber for a PAUSED one (tap
+  /// either to manage that scheme) — instead of selectable; only dates NOT
+  /// yet owned by any scheme can be multi-selected to create a new one.
+  /// e.g. existing dates [3,5,9]: tapping 3 opens manage/pause/cancel for
+  /// that scheme; selecting 4,7,8 and confirming creates a separate new
+  /// Custom SIP with just those dates.
   Future<void> _showCustomDatesPicker() async {
     List<CustomSipScheme> schemes;
     try {
@@ -1814,14 +1841,30 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 Text(
                   dateOwners.isEmpty
                       ? 'Your auto saving will run on ALL selected dates every month'
-                      : 'Green dates already have a plan — tap to manage. '
-                          'Pick new dates to start another.',
+                      : 'Tap a colored date to manage that plan. '
+                          'Pick a blank date to start another.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                   ),
                 ),
+                if (dateOwners.isNotEmpty) ...[
+                  SizedBox(height: 10.h),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 14.w,
+                    runSpacing: 4.h,
+                    children: [
+                      _buildDateLegendItem(
+                          color: const Color(0xFF16A34A), label: 'Active'),
+                      _buildDateLegendItem(
+                          color: const Color(0xFF167525), label: 'Your new selection'),
+                      _buildDateLegendItem(
+                          color: const Color(0xFFD97706), label: 'Paused'),
+                    ],
+                  ),
+                ],
                 SizedBox(height: 16.h),
                 GridView.builder(
                   shrinkWrap: true,
@@ -1836,7 +1879,19 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                     final date = index + 1;
                     final owner = dateOwners[date];
                     final isCommitted = owner != null;
+                    final isPausedOwner = owner?.isPaused ?? false;
                     final isActive = !isCommitted && selected.contains(date);
+                    // Committed dates: green for an ACTIVE scheme, amber for
+                    // a PAUSED one (matches the PAUSED status badge on the
+                    // manage screen) — so the customer can tell at a glance
+                    // which of their plans is running vs paused, without
+                    // having to open each one.
+                    final committedColor = isPausedOwner
+                        ? const Color(0xFFD97706)
+                        : const Color(0xFF16A34A);
+                    final committedBgColor = isPausedOwner
+                        ? const Color(0xFFFFFBEB)
+                        : const Color(0xFFF0FDF4);
                     return GestureDetector(
                       onTap: () {
                         if (isCommitted) {
@@ -1868,11 +1923,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                                 )
                               : null,
                           color: isCommitted
-                              ? const Color(0xFFF0FDF4)
+                              ? committedBgColor
                               : (isActive ? null : const Color(0xFFF1F5F9)),
                           borderRadius: BorderRadius.circular(10.r),
                           border: isCommitted
-                              ? Border.all(color: const Color(0xFF16A34A).withOpacity(0.5))
+                              ? Border.all(color: committedColor.withOpacity(0.5))
                               : (!isActive
                                   ? Border.all(color: Colors.black.withOpacity(0.04))
                                   : null),
@@ -1888,7 +1943,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                               color: isActive
                                   ? Colors.white
                                   : (isCommitted
-                                      ? const Color(0xFF16A34A)
+                                      ? committedColor
                                       : const Color(0xFF1A1A2E)),
                             ),
                           ),
