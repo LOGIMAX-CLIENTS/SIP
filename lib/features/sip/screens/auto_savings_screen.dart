@@ -1742,9 +1742,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   }
 
   /// Small colored-dot + label legend item for the Custom SIP date picker
-  /// (see _showCustomDatesPicker) — explains what each date color means:
-  /// active plan (green), paused plan (amber), or the customer's own
-  /// in-progress new-plan selection (dark green).
+  /// (see _showCustomDatesPicker) — always shown (not just once a plan
+  /// exists), so the color scheme is understood before the customer ever
+  /// has a date committed. Explains: available (blank), the customer's own
+  /// in-progress new-plan selection (dark green), active plan (green), and
+  /// paused plan (amber).
   Widget _buildDateLegendItem({required Color color, required String label}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1752,7 +1754,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         Container(
           width: 8.w,
           height: 8.w,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.black.withOpacity(0.12)),
+          ),
         ),
         SizedBox(width: 4.w),
         Text(
@@ -1849,22 +1855,22 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                     color: Colors.black45,
                   ),
                 ),
-                if (dateOwners.isNotEmpty) ...[
-                  SizedBox(height: 10.h),
-                  Wrap(
+                SizedBox(height: 10.h),
+                Wrap(
                     alignment: WrapAlignment.center,
                     spacing: 14.w,
                     runSpacing: 4.h,
                     children: [
                       _buildDateLegendItem(
-                          color: const Color(0xFF16A34A), label: 'Active'),
+                          color: const Color(0xFFF1F5F9), label: 'Available'),
                       _buildDateLegendItem(
                           color: const Color(0xFF167525), label: 'Your new selection'),
+                      _buildDateLegendItem(
+                          color: const Color(0xFF16A34A), label: 'Active'),
                       _buildDateLegendItem(
                           color: const Color(0xFFD97706), label: 'Paused'),
                     ],
                   ),
-                ],
                 SizedBox(height: 16.h),
                 GridView.builder(
                   shrinkWrap: true,
