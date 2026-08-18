@@ -141,12 +141,53 @@ class _TransactionHistoryScreenState
                 ref.read(selectedTabProvider.notifier).state = 0;
               }
             },
-            trailing: (historyState.isLoading || historyState.error != null)
-                ? const SizedBox.shrink()
-                : _buildFilterButton(filterOptionsAsync, isDark),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildRefreshButton(historyState.isLoading),
+                if (!historyState.isLoading && historyState.error == null)
+                  _buildFilterButton(filterOptionsAsync, isDark),
+              ],
+            ),
           ),
           Expanded(child: body),
         ],
+      ),
+    );
+  }
+
+  // ── Header refresh button ──────────────────────────────────────────
+  /// Manual refresh — the History tab intentionally does NOT auto-refetch
+  /// on every tab switch (see MainScreen._onTabTapped's comment: the lazy
+  /// list preserves already-loaded pages and scroll position across tab
+  /// switches), so a transaction made elsewhere in the app while History
+  /// was last loaded won't appear until the customer either backs out and
+  /// re-enters the tab from scratch, or taps this. Always visible (unlike
+  /// the filter button, which hides during the very first load/error) so
+  /// there's always a way to pull fresh data on demand.
+  Widget _buildRefreshButton(bool isLoading) {
+    return GestureDetector(
+      onTap: isLoading
+          ? null
+          : () => ref.read(historyProvider.notifier).refresh(),
+      child: Container(
+        margin: EdgeInsets.only(right: 8.w),
+        padding: EdgeInsets.all(8.w),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.12),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.2)),
+        ),
+        child: isLoading
+            ? SizedBox(
+                width: 15.sp,
+                height: 15.sp,
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Icon(Icons.refresh_rounded, size: 15.sp, color: Colors.white),
       ),
     );
   }
@@ -407,18 +448,22 @@ class _TransactionHistoryScreenState
       bool isDark) {
     final dateKeys = filtered.keys.toList();
     final itemCount = dateKeys.length + (isLoadingMore ? 1 : 0);
-    return ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.only(top: 4.h, bottom: 120.h),
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
-        if (index >= dateKeys.length) {
-          return _buildBottomLoader();
-        }
-        final dateKey = dateKeys[index];
-        final items = filtered[dateKey]!;
-        return _buildDateGroup(context, dateKey, items, statusOptions, isDark);
-      },
+    return RefreshIndicator(
+      color: _green,
+      onRefresh: () => ref.read(historyProvider.notifier).refresh(),
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.only(top: 4.h, bottom: 120.h),
+        itemCount: itemCount,
+        itemBuilder: (context, index) {
+          if (index >= dateKeys.length) {
+            return _buildBottomLoader();
+          }
+          final dateKey = dateKeys[index];
+          final items = filtered[dateKey]!;
+          return _buildDateGroup(context, dateKey, items, statusOptions, isDark);
+        },
+      ),
     );
   }
 

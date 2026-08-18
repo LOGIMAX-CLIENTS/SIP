@@ -90,11 +90,22 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         ref.invalidate(savingConfigProvider);
         break;
       case 2:
-        // historyProvider is intentionally NOT invalidated here — Transaction
-        // History lazy-loads in pages and must preserve already-loaded pages
-        // (and effective scroll position, since the tab widget stays mounted
-        // via IndexedStack) across tab switches instead of refetching page 1
-        // every time the user returns to this tab.
+        // Fetch page 1 fresh every time the customer taps into this tab, so
+        // a transaction made elsewhere (e.g. Instant Saving, on another
+        // device) shows up immediately instead of only after a manual pull-
+        // to-refresh. Uses the notifier's refresh() rather than
+        // ref.invalidate(historyProvider) — invalidate would recreate the
+        // notifier from scratch and silently drop any currently-applied
+        // filter; refresh() re-fetches page 1 with whatever filter (if any)
+        // is already active, same as the header/pull-to-refresh triggers.
+        // Skipped on the very first-ever visit — TransactionHistoryScreen's
+        // own build() is about to create the notifier for the first time via
+        // ref.watch(historyProvider), and that creation already triggers its
+        // own initial fetch; calling refresh() here too would just fire a
+        // redundant duplicate request.
+        if (_visitedTabs.contains(2)) {
+          ref.read(historyProvider.notifier).refresh();
+        }
         ref.invalidate(portfolioProvider);
         break;
       case 3:
