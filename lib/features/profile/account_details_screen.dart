@@ -13,6 +13,10 @@ import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/custom_button.dart';
 import '../../shared/widgets/secure_clipboard.dart';
 import '../../shared/utils/upper_case_words_formatter.dart';
+import '../../core/utils/validators.dart';
+import '../auth/controller/auth_controller.dart';
+import '../../core/services/auth_service.dart';
+import '../auth/registration/email_otp_sheet.dart';
 
 class AccountDetailsScreen extends ConsumerStatefulWidget {
   const AccountDetailsScreen({super.key});
@@ -30,6 +34,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   late TextEditingController _cityController;
   late TextEditingController _addressController;
   bool _isPincodeChecking = false;
+  bool _isVerifyingEmail = false;
   String? _emailError;
   bool _isPincodeValid = true;
 
@@ -122,6 +127,51 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     }
   }
 
+  /// Verifies the customer's on-file e-mail — same OTP sheet as onboarding
+  /// (RegistrationScreen._verifyEmail), but this re-verifies an EXISTING
+  /// account's address rather than a not-yet-registered one, so on success
+  /// we re-fetch the profile (picks up the backend's persisted
+  /// cus_email_verified_on — see AuthService.verify_email_otp) instead of
+  /// just flipping local widget state.
+  Future<void> _verifyEmail() async {
+    final email = _emailController.text.trim();
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+
+    setState(() => _isVerifyingEmail = true);
+    final success = await ref.read(authControllerProvider.notifier).sendEmailOtp(
+          email,
+          fullName: _nameController.text.trim().isNotEmpty
+              ? _nameController.text.trim()
+              : null,
+        );
+
+    if (!mounted) return;
+    setState(() => _isVerifyingEmail = false);
+    if (!success) return;
+
+    final otpReferenceId =
+        ref.read(authControllerProvider).data?['otp_reference_id'] as String?;
+    if (otpReferenceId == null) return;
+
+    final verified = await showEmailOtpSheet(
+      context,
+      email: email,
+      otpReferenceId: otpReferenceId,
+      fullName: _nameController.text.trim(),
+    );
+
+    if (verified == true && mounted) {
+      await ref.read(profileProvider.notifier).fetchProfileDetails();
+      if (mounted) {
+        AppToast.show(context, 'E-mail verified successfully', type: ToastType.success);
+      }
+    }
+  }
+
   bool _isValidEmail(String email) {
     final regex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$');
     return regex.hasMatch(email);
@@ -204,6 +254,14 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       }
     });
 
+    // email_otp_sheet.dart relies on the caller to surface auth errors
+    // (e.g. OTP send failures) — same listener RegistrationScreen uses.
+    ref.listen<AuthState>(authControllerProvider, (prev, next) {
+      if (next.error != null && next.error != prev?.error && mounted) {
+        AppToast.show(context, next.error!, type: ToastType.error);
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
@@ -270,7 +328,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                         SizedBox(height: 32.h),
                         _buildInputField(label: 'Name as per PAN *', controller: _nameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter()]),
                         _buildInputField(label: 'Phone Number *', hint: MaskingUtils.maskMobile(user.phone), isEditable: false, isDark: isDark, isNumeric: true),
-                        _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }),
+                        _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, labelAction: _buildEmailVerifyBadge(user, isDark)),
                         _buildInputField(label: 'DOB *', hint: user.dob, isEditable: false, isDark: isDark, isNumeric: true),
                         _buildInputField(label: 'Pincode *', controller: _pincodeController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)], actionLabel: 'Check', onAction: _handlePincodeCheck, isActionLoading: _isPincodeChecking, onChanged: (_) { if (!_isPincodeValid) setState(() => _isPincodeValid = true); }, isNumeric: true),
                         if (_stateController.text.isNotEmpty)
@@ -338,6 +396,37 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     }
   }
 
+  /// Mirrors RegistrationScreen's E-Mail label row — a "Verify" link when
+  /// unverified, a green "Verified" badge when verified. Hidden entirely
+  /// while the field holds an unsaved edit (differs from the on-file
+  /// [user.email]) — verifying a not-yet-saved address would be confusing
+  /// and doesn't match what the backend would actually check against.
+  Widget _buildEmailVerifyBadge(UserProfile user, bool isDark) {
+    final currentInput = _emailController.text.trim().toLowerCase();
+    final onFileEmail = user.email.trim().toLowerCase();
+    if (currentInput.isEmpty || currentInput != onFileEmail) {
+      return const SizedBox.shrink();
+    }
+
+    if (user.isEmailVerified) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 14.sp, color: const Color(0xFF1B882C)),
+          SizedBox(width: 4.w),
+          Text('Verified', style: GoogleFonts.playfairDisplay(fontSize: 13.sp, fontWeight: FontWeight.w600, color: const Color(0xFF1B882C))),
+        ],
+      );
+    }
+
+    return GestureDetector(
+      onTap: _isVerifyingEmail ? null : _verifyEmail,
+      child: _isVerifyingEmail
+          ? SizedBox(height: 14.h, width: 14.h, child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent))
+          : Text('Verify', style: GoogleFonts.playfairDisplay(fontSize: 13.sp, fontWeight: FontWeight.w600, color: Colors.orangeAccent, decoration: TextDecoration.underline)),
+    );
+  }
+
   Widget _buildInputField({
     required String label,
     TextEditingController? controller,
@@ -354,6 +443,11 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     String? errorText,
     ValueChanged<String>? onChanged,
     bool isNumeric = false,
+    // Shown next to the LABEL (not inside the value box, unlike
+    // actionLabel/onAction above) — always visible regardless of edit
+    // mode, for actions independent of editing the field's value (e.g.
+    // e-mail verification).
+    Widget? labelAction,
   }) {
     String displayValue = controller?.text ?? hint ?? '';
     if (label.contains('DOB')) displayValue = _formatDate(displayValue);
@@ -373,7 +467,16 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: GoogleFonts.playfairDisplay(fontSize: 15.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white70 : const Color(0xFF8D8D8D))),
+          if (labelAction != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(label, style: GoogleFonts.playfairDisplay(fontSize: 15.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white70 : const Color(0xFF8D8D8D))),
+                labelAction,
+              ],
+            )
+          else
+            Text(label, style: GoogleFonts.playfairDisplay(fontSize: 15.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white70 : const Color(0xFF8D8D8D))),
           SizedBox(height: 8.h),
           Container(
             decoration: BoxDecoration(

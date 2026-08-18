@@ -7,6 +7,7 @@ class UserProfile {
   final String id;
   final String name;
   final String email;
+  final bool isEmailVerified;
   final String phone;
   final String dob;
   final String pincode;
@@ -26,6 +27,7 @@ class UserProfile {
     required this.id,
     required this.name,
     this.email = '',
+    this.isEmailVerified = false,
     required this.phone,
     required this.dob,
     required this.pincode,
@@ -45,6 +47,7 @@ class UserProfile {
   UserProfile copyWith({
     String? name,
     String? email,
+    bool? isEmailVerified,
     String? phone,
     String? dob,
     String? pincode,
@@ -64,6 +67,7 @@ class UserProfile {
       id: this.id,
       name: name ?? this.name,
       email: email ?? this.email,
+      isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       phone: phone ?? this.phone,
       dob: dob ?? this.dob,
       pincode: pincode ?? this.pincode,
@@ -156,6 +160,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
             id: _customerId,
             name: data['name'] ?? data['full_name'] ?? '',
             email: data['email'] ?? '',
+            isEmailVerified: data['email_verified'] == true,
             phone: data['mobile'] ?? data['phone'] ?? '',
             dob: data['dob'] ?? '',
             pincode: data['pincode'] ?? '',
@@ -258,9 +263,15 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       );
 
       if (result['success'] == true) {
+        // A verification stamp belongs to the mailbox it verified — mirrors
+        // the backend's identity.py reset so a changed-but-unsaved-refetch
+        // email doesn't keep showing "Verified" locally.
+        final emailChanged =
+            email.trim().toLowerCase() != state.user.email.trim().toLowerCase();
         final updatedUser = state.user.copyWith(
           name: name,
           email: email,
+          isEmailVerified: emailChanged ? false : state.user.isEmailVerified,
           dob: dob,
           pincode: pincode,
           state: stateVal,
