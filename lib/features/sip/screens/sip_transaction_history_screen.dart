@@ -92,9 +92,10 @@ class _SipTransactionHistoryScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final filterOptionsAsync = ref.watch(sipHistoryFilterOptionsProvider);
     // Watching the current tab's state (not just reading it) so the header
-    // filter badge updates the instant applyFilter() lands, without needing
-    // a separate listener wired up just for the button.
-    ref.watch(sipHistoryProvider(_currentFrequency));
+    // filter badge and refresh spinner update the instant applyFilter()/
+    // refresh() lands, without needing a separate listener wired up just
+    // for the buttons.
+    final currentTabState = ref.watch(sipHistoryProvider(_currentFrequency));
     final currentFilterCount =
         ref.read(sipHistoryProvider(_currentFrequency).notifier).currentFilter.activeCount;
 
@@ -107,7 +108,13 @@ class _SipTransactionHistoryScreenState
             GradientHeader(
               title: 'SIP Transactions',
               onBack: () => Navigator.pop(context),
-              trailing: _buildFilterButton(currentFilterCount, filterOptionsAsync),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildRefreshButton(currentTabState.isLoading),
+                  _buildFilterButton(currentFilterCount, filterOptionsAsync),
+                ],
+              ),
             ),
             _buildFrequencyTabs(isDark),
             Expanded(
@@ -120,6 +127,38 @@ class _SipTransactionHistoryScreenState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ── Header refresh button ──────────────────────────────────────────────
+  /// Manual refresh for the currently-selected frequency tab — mirrors
+  /// TransactionHistoryScreen's header refresh button. Each tab keeps its
+  /// own lazy-loaded pages via [sipHistoryProvider]'s per-frequency family,
+  /// so this only re-fetches page 1 for [_currentFrequency], not every tab.
+  Widget _buildRefreshButton(bool isLoading) {
+    return GestureDetector(
+      onTap: isLoading
+          ? null
+          : () => ref.read(sipHistoryProvider(_currentFrequency).notifier).refresh(),
+      child: Container(
+        margin: EdgeInsets.only(right: 8.w),
+        padding: EdgeInsets.all(8.w),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.12),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.2)),
+        ),
+        child: isLoading
+            ? SizedBox(
+                width: 15.sp,
+                height: 15.sp,
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Icon(Icons.refresh_rounded, size: 15.sp, color: Colors.white),
       ),
     );
   }
@@ -271,10 +310,15 @@ class _SipHistoryTabViewState extends ConsumerState<_SipHistoryTabView>
     final filterOptionsAsync = ref.watch(sipHistoryFilterOptionsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (state.error != null) {
+    // Once data has been loaded once, a refresh/filter re-fetch must never
+    // blank the list back to a full-page spinner or error state — those
+    // full-page states are only for the true first load of this tab. While
+    // refreshing, the header refresh button's own spinner is the activity
+    // indicator.
+    if (state.error != null && state.isEmpty) {
       return _buildErrorState(state.error!, isDark);
     }
-    if (state.isLoading) {
+    if (state.isLoading && state.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(
           color: Color(0xFF064E3B),
