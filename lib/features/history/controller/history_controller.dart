@@ -92,7 +92,11 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
       state = const HistoryPageState(error: 'User not logged in');
       return;
     }
-    state = const HistoryPageState(isLoading: true);
+    // Keep whatever is already loaded on screen while the new page-1 fetch
+    // is in flight (initial load, manual refresh, or a changed filter) —
+    // only the header spinner should indicate activity; the list itself
+    // must not blank out and reappear.
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final response = await _service.getTransactionHistory(
         customerId: _customerId,
@@ -111,7 +115,7 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
         page: 1,
       );
     } catch (e) {
-      state = HistoryPageState(error: e.toString());
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 

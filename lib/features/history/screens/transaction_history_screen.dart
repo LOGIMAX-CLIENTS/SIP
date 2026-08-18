@@ -118,10 +118,15 @@ class _TransactionHistoryScreenState
     final filterOptionsAsync = ref.watch(historyFilterOptionsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // Once data has been loaded once, a refresh/filter re-fetch must never
+    // blank the list back to a full-page spinner or error state — those
+    // full-page states are only for the true first load of this screen.
+    final hasData = historyState.transactions.isNotEmpty;
+
     Widget body;
-    if (historyState.error != null) {
+    if (historyState.error != null && !hasData) {
       body = Center(child: Text('Error: ${historyState.error}'));
-    } else if (historyState.isLoading) {
+    } else if (historyState.isLoading && !hasData) {
       body = const Center(child: CircularProgressIndicator());
     } else {
       body = _buildBody(context, historyState, filterOptionsAsync, isDark);
@@ -145,7 +150,8 @@ class _TransactionHistoryScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildRefreshButton(historyState.isLoading),
-                if (!historyState.isLoading && historyState.error == null)
+                if ((hasData || !historyState.isLoading) &&
+                    historyState.error == null)
                   _buildFilterButton(filterOptionsAsync, isDark),
               ],
             ),

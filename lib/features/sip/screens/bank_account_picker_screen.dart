@@ -92,107 +92,110 @@ class BankAccountPickerScreen extends ConsumerWidget {
   Widget _buildAccountTile(BuildContext context, WidgetRef ref,
       BankAccount account, bool isDark) {
     final selectable = account.isVerified;
-    return InkWell(
+    return GestureDetector(
       onTap: selectable ? () => Navigator.pop(context, account) : null,
-      borderRadius: BorderRadius.circular(16.r),
       child: Container(
-        margin: EdgeInsets.only(bottom: 14.h),
-        padding: EdgeInsets.all(16.w),
+        margin: EdgeInsets.only(bottom: 12.h),
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
         decoration: BoxDecoration(
           color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
           borderRadius: BorderRadius.circular(16.r),
           border: Border.all(
             color: account.isPrimary
-                ? _accentGreen.withOpacity(0.4)
-                : (isDark ? Colors.white10 : Colors.black.withOpacity(0.08)),
-            width: account.isPrimary ? 1.4 : 1,
+                ? _accentGreen
+                : (isDark ? Colors.white12 : const Color(0x330E5723)),
+            width: account.isPrimary ? 1.5 : 0.5,
           ),
           boxShadow: isDark
               ? []
               : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    offset: const Offset(0, 3),
                   ),
                 ],
         ),
-        child: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(10.w),
-              decoration: BoxDecoration(
-                color: _accentGreen.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10.r),
-              ),
-              child: Icon(Icons.account_balance_rounded,
-                  color: _accentGreen, size: 20.sp),
-            ),
-            SizedBox(width: 12.w),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(account.bankName,
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 15.sp,
-                              fontWeight: FontWeight.w700,
-                              color: isDark ? Colors.white : const Color(0xFF1E293B),
-                            )),
-                      ),
-                      if (account.isPrimary)
-                        Container(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                          decoration: BoxDecoration(
-                            color: _accentGreen.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(100.r),
-                          ),
-                          child: Text('Primary',
-                              style: GoogleFonts.playfairDisplay(
-                                  fontSize: 10.sp,
-                                  fontWeight: FontWeight.w800,
-                                  color: _accentGreen)),
-                        ),
-                    ],
+        child: Opacity(
+          opacity: selectable ? 1 : 0.55,
+          child: Row(
+            children: [
+              // ── Verified/pending indicator dot ──────────────────────
+              Container(
+                width: 22.w,
+                height: 22.w,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selectable
+                      ? _accentGreen
+                      : Colors.orange.withOpacity(0.15),
+                  border: Border.all(
+                    color: selectable ? _accentGreen : Colors.orange,
+                    width: 1.5,
                   ),
-                  SizedBox(height: 2.h),
-                  Text('${account.accountNumberMasked}  •  ${account.ifscCode}',
-                      style: GoogleFonts.lora(
-                        fontSize: 12.sp,
-                        color: isDark ? Colors.white54 : Colors.black54,
-                      )),
-                  SizedBox(height: 8.h),
-                  Row(
-                    children: [
-                      Icon(
-                        selectable
-                            ? Icons.verified_rounded
-                            : Icons.hourglass_top_rounded,
-                        size: 13.sp,
-                        color: selectable ? _accentGreen : Colors.orange,
-                      ),
-                      SizedBox(width: 4.w),
-                      Text(
-                        selectable ? 'Verified' : 'Pending Verification',
+                ),
+                child: Icon(
+                  selectable
+                      ? Icons.check_rounded
+                      : Icons.hourglass_top_rounded,
+                  color: selectable ? Colors.white : Colors.orange,
+                  size: 13.sp,
+                ),
+              ),
+              SizedBox(width: 14.w),
+
+              // ── Text ─────────────────────────────────────────────────
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(account.bankName,
                         style: GoogleFonts.playfairDisplay(
-                          fontSize: 11.sp,
-                          fontWeight: FontWeight.w600,
-                          color: selectable ? _accentGreen : Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14.sp,
+                          color: isDark ? Colors.white : Colors.black87,
+                        )),
+                    SizedBox(height: 2.h),
+                    Text('${account.accountNumberMasked}  •  ${account.ifscCode}',
+                        style: GoogleFonts.lora(
+                          fontSize: 12.sp,
+                          color: isDark ? Colors.white54 : Colors.black45,
+                        )),
+                  ],
+                ),
               ),
-            ),
-            if (selectable)
-              Icon(Icons.chevron_right_rounded,
-                  color: isDark ? Colors.white38 : Colors.black26),
-          ],
+
+              // ── Badge ────────────────────────────────────────────────
+              if (account.isPrimary)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                  decoration: BoxDecoration(
+                    color: _accentGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20.r),
+                  ),
+                  child: Text('primary',
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 10.sp,
+                        fontWeight: FontWeight.w700,
+                        color: _accentGreen,
+                      )),
+                )
+              else if (!selectable)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20.r),
+                  ),
+                  child: Text('pending',
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 10.sp,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.orange,
+                      )),
+                ),
+            ],
+          ),
         ),
       ),
     );
