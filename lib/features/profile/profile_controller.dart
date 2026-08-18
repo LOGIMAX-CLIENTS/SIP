@@ -331,7 +331,15 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
 final profileProvider =
     StateNotifierProvider<ProfileNotifier, ProfileState>((ref) {
   final service = ref.watch(profileServiceProvider);
-  final user = ref.watch(userProvider);
-  final customerId = user?.id ?? '';
+  // Scoped to just the customer id — `userProvider` is a plain Provider
+  // that rebuilds a brand-new (non-equal) UserProfile object on EVERY
+  // authControllerProvider state change, including unrelated actions like
+  // sendEmailOtp()'s isLoading toggle. Watching the whole object here would
+  // tear down and recreate ProfileNotifier on every one of those, blanking
+  // this screen back to its empty initial state while it silently
+  // re-fetches — e.g. tapping "Verify" on the e-mail field would flash the
+  // whole Account Details page blank. Selecting just the id means this
+  // notifier only rebuilds on an actual login/logout (id change).
+  final customerId = ref.watch(userProvider.select((u) => u?.id)) ?? '';
   return ProfileNotifier(service, customerId);
 });
