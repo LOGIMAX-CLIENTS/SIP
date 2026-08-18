@@ -15,7 +15,10 @@ import '../../instant_saving/models/saving_models.dart';
 import '../providers/withdrawal_provider.dart';
 import '../services/withdrawal_service.dart';
 import '../models/withdrawal_balance.dart';
+import '../models/withdrawal_method.dart';
 import '../../../routes/app_router.dart';
+import '../../profile/models/bank_account.dart';
+import '../../sip/screens/bank_account_picker_screen.dart';
 import '../../kyc/kyc_flow.dart';
 import '../../market/models/market_rates.dart';
 import '../../../shared/widgets/loaders.dart';
@@ -1117,7 +1120,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
         // Await the unified KYC hub (PAN + Aadhaar) instead of firing and
         // forgetting — once both are APPROVED, automatically resume the
         // withdrawal exactly where it would have gone had KYC already been
-        // complete (UPI/bank selection), instead of the old behavior where
+        // complete (bank selection), instead of the old behavior where
         // the KYC screen itself hardcoded that navigation.
         final verified = await KycVerificationFlow.start(
           context,
@@ -1126,10 +1129,10 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
         );
         if (!mounted) return;
         if (verified) {
-          Navigator.pushNamed(context, AppRouter.upiSelection);
+          await _selectBankAndProceed();
         }
       } else {
-        Navigator.pushNamed(context, AppRouter.upiSelection);
+        await _selectBankAndProceed();
       }
     } catch (e) {
       if (mounted) {
@@ -1139,5 +1142,35 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
             type: ToastType.error, position: ToastPosition.center);
       }
     }
+  }
+
+  /// Bank-account selection for withdrawal payout — reuses the same
+  /// full-page picker as Auto Savings setup (BankAccountPickerScreen)
+  /// instead of the list+submit-button UpiSelectionScreen. Selecting a
+  /// verified account there pops it back immediately, so there's no
+  /// separate "Withdrawal" submit step here — picking IS confirming,
+  /// and we move straight to the confirmation screen.
+  Future<void> _selectBankAndProceed() async {
+    final account = await Navigator.push<BankAccount>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const BankAccountPickerScreen(
+          subtitle: 'Withdrawals are credited to this registered bank account.',
+        ),
+      ),
+    );
+    if (account == null || !mounted) return;
+
+    ref.read(withdrawalProvider.notifier).selectMethod(
+          WithdrawalMethod(
+            id: account.idBank,
+            identifier: account.accountNumberMasked,
+            title: account.bankName,
+            subtitle: account.ifscCode,
+            isUpi: false,
+            isVerified: account.isVerified,
+          ),
+        );
+    Navigator.pushNamed(context, AppRouter.withdrawalConfirmation);
   }
 }

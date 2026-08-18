@@ -198,10 +198,34 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                   ),
                   SizedBox(height: 2.h),
                   NumericStyledText(
-                    method.identifier,
+                    method.subtitle != null && method.subtitle!.isNotEmpty
+                        ? '${method.identifier}  •  ${method.subtitle}'
+                        : method.identifier,
                     fontSize: 12.sp,
                     fontWeight: FontWeight.w400,
                     color: isDark ? Colors.white54 : Colors.black45,
+                  ),
+                  SizedBox(height: 6.h),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        method.isVerified
+                            ? Icons.verified_rounded
+                            : Icons.hourglass_top_rounded,
+                        size: 13.sp,
+                        color: method.isVerified ? _accentGreen : Colors.orange,
+                      ),
+                      SizedBox(width: 4.w),
+                      Text(
+                        method.isVerified ? 'Verified' : 'Pending Verification',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w600,
+                          color: method.isVerified ? _accentGreen : Colors.orange,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

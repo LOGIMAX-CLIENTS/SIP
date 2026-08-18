@@ -9,14 +9,20 @@ import '../../profile/services/bank_details_service.dart';
 
 const _accentGreen = Color(0xFF1B882C);
 
-/// Full-page bank-account picker for the Setup Auto Savings flow
-/// (KYC gate → this page → payment method). Reuses [bankAccountsProvider]/
-/// [BankAccount] from the Bank Details screen — this is a select-and-return
-/// picker, not a management screen, so only verified accounts are tappable.
-/// Push with `Navigator.push<BankAccount>` and await the popped result
-/// (null if the customer backs out without selecting).
+/// Full-page bank-account picker — used by both the Setup Auto Savings flow
+/// (KYC gate → this page → payment method) and Withdrawal's payout-account
+/// selection. Reuses [bankAccountsProvider]/[BankAccount] from the Bank
+/// Details screen — this is a select-and-return picker, not a management
+/// screen, so only verified accounts are tappable. Push with
+/// `Navigator.push<BankAccount>` and await the popped result (null if the
+/// customer backs out without selecting).
 class BankAccountPickerScreen extends ConsumerWidget {
-  const BankAccountPickerScreen({super.key});
+  final String subtitle;
+
+  const BankAccountPickerScreen({
+    super.key,
+    this.subtitle = 'Auto Savings debits from this registered account.',
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -33,7 +39,7 @@ class BankAccountPickerScreen extends ConsumerWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Auto Savings debits from this registered account.',
+                subtitle,
                 style: GoogleFonts.lora(
                   fontSize: 12.sp,
                   color: isDark ? Colors.white54 : Colors.black54,
