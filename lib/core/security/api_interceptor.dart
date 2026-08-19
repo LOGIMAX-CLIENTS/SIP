@@ -141,11 +141,20 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
     // NOTE: Use an explicit list of public endpoints instead of a broad
     // path.contains('/auth/') check. Endpoints like 'users/auth/referral/details'
     // and 'auth/has-mpin' contain 'auth' in the path but ARE authenticated.
+    //
+    // generate-email-otp/verify-email-otp are intentionally NOT in this list
+    // even though they're used during pre-login registration: they're also
+    // reused by the logged-in Account Details screen to re-verify an
+    // existing customer's own on-file email, and the backend needs the
+    // token there to tell "this is your own email" apart from "this email
+    // belongs to someone else" (see AuthService.generate_email_otp's `user`
+    // param). Excluding them here would silently strip the token and make
+    // that distinction impossible. This is still safe for registration —
+    // no token exists in storage yet at that point, so the `token != null`
+    // check below simply skips attaching the header, same as before.
     const unauthenticatedEndpoints = [
       'auth/generate-otp',
       'auth/verify-otp',
-      'auth/generate-email-otp',
-      'auth/verify-email-otp',
       'auth/register-check',
       'auth/register',
       'auth/token/refresh',
