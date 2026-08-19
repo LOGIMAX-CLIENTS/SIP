@@ -153,6 +153,10 @@ class _BankDetailsSheetState extends State<BankDetailsSheet> {
                     controller: _nameController,
                     contextMenuBuilder: SecureClipboard.none,
                     textCapitalization: TextCapitalization.words,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+                      LengthLimitingTextInputFormatter(60),
+                    ],
                     decoration: _decoration(
                         'Beneficiary Name', 'As per bank records'),
                     validator: (v) => (v == null || v.trim().length < 4)

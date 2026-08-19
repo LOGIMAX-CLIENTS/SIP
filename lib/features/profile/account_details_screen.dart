@@ -184,6 +184,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       AppToast.show(context, 'Name as per PAN is required', type: ToastType.error);
       return;
     }
+    if (name.length < 2) {
+      AppToast.show(context, 'Enter a valid name', type: ToastType.error);
+      return;
+    }
 
     // â”€â”€ Validate Email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final email = _emailController.text.trim();
@@ -326,7 +330,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                           ),
                         ),
                         SizedBox(height: 32.h),
-                        _buildInputField(label: 'Name as per PAN *', controller: _nameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter()]),
+                        _buildInputField(label: 'Name as per PAN *', controller: _nameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(60)]),
                         _buildInputField(label: 'Phone Number *', hint: MaskingUtils.maskMobile(user.phone), isEditable: false, isDark: isDark, isNumeric: true),
                         _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, labelAction: _buildEmailVerifyBadge(user, isDark)),
                         _buildInputField(label: 'DOB *', hint: user.dob, isEditable: false, isDark: isDark, isNumeric: true),

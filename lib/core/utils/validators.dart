@@ -1,7 +1,9 @@
 ﻿class Validators {
   static String? validateMobile(String? value) {
     if (value == null || value.isEmpty) return 'Mobile number is required';
-    final regExp = RegExp(r'^[0-9]{10}$');
+    // Real Indian mobile numbers always start 6-9 — a leading 0-5 is never
+    // valid, even though it's still 10 digits.
+    final regExp = RegExp(r'^[6-9]\d{9}$');
     if (!regExp.hasMatch(value)) return 'Enter a valid 10-digit mobile number';
     return null;
   }

@@ -13,6 +13,7 @@ import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/utils/upper_case_words_formatter.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/security/secure_logger.dart';
+import '../../../core/utils/validators.dart';
 import '../../profile/profile_controller.dart' as pc;
 import '../controller/nominee_controller.dart';
 import '../models/nominee_model.dart';
@@ -458,6 +459,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 textCapitalization: TextCapitalization.words,
                 inputFormatters: [
                   UpperCaseWordsFormatter(),
+                  LengthLimitingTextInputFormatter(60),
                 ],
               ),
 
@@ -1066,14 +1068,9 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     }
 
     final mobile = _mobileCtrl.text.trim();
-    if (mobile.isEmpty) {
-      AppToast.show(context, 'Mobile number is required',
-          type: ToastType.error);
-      return;
-    }
-    if (mobile.length != 10) {
-      AppToast.show(context, 'Enter a valid 10-digit mobile number',
-          type: ToastType.error);
+    final mobileError = Validators.validateMobile(mobile);
+    if (mobileError != null) {
+      AppToast.show(context, mobileError, type: ToastType.error);
       return;
     }
 

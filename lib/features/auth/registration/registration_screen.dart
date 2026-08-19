@@ -178,6 +178,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
                           textCapitalization: TextCapitalization.words,
+                          maxLength: 60,
                           inputFormatters: [
                             // Allow only letters and spaces — no special characters
                             FilteringTextInputFormatter.allow(
@@ -193,8 +194,9 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                               return newValue.copyWith(text: capitalized);
                             }),
                           ],
-                          validator: (v) =>
-                              v == null || v.isEmpty ? 'Required' : null,
+                          validator: (v) => v == null || v.trim().length < 2
+                              ? 'Enter a valid name'
+                              : null,
                         ),
                         SizedBox(height: 6.h),
                         Row(

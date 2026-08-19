@@ -354,7 +354,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         text: 'Initiate Secure Login',
                         svgIconPath: 'assets/buttons/login.svg',
                         isLoading: authState.isLoading,
-                        onPressed: isValid ? _handleLogin : null,
+                        onPressed: authState.isLoading
+                            ? null
+                            : (isValid ? _handleLogin : _showInvalidMobileError),
                         gradient: LinearGradient(
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
@@ -493,6 +495,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ],
       ),
     );
+  }
+
+  void _showInvalidMobileError() {
+    final error = Validators.validateMobile(_mobileController.text) ??
+        'Invalid mobile number';
+    AppToast.show(context, error, type: ToastType.error);
   }
 
   Future<void> _handleLogin() async {

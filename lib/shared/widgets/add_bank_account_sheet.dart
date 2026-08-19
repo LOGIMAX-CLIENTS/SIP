@@ -151,6 +151,7 @@ void showAddBankAccountSheet(
                       isDark,
                       focusNode: nameFocus,
                       forceUpperCase: true,
+                      lettersOnly: true,
                       errorText: nameError,
                       suffix: isCheckingName
                           ? SizedBox(
@@ -292,6 +293,7 @@ Widget _field(
     String label, String hint, TextEditingController ctrl, bool isDark,
     {TextInputType kbd = TextInputType.text,
     bool forceUpperCase = false,
+    bool lettersOnly = false,
     FocusNode? focusNode,
     String? errorText,
     Widget? suffix,
@@ -309,12 +311,14 @@ Widget _field(
         contextMenuBuilder: SecureClipboard.none,
         textCapitalization:
             forceUpperCase ? TextCapitalization.characters : TextCapitalization.none,
-        inputFormatters: forceUpperCase
-            ? [
-                TextInputFormatter.withFunction((oldValue, newValue) =>
-                    newValue.copyWith(text: newValue.text.toUpperCase()))
-              ]
-            : null,
+        inputFormatters: [
+          // Beneficiary name: letters and spaces only — no digits/symbols.
+          if (lettersOnly) FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+          if (lettersOnly) LengthLimitingTextInputFormatter(60),
+          if (forceUpperCase)
+            TextInputFormatter.withFunction((oldValue, newValue) =>
+                newValue.copyWith(text: newValue.text.toUpperCase())),
+        ],
         style: AppTextStyles.kycFieldInput(isDark),
         decoration: InputDecoration(
           hintText: hint,

@@ -614,6 +614,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
                         _UpperCaseNameFormatter(),
+                        LengthLimitingTextInputFormatter(60),
                       ],
                       contextMenuBuilder: SecureClipboard.none,
                       style: AppTextStyles.kycFieldInput(isDark),
@@ -908,6 +909,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             return <TextInputFormatter>[
               FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
               _UpperCaseNameFormatter(),
+              LengthLimitingTextInputFormatter(60),
             ];
           } else if (!isNumeric) {
             return <TextInputFormatter>[UpperCaseFormatter()];
