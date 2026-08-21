@@ -19,6 +19,7 @@ import '../../../core/security/secure_storage_service.dart';
 import '../../../core/utils/navigation_utils.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/services/fcm_service.dart';
+import '../../../core/utils/validators.dart';
 
 class PinCreationScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -95,6 +96,16 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
         Future.delayed(const Duration(milliseconds: 250), () {
           if (!mounted) return;
           if (!_isConfirming) {
+            if (Validators.isWeakPin(_pin)) {
+              setState(() => _pin = '');
+              _shuffleKeypad();
+              AppToast.show(
+                context,
+                'Choose a less predictable PIN — avoid sequences like 123456 or repeated digits.',
+                type: ToastType.error,
+              );
+              return;
+            }
             setState(() {
               _isConfirming = true;
               _confirmPin = '';
@@ -271,6 +282,16 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
                   isLoading: authState.isLoading,
                   onPressed: () {
                     if (!_isConfirming && _pin.length == MpinNotifier.pinLength) {
+                      if (Validators.isWeakPin(_pin)) {
+                        setState(() => _pin = '');
+                        _shuffleKeypad();
+                        AppToast.show(
+                          context,
+                          'Choose a less predictable PIN — avoid sequences like 123456 or repeated digits.',
+                          type: ToastType.error,
+                        );
+                        return;
+                      }
                       setState(() {
                         _isConfirming = true;
                         _confirmPin = '';

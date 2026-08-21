@@ -73,15 +73,28 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     super.dispose();
   }
 
+  /// Customers must be at least 18 — leap-year-accurate (unlike a fixed
+  /// day-count offset) since it's computed from calendar year/month/day.
+  int _calculateAge(DateTime dob) {
+    final now = DateTime.now();
+    int age = now.year - dob.year;
+    if (now.month < dob.month ||
+        (now.month == dob.month && now.day < dob.day)) {
+      age--;
+    }
+    return age;
+  }
+
   Future<void> _selectDate(BuildContext context) async {
     final DateTime now = DateTime.now();
-    final DateTime yesterday = now.subtract(const Duration(days: 1));
+    // The most recent date that still makes the customer 18 today.
+    final DateTime maxDob = DateTime(now.year - 18, now.month, now.day);
 
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: now.subtract(const Duration(days: 6570)), // Default 18 years
+      initialDate: maxDob,
       firstDate: DateTime(1900),
-      lastDate: yesterday,
+      lastDate: maxDob,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -237,8 +250,22 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           suffixIcon: Icon(Icons.calendar_today_rounded,
                               size: 20.sp,
                               color: primaryTextColor.withOpacity(0.5)),
-                          validator: (v) =>
-                              v == null || v.isEmpty ? 'Required' : null,
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Required';
+                            final parts = v.split('/');
+                            if (parts.length != 3) return 'Required';
+                            final day = int.tryParse(parts[0]);
+                            final month = int.tryParse(parts[1]);
+                            final year = int.tryParse(parts[2]);
+                            if (day == null || month == null || year == null) {
+                              return 'Required';
+                            }
+                            final dob = DateTime(year, month, day);
+                            if (_calculateAge(dob) < 18) {
+                              return 'You must be at least 18 years old';
+                            }
+                            return null;
+                          },
                         ),
 
                         SizedBox(height: 24.h),

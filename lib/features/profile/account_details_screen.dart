@@ -13,6 +13,7 @@ import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/custom_button.dart';
 import '../../shared/widgets/secure_clipboard.dart';
 import '../../shared/utils/upper_case_words_formatter.dart';
+import '../../shared/utils/address_input_formatter.dart';
 import '../../core/utils/validators.dart';
 import '../auth/controller/auth_controller.dart';
 import '../../core/services/auth_service.dart';
@@ -172,11 +173,6 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     }
   }
 
-  bool _isValidEmail(String email) {
-    final regex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$');
-    return regex.hasMatch(email);
-  }
-
   Future<void> _handleSubmit() async {
     // â”€â”€ Validate Name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final name = _nameController.text.trim();
@@ -191,12 +187,9 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
 
     // â”€â”€ Validate Email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final email = _emailController.text.trim();
-    if (email.isEmpty) {
-      setState(() => _emailError = 'E-Mail is required');
-      return;
-    }
-    if (!_isValidEmail(email)) {
-      setState(() => _emailError = 'Enter a valid e-mail address');
+    final emailFormatError = Validators.validateEmail(email);
+    if (emailFormatError != null) {
+      setState(() => _emailError = emailFormatError);
       return;
     }
     setState(() => _emailError = null);
@@ -339,7 +332,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                           _buildInputField(label: 'State', controller: _stateController, isEditable: false, isDark: isDark),
                         if (_cityController.text.isNotEmpty)
                           _buildInputField(label: 'City', controller: _cityController, isEditable: false, isDark: isDark),
-                        _buildInputField(label: 'Residential Address', controller: _addressController, isEditable: profileState.isEditing, isDark: isDark, maxLines: 4, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter()]),
+                        _buildInputField(label: 'Residential Address', controller: _addressController, isEditable: profileState.isEditing, isDark: isDark, maxLines: 4, textCapitalization: TextCapitalization.words, inputFormatters: [AddressInputFormatter()]),
                         SizedBox(height: 40.h),
                       ],
                     ),

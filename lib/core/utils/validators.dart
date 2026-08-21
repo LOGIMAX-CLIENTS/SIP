@@ -22,5 +22,21 @@
     if (!emailRegex.hasMatch(value.trim())) return 'Enter a valid e-mail address';
     return null;
   }
+
+  /// Flags an easily-guessable MPIN: every digit the same (e.g. 111111) or a
+  /// strictly ascending/descending run (e.g. 123456, 654321). Not exhaustive
+  /// (e.g. 121212 still passes) — just blocks the most obvious weak picks.
+  static bool isWeakPin(String pin) {
+    if (pin.isEmpty) return false;
+    if (RegExp(r'^(\d)\1+$').hasMatch(pin)) return true;
+    bool ascending = true, descending = true;
+    for (int i = 1; i < pin.length; i++) {
+      final prev = int.parse(pin[i - 1]);
+      final curr = int.parse(pin[i]);
+      if (curr != prev + 1) ascending = false;
+      if (curr != prev - 1) descending = false;
+    }
+    return ascending || descending;
+  }
 }
 

@@ -11,6 +11,7 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/animations.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/gradient_header.dart';
+import '../../core/utils/validators.dart';
 
 enum _ChangePinStep { enterOld, enterNew, confirmNew }
 
@@ -91,6 +92,14 @@ class _ChangeMpinScreenState extends ConsumerState<ChangeMpinScreen> {
           setState(() { _currentInput = ''; });
           _shuffleKeypad();
           AppToast.show(context, 'New PIN must be different from current PIN.', type: ToastType.error);
+          return;
+        }
+        if (Validators.isWeakPin(_currentInput)) {
+          setState(() { _currentInput = ''; });
+          _shuffleKeypad();
+          AppToast.show(context,
+              'Choose a less predictable PIN — avoid sequences like 123456 or repeated digits.',
+              type: ToastType.error);
           return;
         }
         setState(() {

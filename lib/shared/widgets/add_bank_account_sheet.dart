@@ -18,6 +18,8 @@ import 'secure_clipboard.dart';
 /// the Withdrawal bank-selection screen and Profile → Bank Details, so the
 /// add-bank flow only exists once. The server (verify_bank) is the
 /// authoritative gate — this is a pre-flight UX check only.
+final _ifscRegex = RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$');
+
 void showAddBankAccountSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -87,9 +89,9 @@ void showAddBankAccountSheet(
 
         final canSubmit = nameCtrl.text.trim().isNotEmpty &&
             nameMatched &&
-            accCtrl.text.trim().isNotEmpty &&
+            accCtrl.text.trim().length >= 9 &&
             confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
-            ifscCtrl.text.trim().isNotEmpty &&
+            _ifscRegex.hasMatch(ifscCtrl.text.trim().toUpperCase()) &&
             !isVerifying &&
             !isCheckingName;
 
@@ -172,11 +174,13 @@ void showAddBankAccountSheet(
                   _field('Account Number', 'Enter account number', accCtrl,
                       isDark,
                       kbd: TextInputType.number,
+                      digitsOnly: true,
                       onChanged: (_) => setModalState(() {})),
                   SizedBox(height: 12.h),
                   _field('Confirm Account Number', 'Re-enter account number',
                       confirmAccCtrl, isDark,
                       kbd: TextInputType.number,
+                      digitsOnly: true,
                       onChanged: (_) => setModalState(() {})),
                   if (confirmAccCtrl.text.isNotEmpty &&
                       accCtrl.text.trim() != confirmAccCtrl.text.trim()) ...[
@@ -187,6 +191,7 @@ void showAddBankAccountSheet(
                   SizedBox(height: 12.h),
                   _field('IFSC Code', 'e.g. SBIN0001234', ifscCtrl, isDark,
                       forceUpperCase: true,
+                      ifscOnly: true,
                       onChanged: (_) => setModalState(() {})),
                   SizedBox(height: 28.h),
                   CustomButton(
@@ -212,34 +217,48 @@ void showAddBankAccountSheet(
                               if (!sheetCtx.mounted) return;
                               if (result['success'] == true) {
                                 Navigator.pop(sheetCtx);
-                                onAdded();
-                                if (context.mounted) {
-                                  AppToast.show(
-                                    context,
-                                    result['message'] ??
-                                        'Bank account verified successfully',
-                                    type: ToastType.success,
-                                  );
-                                }
-                                // ── ₹1 verify layer — runs after BAV succeeds ──
-                                // id_payout is CustomerBank.cbank_id (see
-                                // CashfreeService.verify_bank()'s response —
-                                // the key name is a holdover from its payout-
-                                // beneficiary registration, not a payout itself).
-                                final cbankId = (result['data']
-                                        as Map<String, dynamic>?)?['id_payout']
-                                    ?.toString();
-                                if (cbankId != null &&
-                                    cbankId.isNotEmpty &&
-                                    context.mounted) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => BankPennyVerifyScreen(
-                                          cbankId: cbankId),
-                                    ),
-                                  );
-                                }
+                                // Defer the provider invalidation, toast, and
+                                // next-screen push to the following frame —
+                                // stacking a ref.invalidate() (rebuilds the
+                                // Bank Details screen underneath), an
+                                // AppToast (inserts its own OverlayEntry),
+                                // and a Navigator.push all synchronously
+                                // right after Navigator.pop(), with no frame
+                                // to let the popped sheet's route actually
+                                // finish tearing down, is what was causing
+                                // "_dependents.isEmpty" InheritedElement
+                                // crashes when navigating back through Bank
+                                // Details.
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  onAdded();
+                                  if (context.mounted) {
+                                    AppToast.show(
+                                      context,
+                                      result['message'] ??
+                                          'Bank account verified successfully',
+                                      type: ToastType.success,
+                                    );
+                                  }
+                                  // ── ₹1 verify layer — runs after BAV succeeds ──
+                                  // id_payout is CustomerBank.cbank_id (see
+                                  // CashfreeService.verify_bank()'s response —
+                                  // the key name is a holdover from its payout-
+                                  // beneficiary registration, not a payout itself).
+                                  final cbankId = (result['data']
+                                          as Map<String, dynamic>?)?['id_payout']
+                                      ?.toString();
+                                  if (cbankId != null &&
+                                      cbankId.isNotEmpty &&
+                                      context.mounted) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => BankPennyVerifyScreen(
+                                            cbankId: cbankId),
+                                      ),
+                                    );
+                                  }
+                                });
                               } else {
                                 setModalState(() => isVerifying = false);
                                 final errMsg = result['message'] ??
@@ -294,6 +313,8 @@ Widget _field(
     {TextInputType kbd = TextInputType.text,
     bool forceUpperCase = false,
     bool lettersOnly = false,
+    bool digitsOnly = false,
+    bool ifscOnly = false,
     FocusNode? focusNode,
     String? errorText,
     Widget? suffix,
@@ -315,6 +336,13 @@ Widget _field(
           // Beneficiary name: letters and spaces only — no digits/symbols.
           if (lettersOnly) FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
           if (lettersOnly) LengthLimitingTextInputFormatter(60),
+          // Account number: digits only — keyboardType alone doesn't block
+          // letters/symbols pasted in or typed via an alternate keyboard.
+          if (digitsOnly) FilteringTextInputFormatter.digitsOnly,
+          if (digitsOnly) LengthLimitingTextInputFormatter(20),
+          // IFSC: letters+digits only, exactly 11 chars (AAAA0999999).
+          if (ifscOnly) FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+          if (ifscOnly) LengthLimitingTextInputFormatter(11),
           if (forceUpperCase)
             TextInputFormatter.withFunction((oldValue, newValue) =>
                 newValue.copyWith(text: newValue.text.toUpperCase())),
