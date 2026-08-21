@@ -11,6 +11,7 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/utils/upper_case_words_formatter.dart';
+import '../../../shared/utils/address_input_formatter.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/security/secure_logger.dart';
 import '../../../core/utils/validators.dart';
@@ -491,14 +492,8 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 icon: Icons.email_rounded,
                 keyboardType: TextInputType.emailAddress,
                 isOptional: true,
-                validator: (v) {
-                  if (v != null && v.isNotEmpty) {
-                    final emailRegex = RegExp(
-                        r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-                    if (!emailRegex.hasMatch(v)) return 'Enter a valid email';
-                  }
-                  return null;
-                },
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? null : Validators.validateEmail(v),
               ),
 
               SizedBox(height: 20.h),
@@ -563,7 +558,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 textCapitalization: TextCapitalization.words,
                 maxLines: 4,
                 inputFormatters: [
-                  UpperCaseWordsFormatter(),
+                  AddressInputFormatter(),
                 ],
                 isOptional: true,
               ),
@@ -1071,6 +1066,26 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     final mobileError = Validators.validateMobile(mobile);
     if (mobileError != null) {
       AppToast.show(context, mobileError, type: ToastType.error);
+      return;
+    }
+
+    // Email is optional — only enforce format when the customer typed one.
+    final email = _emailCtrl.text.trim();
+    if (email.isNotEmpty) {
+      final emailError = Validators.validateEmail(email);
+      if (emailError != null) {
+        AppToast.show(context, emailError, type: ToastType.error);
+        return;
+      }
+    }
+
+    // Pincode is optional, but if the customer started typing one it must be
+    // complete — otherwise an untouched/never-"Check"ed partial pincode
+    // (e.g. "123") would silently save with the nominee record, since
+    // _isPincodeValid only ever flips false when Check is explicitly run.
+    final pincode = _pincodeCtrl.text.trim();
+    if (pincode.isNotEmpty && pincode.length != 6) {
+      AppToast.show(context, 'Enter a valid 6-digit pincode', type: ToastType.error);
       return;
     }
 

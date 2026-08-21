@@ -16,6 +16,7 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/add_bank_account_sheet.dart';
+import '../../../core/utils/kyc_validator.dart';
 
 class UpiSelectionScreen extends ConsumerStatefulWidget {
   const UpiSelectionScreen({super.key});
@@ -632,6 +633,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 SizedBox(height: 24.h),
                 _buildField('Enter UPI ID', 'example@abc', ctrl, isDark,
                     enabled: !isVerifying,
+                    upiFormat: true,
                     onChanged: (_) => setModalState(() {})),
                 SizedBox(height: 28.h),
                 CustomButton(
@@ -675,6 +677,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
       {TextInputType kbd = TextInputType.text,
       bool forceUpperCase = false,
       bool enabled = true,
+      bool upiFormat = false,
       ValueChanged<String>? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -690,12 +693,17 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
           textCapitalization: forceUpperCase
               ? TextCapitalization.characters
               : TextCapitalization.none,
-          inputFormatters: forceUpperCase
-              ? [
-                  TextInputFormatter.withFunction((oldValue, newValue) =>
-                      newValue.copyWith(text: newValue.text.toUpperCase()))
-                ]
-              : null,
+          inputFormatters: [
+            // UPI ID: no spaces or symbols outside what's actually valid in
+            // the handle/bank-name — blocks obvious garbage at keystroke
+            // level; the real name@bank check still happens on submit.
+            if (upiFormat)
+              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9._@-]')),
+            if (upiFormat) LengthLimitingTextInputFormatter(256),
+            if (forceUpperCase)
+              TextInputFormatter.withFunction((oldValue, newValue) =>
+                  newValue.copyWith(text: newValue.text.toUpperCase())),
+          ],
           style: AppTextStyles.kycFieldInput(isDark),
           decoration: InputDecoration(
             hintText: hint,
@@ -723,10 +731,10 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
   Future<void> _processAddUpi(
       BuildContext sheetCtx, WidgetRef ref, String upi,
       StateSetter setModalState, void Function(bool) setVerifying) async {
-    if (!upi.contains('@')) {
+    final upiError = KycValidator.validateUPI(upi);
+    if (upiError != null) {
       if (mounted) {
-        AppToast.show(sheetCtx, 'Please enter a valid UPI ID (e.g. name@bank)',
-            type: ToastType.error);
+        AppToast.show(sheetCtx, upiError, type: ToastType.error);
       }
       return;
     }

@@ -906,13 +906,25 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       enableSuggestions: false,
                       autocorrect: false,
                       onChanged: (v) => setState(() => _selectedAmount = v),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*\.?\d*')),
-                        const NoLeadingZerosFormatter(),
-                      ],
+                      keyboardType: TextInputType.numberWithOptions(
+                          decimal: !_isAmountMode),
+                      // Rupees mode: whole numbers only (matches SIP's rule).
+                      // Grams mode: decimals allowed, capped at 6 places —
+                      // matching the app's own display/calculation precision
+                      // (see _trunc6) so the field never accepts more
+                      // precision than is actually used downstream.
+                      inputFormatters: _isAmountMode
+                          ? [
+                              FilteringTextInputFormatter.digitsOnly,
+                              const NoLeadingZerosFormatter(allowDecimal: false),
+                              LengthLimitingTextInputFormatter(8),
+                            ]
+                          : [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d*\.?\d{0,6}')),
+                              const NoLeadingZerosFormatter(),
+                              LengthLimitingTextInputFormatter(12),
+                            ],
                       style: GoogleFonts.lora(
                           fontSize: 20.sp,
                           fontWeight: FontWeight.w700,

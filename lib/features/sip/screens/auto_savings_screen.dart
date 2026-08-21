@@ -998,6 +998,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 NoLeadingZerosFormatter(),
+                LengthLimitingTextInputFormatter(8),
               ],
               style: GoogleFonts.lora(
                 fontSize: 22.sp,

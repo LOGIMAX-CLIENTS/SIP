@@ -695,6 +695,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
                               const NoLeadingZerosFormatter(allowDecimal: false),
+                              LengthLimitingTextInputFormatter(8),
                             ],
                             onChanged: (val) {
                               final doubleValue = val.isEmpty
