@@ -1327,14 +1327,20 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     double totalPayable, metalValue, gstAmount, grams;
     if (_isAmountMode) {
       totalPayable = _trunc2(inputVal);
-      metalValue = _trunc2(totalPayable / (1 + gstRate));
-      gstAmount = _trunc2(totalPayable - metalValue);
+      final rawMetalValue = totalPayable / (1 + gstRate);
+      gstAmount = _roundTaxToEvenPaisa(totalPayable - rawMetalValue);
+      // totalPayable and gstAmount are both already exact to the paisa —
+      // floor-truncating their difference again risks a false -0.01 from
+      // binary floating-point noise (e.g. 273.78 * 100 == 27377.999...996).
+      metalValue = totalPayable - gstAmount;
       grams = rate > 0 ? _trunc6(metalValue / rate) : 0.0;
     } else {
       grams = _trunc6(inputVal);
       metalValue = _trunc2(grams * rate);
-      gstAmount = _trunc2(metalValue * gstRate);
-      totalPayable = _trunc2(metalValue + gstAmount);
+      gstAmount = _roundTaxToEvenPaisa(metalValue * gstRate);
+      // Same reasoning as above — metalValue and gstAmount are already
+      // exact to the paisa, so sum them directly instead of re-flooring.
+      totalPayable = metalValue + gstAmount;
     }
     return {
       'total': totalPayable,
@@ -1709,6 +1715,14 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
   // Match backend precision: weights → 6 decimals, amounts → 2 decimals.
   static double _trunc6(double v) => (v * 1000000).floorToDouble() / 1000000;
   static double _trunc2(double v) => (v * 100).floorToDouble() / 100;
+
+  // Match backend `round_tax_to_even_paisa`: nudge the GST amount up by
+  // ₹0.01 if its paisa digit is odd, so it always ends in an even paisa digit.
+  static double _roundTaxToEvenPaisa(double v) {
+    int paisa = (v * 100).round();
+    if (paisa % 2 != 0) paisa += 1;
+    return paisa / 100;
+  }
 }
 
 /// Wise-style breakdown bottom sheet
