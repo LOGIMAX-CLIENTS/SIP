@@ -271,6 +271,17 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
     if (finalState.phase == AadhaarPhase.approved) {
       await _checkAndHandleCompletion();
+      return;
+    }
+
+    // pollUntilTerminal exhausted its retries while DigiLocker was still
+    // processing (e.g. the provider's document-fetch/cross-verify chain
+    // outran the client's polling window) — it resets to awaitingConsent
+    // with an explanatory message instead of a terminal phase. Without this,
+    // the user sees the DigiLocker screen close and nothing else: no
+    // success, no error. Surface it so they know to check back / retry.
+    if (finalState.message != null) {
+      AppToast.show(context, finalState.message!, type: ToastType.info);
     }
   }
 
