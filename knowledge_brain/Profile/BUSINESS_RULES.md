@@ -79,26 +79,14 @@ a normal logout, not a deletion-specific wipe.
 local secrets — is done correctly. Whether the *server* actually purges/anonymizes data (vs. a soft
 deactivation) is outside this module's code and **unconfirmed**.
 
-## RULE-PROFILE-010 — (Critical, likely bug) The bank-account-creation endpoint path is corrupted by an unescaped Dart string literal
+## RULE-PROFILE-010 — RETRACTED (2026-08-24): claimed backslash-escape bug does not reproduce
 
-`withdrawal_service.dart:106`: `_apiClient.post('account\verify-bank', data: {...})`. This is a plain
-(non-raw) Dart string; `\v` is a recognized Dart escape sequence (vertical tab, `U+000B`), so the actual
-runtime string is `"account" + U+000B + "erify-bank"`, **not** `"account/verify-bank"`. Two consequences,
-both **unconfirmed at runtime** (would need a live network capture or the actual Dio-resolved URL to
-verify) but follow directly from Dart's string-literal grammar:
-1. The HTTP request path sent to the backend is malformed and would not route to the intended endpoint
-   unless the backend/Dio layer somehow tolerates/strips the control character.
-2. `AppConfig.encryptedEndpoints` gates on `path.contains('verify-bank')` (`api_interceptor.dart:134,194`)
-   — a corrupted path containing `U+000B` instead of `/` would **not** contain the substring `'verify-bank'`
-   (missing `v`), so the encryption interceptor would never fire for this request, meaning `account_no`
-   and `ifsc_code` — both listed in `AppConfig.sensitiveFields` — would ship in plaintext JSON if the
-   request went through at all.
-**Impact scope**: this single call is the creation step for every "Add Bank Account" action app-wide
-(Profile's `BankDetailsScreen` and SIP's `BankAccountPickerScreen` both funnel through
-`shared/widgets/add_bank_account_sheet.dart` → this exact call). A sibling bug of the same shape exists in
-`withdrawal_service.dart:117` (`'referrals\reward-balance'`, `\r` = carriage return) — outside this
-module's scope but confirms the pattern isn't a one-off.
-**Recommended fix** (not applied — flagging only per this task's scope): change to
-`'account/verify-bank'` (forward slash) or use a raw string `r'account\verify-bank'` if a literal backslash
-were ever actually intended (it isn't — no other endpoint in the codebase uses backslash path separators).
-See FORENSIC_TEMPLATE.md for the matching symptom entry.
+Original finding claimed `withdrawal_service.dart:106` read `_apiClient.post('account\verify-bank', ...)`
+with a `\v` (vertical-tab) escape corrupting the path, and cited a sibling at `withdrawal_service.dart:117`
+(`'referrals\reward-balance'`, `\r`). Re-verified 2026-08-24 via byte-level inspection (`cat -A`, confirming
+no `^K`/`^M` control characters present) and `git log -p` across recent commits touching this file: both
+strings are, and have been, plain forward slashes — `'account/verify-bank'` and
+`'referrals/reward-balance'`. Neither bug exists; `account_no`/`ifsc_code` DO get encrypted on the
+Add Bank Account call (path correctly matches `AppConfig.encryptedEndpoints`'s `'verify-bank'` entry).
+Treat this rule as void — kept here (rather than deleted) only as a record that the claim was checked and
+disproven, so it isn't independently "rediscovered" and re-flagged later.

@@ -57,7 +57,8 @@ class KycSubmitController extends StateNotifier<AsyncValue<bool>> {
 enum AadhaarPhase {
   idle,
   initiating,
-  awaitingConsent, // consent_url ready — hub should open the DigiLocker WebView
+  awaitingConsent, // consent_url ready (Cashfree) — hub should open the DigiLocker WebView
+  awaitingSdk, // sdk_token ready (SurePass) — hub should launch the native DigiLocker Flutter SDK
   polling,
   approved,
   expired,
@@ -69,6 +70,14 @@ class AadhaarState {
   final AadhaarPhase phase;
   final String? verificationId;
   final String? consentUrl;
+  // SurePass SDK-flow fields — populated instead of consentUrl when the
+  // active backend gateway is SurePass (see kyc.py's initiate_digilocker
+  // branch: providers report EITHER a consent_url (Cashfree) OR an
+  // sdk_token+provider_client_id (SurePass), never both.
+  final String? sdkToken;
+  final String? providerClientId;
+  final int? sdkTokenExpirySeconds;
+  final String? sdkEnvironment; // "SANDBOX" | "PRODUCTION" — which base URL issued sdkToken
   final String? message;
   final String? maskedNumber;
   final String? verifiedName;
@@ -77,6 +86,10 @@ class AadhaarState {
     this.phase = AadhaarPhase.idle,
     this.verificationId,
     this.consentUrl,
+    this.sdkToken,
+    this.providerClientId,
+    this.sdkTokenExpirySeconds,
+    this.sdkEnvironment,
     this.message,
     this.maskedNumber,
     this.verifiedName,
@@ -86,6 +99,10 @@ class AadhaarState {
     AadhaarPhase? phase,
     String? verificationId,
     String? consentUrl,
+    String? sdkToken,
+    String? providerClientId,
+    int? sdkTokenExpirySeconds,
+    String? sdkEnvironment,
     String? message,
     String? maskedNumber,
     String? verifiedName,
@@ -94,6 +111,10 @@ class AadhaarState {
       phase: phase ?? this.phase,
       verificationId: verificationId ?? this.verificationId,
       consentUrl: consentUrl ?? this.consentUrl,
+      sdkToken: sdkToken ?? this.sdkToken,
+      providerClientId: providerClientId ?? this.providerClientId,
+      sdkTokenExpirySeconds: sdkTokenExpirySeconds ?? this.sdkTokenExpirySeconds,
+      sdkEnvironment: sdkEnvironment ?? this.sdkEnvironment,
       message: message ?? this.message,
       maskedNumber: maskedNumber ?? this.maskedNumber,
       verifiedName: verifiedName ?? this.verifiedName,
@@ -180,6 +201,21 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
           phase: AadhaarPhase.awaitingConsent,
           verificationId: data['verification_id']?.toString(),
           consentUrl: data['consent_url'].toString(),
+          message: data['message']?.toString(),
+        );
+        return;
+      }
+
+      if (status == 'PENDING' && data['sdk_token'] != null) {
+        state = state.copyWith(
+          phase: AadhaarPhase.awaitingSdk,
+          verificationId: data['verification_id']?.toString(),
+          sdkToken: data['sdk_token'].toString(),
+          providerClientId: data['provider_client_id']?.toString(),
+          sdkTokenExpirySeconds: data['sdk_token_expiry_seconds'] is num
+              ? (data['sdk_token_expiry_seconds'] as num).toInt()
+              : null,
+          sdkEnvironment: data['sdk_environment']?.toString(),
           message: data['message']?.toString(),
         );
         return;

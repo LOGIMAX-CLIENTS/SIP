@@ -10,7 +10,7 @@ Alphabetical by class. `file:line` → what it does → who calls it. ⚠️ mar
 
 | Method | Line | Purpose | Callers |
 |---|---|---|---|
-| `initiate({requestFrom, aadhaarNumber, fullName, allowReverify})` | 157-195 | Step 1: request DigiLocker consent session via `KycRepository.initiateAadhaar`. Short-circuits to `approved` if backend reports already-approved. | `screens/kyc_screen.dart:_onVerifyAadhaar()` (217) |
+| `initiate({requestFrom, aadhaarNumber, fullName, allowReverify})` | 157-~210 | Step 1: request DigiLocker consent session via `KycRepository.initiateAadhaar`. Short-circuits to `approved` if backend reports already-approved. Branches on the response shape: `consent_url` present → `AadhaarPhase.awaitingConsent` (Cashfree webview); `sdk_token` present → `AadhaarPhase.awaitingSdk` (SurePass native SDK, new 2026-08-24) — the two are mutually exclusive per active gateway, never both. | `screens/kyc_screen.dart:_onVerifyAadhaar()` (217) |
 | `pollUntilTerminal(requestFrom, {maxAttempts=10, delay=2s})` | 201-273 | Step 2: polls `KycRepository.pollAadhaar` up to 10x/2s apart until APPROVED/EXPIRED/REJECTED; on repeated PENDING, reverts to `awaitingConsent` with a "taking longer" message (not a failure). | `screens/kyc_screen.dart:_onVerifyAadhaar()` (238) |
 | `reset()` | 277 | Resets to `AadhaarState()` idle. | `screens/kyc_screen.dart:_editAadhaar()` (151) |
 | `seedApproved({maskedNumber, name})` | 284-292 | Seeds card as approved from server status without a DigiLocker round trip; no-op unless phase is `idle`. | `screens/kyc_screen.dart:_seedAadhaarIfApproved()` (133) |
@@ -95,6 +95,17 @@ Not reachable from `app_router.dart` — reference only.
 |---|---|---|
 | `initState()` | 38-61 | Configures `WebViewController`, intercepts navigation containing `/kyc/digilocker-callback` and pops `true` instead of letting the WebView load it. |
 | `_enableThirdPartyCookies()` | 68-77 | Android-only: explicitly allows third-party cookies so the digilocker.gov.in → Cashfree domain handoff doesn't silently stall. |
+
+## DigilockerSdkScreen (`widgets/digilocker_sdk_screen.dart`, new 2026-08-24)
+
+SurePass counterpart to `AadhaarDigilockerWebView` above — same pop-result contract (`true`/`false`/null),
+routed at `AppRouter.digilockerSdk`. Takes `sdkToken`/`clientId`/`environment` (from `AadhaarState.sdkToken`/
+`providerClientId`/`sdkEnvironment`) instead of a `consentUrl`. Android minSdk 28 already met at 29;
+iOS `IPHONEOS_DEPLOYMENT_TARGET` raised from 13.0 to 15.0 to meet the package's minimum.
+
+| Method | Purpose |
+|---|---|
+| `_launchSdk()` | Calls `DigilockerSdk.start(context, apiToken: widget.sdkToken, environment: Environment.SANDBOX\|PROD, onComplete:, onError:)` from `package:digilocker_flutter_sdk` (v1.0.6 — API confirmed by reading the resolved pub-cache source directly, since SurePass's own docs never specified the Flutter SDK's Dart surface). The package internally does its own login (`GET /digilocker/options` with `apiToken` as Bearer) then pushes its own verification/webview screen(s) on top of this one; `onComplete(VerificationResult)` / `onError(String)` fire once that internal stack unwinds. `environment` MUST match whichever base_url (sandbox vs prod) issued `apiToken` on the backend — threaded through as `AadhaarState.sdkEnvironment` from the `kyc/upload` response's `sdk_environment` field (see `DigiLockerInitiateResult.environment` in the backend contract). |
 
 ## KycValidator ⚠️ dead code (`core/utils/kyc_validator.dart`)
 

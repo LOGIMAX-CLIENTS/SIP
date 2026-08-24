@@ -23,6 +23,24 @@ Alphabetical by class. Public API surface only (private `_`-prefixed helpers omi
 | `confirm` | `Future<Map<String,dynamic>> confirm({required String internalOrderId})` | 37 | `BankPennyVerifyScreen._confirmAndFinish` |
 | `initiate` | `Future<Map<String,dynamic>> initiate({required String cbankId, required String paymentMethod})` | 18 | `BankPennyVerifyScreen._startVerification` |
 
+## `ReversePennyDropService` (`services/reverse_penny_drop_service.dart`) — new 2026-08-24
+
+SurePass RPD — optional extra check layered on top of an already Pennyless-verified `CustomerBank` row
+(cannot target a specific account by itself; see backend `bank_verification_surepass.py`).
+
+| Method | Signature | Purpose | Callers |
+|---|---|---|---|
+| `initiate` | `Future<Map<String,dynamic>> initiate({required String cbankId})` | `POST account/verify-bank/rpd/initiate` — returns `client_id`, `payment_link`, `ios_links` | `ReversePennyDropScreen._startVerification` |
+| `status` | `Future<Map<String,dynamic>> status({required String clientId})` | `POST account/verify-bank/rpd/status` — server-authoritative re-check, never trusts client state | `ReversePennyDropScreen._checkStatus` |
+| `history` | `Future<List<Map<String,dynamic>>> history()` | `GET account/verify-bank/rpd/history` | not yet wired to a screen |
+
+## `WithdrawalService` additions (`features/withdrawal/services/withdrawal_service.dart`) — new 2026-08-24
+
+| Method | Signature | Purpose | Callers |
+|---|---|---|---|
+| `getActiveBankVerificationMethod` | `Future<String> getActiveBankVerificationMethod()` | `GET account/verify-bank/active-method` — `'cashfree'` \| `'pennyless'`, server-resolved from `gateways_config`; defaults to `'cashfree'` on any error | `add_bank_account_sheet.dart` (before calling verify) |
+| `verifyAndAddBankPennyless` | `Future<Map<String,dynamic>> verifyAndAddBankPennyless({required String holderName, required String accNo, required String ifsc})` | `POST account/verify-bank/pennyless` — SurePass instant BAV, alternative to `verifyAndAddBank` | `add_bank_account_sheet.dart` (when active method is `'pennyless'`) |
+
 ## `BankVerificationCard` (`models/bank_verification_history.dart`) — static merge logic, not a service
 
 | Method | Signature | file:line | Callers |
