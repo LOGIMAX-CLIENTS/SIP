@@ -225,6 +225,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final afterInitiate = ref.read(aadhaarProvider);
     if (afterInitiate.phase == AadhaarPhase.awaitingConsent &&
         afterInitiate.consentUrl != null) {
+      // Cashfree — webview consent flow.
       final consentConfirmed = await Navigator.pushNamed(
         context,
         AppRouter.aadhaarVerification,
@@ -235,6 +236,22 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       // they backed out (hardware back → pops with a null result) there is
       // nothing new to check yet, so skip the round trip.
       if (consentConfirmed == true) {
+        await notifier.pollUntilTerminal(widget.requestFrom);
+      }
+    } else if (afterInitiate.phase == AadhaarPhase.awaitingSdk &&
+        afterInitiate.sdkToken != null) {
+      // SurePass — native DigiLocker Flutter SDK flow.
+      final sdkConfirmed = await Navigator.pushNamed(
+        context,
+        AppRouter.digilockerSdk,
+        arguments: {
+          'sdkToken': afterInitiate.sdkToken,
+          'clientId': afterInitiate.providerClientId,
+          'environment': afterInitiate.sdkEnvironment,
+        },
+      );
+      if (!mounted) return;
+      if (sdkConfirmed == true) {
         await notifier.pollUntilTerminal(widget.requestFrom);
       }
     }
@@ -495,7 +512,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                           style: AppTextStyles.titleLarge(isDark)),
                       SizedBox(height: 8.h),
                       Text(
-                        'PAN and Aadhaar verification are both required.',
+                        'Aadhaar and PAN are verified together via DigiLocker.',
                         style: AppTextStyles.fieldHelper(isDark),
                       ),
                       SizedBox(height: 32.h),
@@ -514,6 +531,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
+  /// PAN is verified automatically from the same DigiLocker consent used
+  /// for Aadhaar (see backend `KYCService._try_persist_digilocker_pan`,
+  /// which fetches the PAN from DigiLocker then cross-verifies it via
+  /// SurePass's /pan/pan-comprehensive) — there is deliberately no manual
+  /// PAN entry form anymore. Any OTHER future document type still gets the
+  /// generic field-form path below.
   Widget _buildDocumentCard(KycDocumentType doc, bool isDark) {
     final isPan = doc.name.toUpperCase().contains('PAN') ||
         doc.code.toUpperCase().contains('PAN');
@@ -529,18 +552,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           if (isDone)
             _buildVerifiedBanner(
               isDark,
-              numberLabel: 'PAN Number',
+              numberLabel: isPan ? 'PAN Number' : null,
               maskedValue: doc.maskedValue,
-              nameLabel: 'Name as on PAN',
+              nameLabel: isPan ? 'Name as on PAN' : null,
               verifiedName: doc.verifiedName,
-              onEdit: () => _editDocument(doc),
+              // PAN has no manual re-entry path — redo Aadhaar (its own
+              // Edit) to trigger a fresh DigiLocker consent + PAN re-check.
+              onEdit: isPan ? null : () => _editDocument(doc),
             )
+          else if (isPan)
+            _buildPanAutoVerifyNotice(isDark)
           else ...[
             Form(
               key: _docFormKeys[doc.id],
-              child: isPan
-                  ? _buildPanCard(doc, isDark)
-                  : _buildGenericCard(doc, isDark, false),
+              child: _buildGenericCard(doc, isDark, false),
             ),
             SizedBox(height: 12.h),
             CustomButton(
@@ -551,6 +576,37 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               gradient: AppTheme.greenGradient,
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Shown in place of the (removed) manual PAN entry form while PAN is
+  /// still pending — PAN verification is entirely driven by the Aadhaar
+  /// DigiLocker consent below, not by anything entered on this card.
+  Widget _buildPanAutoVerifyNotice(bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(20.r),
+      decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withOpacity(0.03)
+              : Colors.black.withOpacity(0.02),
+          borderRadius: BorderRadius.circular(20.r)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded,
+              size: 18.sp, color: isDark ? Colors.white54 : Colors.black45),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              'PAN is verified automatically via DigiLocker — complete '
+              'Aadhaar verification below and PAN will be checked at the '
+              'same time.',
+              style: AppTextStyles.fieldHelper(isDark),
+            ),
+          ),
         ],
       ),
     );
@@ -783,81 +839,6 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 style: GoogleFonts.playfairDisplay(
                     fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPanCard(KycDocumentType doc, bool isDark) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(24.r),
-      decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E3A8A).withOpacity(0.2)
-            : const Color(0xFFE2F1FF),
-        borderRadius: BorderRadius.circular(24.r),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 20,
-              offset: const Offset(0, 8))
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('आयकर विभाग',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.notoSans(
-                            fontSize: 11.sp,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black)),
-                    Text('INCOME TAX DEPARTMENT',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 9.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white70 : Colors.black54)),
-                  ],
-                ),
-              ),
-              Icon(Icons.account_balance_rounded,
-                  size: 32.sp, color: isDark ? Colors.white38 : Colors.black45),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('भारत सरकार',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.notoSans(
-                            fontSize: 11.sp,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black)),
-                    Text('GOVT OF INDIA',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 9.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white70 : Colors.black54)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 24.h),
-          _buildDocInputs(doc, isDark, false, true),
         ],
       ),
     );

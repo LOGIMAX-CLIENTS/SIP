@@ -60,6 +60,11 @@ dependencies:
   hypersdkflutter: ^4.0.57
   razorpay_flutter: ^1.4.5
 
+  # KYC — SurePass DigiLocker (Aadhaar/PAN verification)
+  # Version per SurePass docs example (^1.0.0) — confirm the actual latest
+  # release before first build; Android minSdk 28, iOS 15.0 required.
+  digilocker_flutter_sdk: ^1.0.0
+
   # Splash Screen (must be in dependencies for native integration)
   flutter_native_splash: ^2.4.7
   flutter_widget_from_html_core: ^0.17.2

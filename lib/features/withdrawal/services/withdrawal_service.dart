@@ -113,6 +113,37 @@ class WithdrawalService {
     return response.data ?? {};
   }
 
+  /// GET account/verify-bank/active-method — which BAV method the currently
+  /// active KYC verification gateway supports ("cashfree" | "pennyless").
+  /// Add Bank Account calls this once before verifying so it never
+  /// hardcodes a provider name client-side.
+  Future<String> getActiveBankVerificationMethod() async {
+    try {
+      final response = await _apiClient.get('account/verify-bank/active-method');
+      final method = (response.data?['data']?['method'] as String?) ?? 'cashfree';
+      return method == 'pennyless' ? 'pennyless' : 'cashfree';
+    } catch (_) {
+      return 'cashfree'; // Safe default — matches the only-ever-active provider today.
+    }
+  }
+
+  /// Verify and add a bank account via SurePass "pennyless" BAV — instant,
+  /// no ₹1 transferred. Alternative to [verifyAndAddBank] (Cashfree penny
+  /// drop); only succeeds when SurePass is the active KYC verification
+  /// gateway (see backend BankVerificationSurePassService.verify_pennyless).
+  Future<Map<String, dynamic>> verifyAndAddBankPennyless({
+    required String holderName,
+    required String accNo,
+    required String ifsc,
+  }) async {
+    final response = await _apiClient.post('account/verify-bank/pennyless', data: {
+      'account_holder': holderName,
+      'account_no': accNo,
+      'ifsc_code': ifsc,
+    });
+    return response.data ?? {};
+  }
+
   /// Fetch withdrawable balance for the selected metal.
   /// Endpoint: POST referrals/reward-balance
   /// Payload:  { "id_metal": "1" }

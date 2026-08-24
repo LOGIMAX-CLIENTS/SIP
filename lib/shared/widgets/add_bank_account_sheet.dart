@@ -204,16 +204,28 @@ void showAddBankAccountSheet(
                             if (user == null) return;
                             setModalState(() => isVerifying = true);
                             try {
-                              final result = await ref
-                                  .read(withdrawalServiceProvider)
-                                  .verifyAndAddBank(
-                                    customerId: user.id,
-                                    mobile: user.mobile,
-                                    holderName: nameCtrl.text.trim(),
-                                    bankName: '',
-                                    accNo: accCtrl.text.trim(),
-                                    ifsc: ifscCtrl.text.trim(),
-                                  );
+                              final withdrawalSvc = ref.read(withdrawalServiceProvider);
+                              // Which BAV method the active KYC gateway supports —
+                              // never hardcode a provider name client-side (see
+                              // getActiveBankVerificationMethod's doc comment).
+                              final method =
+                                  await withdrawalSvc.getActiveBankVerificationMethod();
+                              final isPennyless = method == 'pennyless';
+
+                              final result = isPennyless
+                                  ? await withdrawalSvc.verifyAndAddBankPennyless(
+                                      holderName: nameCtrl.text.trim(),
+                                      accNo: accCtrl.text.trim(),
+                                      ifsc: ifscCtrl.text.trim(),
+                                    )
+                                  : await withdrawalSvc.verifyAndAddBank(
+                                      customerId: user.id,
+                                      mobile: user.mobile,
+                                      holderName: nameCtrl.text.trim(),
+                                      bankName: '',
+                                      accNo: accCtrl.text.trim(),
+                                      ifsc: ifscCtrl.text.trim(),
+                                    );
                               if (!sheetCtx.mounted) return;
                               if (result['success'] == true) {
                                 Navigator.pop(sheetCtx);
@@ -239,15 +251,20 @@ void showAddBankAccountSheet(
                                       type: ToastType.success,
                                     );
                                   }
-                                  // ── ₹1 verify layer — runs after BAV succeeds ──
+                                  // ── ₹1 verify layer — runs after Cashfree BAV succeeds only ──
                                   // id_payout is CustomerBank.cbank_id (see
                                   // CashfreeService.verify_bank()'s response —
                                   // the key name is a holdover from its payout-
                                   // beneficiary registration, not a payout itself).
+                                  // SurePass Pennyless BAV is already instant/complete —
+                                  // no extra payment step here; Reverse Penny Drop is a
+                                  // separate OPTIONAL check reached from the Bank
+                                  // Verification Hub instead (see reverse_penny_drop_screen.dart).
                                   final cbankId = (result['data']
                                           as Map<String, dynamic>?)?['id_payout']
                                       ?.toString();
-                                  if (cbankId != null &&
+                                  if (!isPennyless &&
+                                      cbankId != null &&
                                       cbankId.isNotEmpty &&
                                       context.mounted) {
                                     Navigator.push(

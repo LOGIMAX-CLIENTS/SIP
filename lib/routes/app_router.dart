@@ -29,6 +29,8 @@ import '../features/withdrawal/screens/upi_selection_screen.dart';
 import '../features/withdrawal/screens/withdrawal_success_screen.dart';
 import '../features/kyc/screens/kyc_screen.dart' as dynamic_kyc;
 import '../features/kyc/widgets/aadhaar_digilocker_webview.dart';
+import '../features/kyc/widgets/digilocker_sdk_screen.dart';
+import '../features/profile/screens/reverse_penny_drop_screen.dart';
 import '../features/instant_saving/screens/payment_methods_screen.dart';
 import '../features/history/screens/transaction_history_screen.dart';
 import '../features/history/screens/transaction_details_screen.dart';
@@ -69,6 +71,8 @@ class AppRouter {
   static const String kyc = '/kyc';
   static const String panVerification = '/pan-verification';
   static const String aadhaarVerification = '/aadhaar-verification';
+  static const String digilockerSdk = '/digilocker-sdk';
+  static const String reversePennyDrop = '/reverse-penny-drop';
   static const String bankVerification = '/bank-verification';
   static const String instantSaving = '/instant-saving';
   static const String dailySavings = '/daily-savings';
@@ -157,6 +161,20 @@ class AppRouter {
           return AadhaarDigilockerWebView(
             consentUrl: args['consentUrl'] as String,
           );
+        },
+        digilockerSdk: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return DigilockerSdkScreen(
+            sdkToken: args['sdkToken'] as String,
+            clientId: args['clientId'] as String?,
+            environment: args['environment'] as String?,
+          );
+        },
+        reversePennyDrop: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return ReversePennyDropScreen(cbankId: args['cbankId'] as String);
         },
         bankVerification: (context) =>
             const Scaffold(body: Center(child: Text('Bank Verification'))),

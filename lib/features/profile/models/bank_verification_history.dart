@@ -7,6 +7,11 @@ class BavHistoryItem {
   final double? nameMatchScore;
   final DateTime? attemptedOn;
   final String? provider;
+  // Live CustomerBank.cbank_id for this row, resolved server-side only when
+  // status is Approved and a currently-verified account matches the same
+  // last-4 digits — null otherwise. Used to offer the optional Reverse
+  // Penny Drop extra check (see reverse_penny_drop_screen.dart).
+  final String? cbankId;
 
   BavHistoryItem({
     required this.kycId,
@@ -16,6 +21,7 @@ class BavHistoryItem {
     this.nameMatchScore,
     this.attemptedOn,
     this.provider,
+    this.cbankId,
   });
 
   bool get isApproved => status.toLowerCase() == 'approved';
@@ -31,6 +37,7 @@ class BavHistoryItem {
           ? DateTime.tryParse(json['attempted_on'].toString())
           : null,
       provider: json['provider']?.toString(),
+      cbankId: json['cbank_id']?.toString(),
     );
   }
 }
@@ -104,6 +111,7 @@ class BankTimelineEntry {
   final String? provider;
   final String? subtitle;
   final DateTime? dateTime;
+  final String? cbankId;
 
   BankTimelineEntry({
     required this.kind,
@@ -112,6 +120,7 @@ class BankTimelineEntry {
     required this.dateTime,
     this.provider,
     this.subtitle,
+    this.cbankId,
   });
 
   /// User-facing status label — same underlying value, worded per the
@@ -177,6 +186,7 @@ class BankVerificationCard {
           status: item.status,
           provider: item.provider,
           dateTime: item.attemptedOn,
+          cbankId: item.cbankId,
         );
 
     final cards = <BankVerificationCard>[];

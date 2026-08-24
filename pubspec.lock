@@ -201,6 +201,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.3"
+  digilocker_flutter_sdk:
+    dependency: "direct main"
+    description:
+      name: digilocker_flutter_sdk
+      sha256: "76f0152ed611d607cf1b42add204c8f3cc67f47bbc3f6d813aea5e681de5433d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.6"
   dio:
     dependency: "direct main"
     description:

@@ -7,6 +7,7 @@ import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import '../models/bank_verification_history.dart';
 import '../services/bank_verification_history_service.dart';
+import '../../../routes/app_router.dart';
 
 /// Profile > "Bank Account Verification" — one card per verification
 /// attempt, each card holding up to 3 lines: BAV / Rs.1 Payment / Rs.1
@@ -81,6 +82,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
                         )
                       : _buildCards(
                           context,
+                          ref,
                           isDark,
                           BankVerificationCard.build(
                             bavAsync.value ?? [],
@@ -96,6 +98,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
 
   Widget _buildCards(
     BuildContext context,
+    WidgetRef ref,
     bool isDark,
     List<BankVerificationCard> cards,
   ) {
@@ -120,11 +123,17 @@ class BankVerificationHubScreen extends ConsumerWidget {
       physics: const BouncingScrollPhysics(),
       padding: EdgeInsets.all(20.w),
       itemCount: cards.length,
-      itemBuilder: (context, index) => _buildCard(cards[index], isDark),
+      itemBuilder: (context, index) =>
+          _buildCard(context, ref, cards[index], isDark),
     );
   }
 
-  Widget _buildCard(BankVerificationCard card, bool isDark) {
+  Widget _buildCard(
+    BuildContext context,
+    WidgetRef ref,
+    BankVerificationCard card,
+    bool isDark,
+  ) {
     final lines = [card.bav, card.payment, card.refund]
         .whereType<BankTimelineEntry>()
         .toList();
@@ -166,6 +175,40 @@ class BankVerificationHubScreen extends ConsumerWidget {
               SizedBox(height: 8.h),
             ],
             _buildLine(lines[i], isDark),
+          ],
+          // Optional SurePass extra check — only shown once BAV is Verified
+          // AND the backend resolved a live cbank_id for it (see
+          // BavHistoryItem.cbankId doc comment). Separate from the
+          // Rs.1-payment lines above (Cashfree's own layer).
+          if (card.bav != null &&
+              card.bav!.displayStatus == 'Verified' &&
+              card.bav!.cbankId != null) ...[
+            SizedBox(height: 10.h),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final confirmed = await Navigator.pushNamed(
+                    context,
+                    AppRouter.reversePennyDrop,
+                    arguments: {'cbankId': card.bav!.cbankId},
+                  );
+                  if (confirmed == true) {
+                    ref.invalidate(bavHistoryProvider);
+                    ref.invalidate(pennyVerifyHistoryProvider);
+                  }
+                },
+                icon: Icon(Icons.verified_user_outlined, size: 16.sp, color: _accentGreen),
+                label: Text(
+                  'Additional Verification (Reverse Penny Drop)',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.w700,
+                    color: _accentGreen,
+                  ),
+                ),
+              ),
+            ),
           ],
         ],
       ),

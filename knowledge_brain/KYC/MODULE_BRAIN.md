@@ -41,8 +41,18 @@ lib/features/kyc/
 │                                          No encryption, no real verification. Nothing in the app currently
 │                                          navigates to this route (grep found zero `Navigator...panVerification`
 │                                          call sites) — it is reachable only by manually typing the route.
-└── widgets/aadhaar_digilocker_webview.dart — AadhaarDigilockerWebView, hosts the Cashfree DigiLocker consent
-                                            page. Routed at `/aadhaar-verification`.
+├── widgets/aadhaar_digilocker_webview.dart — AadhaarDigilockerWebView, hosts the Cashfree DigiLocker consent
+│                                           page. Routed at `/aadhaar-verification`.
+└── widgets/digilocker_sdk_screen.dart  — NEW (2026-08-24). DigilockerSdkScreen, the SurePass counterpart:
+                                           hosts the native `digilocker_flutter_sdk` package (v1.0.6) instead
+                                           of a webview. Routed at `/digilocker-sdk`. Calls
+                                           `DigilockerSdk.start(context, apiToken: sdkToken, environment:...,
+                                           onComplete:, onError:)` — the real package API, read directly from
+                                           the resolved pub cache source (SurePass's own docs never specified
+                                           the Flutter SDK's Dart surface). The package internally pushes its
+                                           OWN screens on top of this one and pops them; onComplete/onError
+                                           then pop this screen with true/false, matching the webview screen's
+                                           contract.
 ```
 
 **Architectural note (file-naming inversion):** `controllers/kyc_controller.dart` contains Riverpod
@@ -64,7 +74,8 @@ not as the current behavior.
 | `AppRouter.kyc` | `/kyc` | `screens/kyc_screen.dart` (`KycScreen(requestFrom, extraData)`) | Yes — primary |
 | `AppRouter.dynamicKyc` | `/kyc-dynamic` | same `screens/kyc_screen.dart` (duplicate alias) | Yes |
 | `AppRouter.panVerification` | `/pan-verification` | `screens/pan_verification_screen.dart` | Reachable but non-functional stub |
-| `AppRouter.aadhaarVerification` | `/aadhaar-verification` | `widgets/aadhaar_digilocker_webview.dart` | Yes — sub-step of `/kyc` |
+| `AppRouter.aadhaarVerification` | `/aadhaar-verification` | `widgets/aadhaar_digilocker_webview.dart` | Yes — sub-step of `/kyc` (Cashfree webview) |
+| `AppRouter.digilockerSdk` *(new 2026-08-24)* | `/digilocker-sdk` | `widgets/digilocker_sdk_screen.dart` | Yes — sub-step of `/kyc` (SurePass native SDK) |
 | `AppRouter.bankVerification` | `/bank-verification` | inline `Scaffold(Text('Bank Verification'))` placeholder | Dead stub, not this module's concern |
 
 `app_router.dart:144-152` and `:240-248` both build `dynamic_kyc.KycScreen(requestFrom: args['request_from']

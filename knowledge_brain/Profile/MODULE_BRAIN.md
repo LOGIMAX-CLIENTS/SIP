@@ -34,6 +34,7 @@ rebuild. Confirmed drift, not a doc error to "fix" — the doc is just stale (se
 | PennyVerifyHistoryScreen | `AppRouter.pennyVerifyHistory` | `/bank-verification/penny-history` | `screens/penny_verify_history_screen.dart` |
 | RefundHistoryScreen | `AppRouter.refundHistory` | `/bank-verification/refund-history` | `screens/refund_history_screen.dart` |
 | BankPennyVerifyScreen | *(no static route — pushed directly via `MaterialPageRoute` with `cbankId` arg from `add_bank_account_sheet.dart`)* | — | `screens/bank_penny_verify_screen.dart` |
+| ReversePennyDropScreen *(new, 2026-08-24)* | `AppRouter.reversePennyDrop` | `/reverse-penny-drop` | `screens/reverse_penny_drop_screen.dart` |
 | DeleteAccountScreen | `AppRouter.deleteAccount` | `/delete-account` | `screens/delete_account_screen.dart` |
 
 Registered in `lib/routes/app_router.dart:167-169,303,323-326`. Note: `AppRouter.bankVerification`
@@ -60,8 +61,25 @@ BankDetailsScreen ──> bankAccountsProvider (FutureProvider) ──> BankDeta
 BankVerificationHubScreen ──> bavHistoryProvider + pennyVerifyHistoryProvider ──> BankVerificationHistoryService ──> ApiClient
 BankPennyVerifyScreen ──> bankPennyVerifyServiceProvider ──> BankPennyVerifyService ──> ApiClient
                        └─> Cashfree CFPaymentGatewayService / Razorpay SDK directly (native payment UI)
+ReversePennyDropScreen ──> reversePennyDropServiceProvider ──> ReversePennyDropService ──> ApiClient
+                        └─> url_launcher opens payment_link directly (no in-app SDK — SurePass RPD is
+                            UPI-deep-link only, unlike BankPennyVerifyScreen's Cashfree/Razorpay SDK)
 DeleteAccountScreen ──> _deleteInfoProvider / _deleteAccountServiceProvider ──> DeleteAccountService ──> ApiClient
 ```
+
+**2026-08-24 addition — SurePass bank verification (additive, Cashfree unaffected):**
+- `shared/widgets/add_bank_account_sheet.dart` now calls `WithdrawalService.getActiveBankVerificationMethod()`
+  (`GET account/verify-bank/active-method`) before verifying, and branches: `'pennyless'` →
+  `WithdrawalService.verifyAndAddBankPennyless()` (SurePass, instant, no ₹1 step afterward); `'cashfree'`
+  (default) → existing `verifyAndAddBank()` + `BankPennyVerifyScreen` push, unchanged. The active method is
+  server-resolved from `gateways_config` (KYC service type) — never hardcoded client-side, so this
+  automatically follows whichever gateway is enabled server-side.
+- `BankVerificationHubScreen` gained an "Additional Verification (Reverse Penny Drop)" button per card, shown
+  only when that card's BAV line is `Verified` AND the backend resolved a live `cbank_id` for it
+  (`BavHistoryItem.cbankId`, threaded through `BankTimelineEntry`/`BankVerificationCard` from the now-extended
+  `account/verify-bank/bav-history` response). Opens `ReversePennyDropScreen` — an OPTIONAL extra check
+  layered on top of Pennyless BAV, not a replacement for it (SurePass's RPD API can't target a specific
+  account by itself; see backend `bank_verification_surepass.py` module docstring).
 
 `ProfileNotifier` (`profile_controller.dart:121`) is the only `StateNotifier` in the module; every other
 screen uses plain `FutureProvider`/`FutureProvider.autoDispose` + a stateless service call — lighter-weight
@@ -83,6 +101,7 @@ CROSS_MODULE_MAP.md "Known Violations".
 | `pennyVerifyHistoryProvider` | `FutureProvider.autoDispose<List<PennyVerifyHistoryItem>>` | `services/bank_verification_history_service.dart:38` | Shared by 3 screens: hub, penny-history, refund-history |
 | `bankVerificationHistoryServiceProvider` | `Provider` | same file:30 | — |
 | `bankPennyVerifyServiceProvider` | `Provider<BankPennyVerifyService>` | `screens/bank_penny_verify_screen.dart:24` | Defined in the screen file itself, not services/ — inconsistent with the module's usual pattern |
+| `reversePennyDropServiceProvider` | `Provider<ReversePennyDropService>` | `screens/reverse_penny_drop_screen.dart` | Same file-local pattern as `bankPennyVerifyServiceProvider` above (deliberately mirrored) |
 | `_deleteAccountServiceProvider`, `_deleteInfoProvider` | `Provider` / `FutureProvider.autoDispose` | `screens/delete_account_screen.dart:17-22` | File-private (`_` prefix) |
 | `appVersionProvider` | `FutureProvider<String>` | `profile_screen.dart:20` | Reads `PackageInfo.fromPlatform()` |
 
@@ -110,7 +129,12 @@ mid-edit. See `profile_controller.dart:334-343` comment.
 | `account/verify-bank/penny/confirm` | POST | `BankPennyVerifyService.confirm` | No |
 | `account/verify-bank/bav-history` | GET | `BankVerificationHistoryService.fetchBavHistory` | No |
 | `account/verify-bank/penny/history` | GET | `BankVerificationHistoryService.fetchPennyVerifyHistory` | No |
-| `account\verify-bank` *(cross-module, see §7)* | POST | `withdrawal_service.dart` `verifyAndAddBank()` | **Intended yes, actually broken — see BUSINESS_RULES RULE-PROFILE-010** |
+| `account/verify-bank` *(cross-module, see §7)* | POST | `withdrawal_service.dart` `verifyAndAddBank()` | Yes — see RULE-PROFILE-010 correction below |
+| `account/verify-bank/active-method` *(new 2026-08-24)* | GET | `withdrawal_service.dart` `getActiveBankVerificationMethod()` | No (no sensitive fields) |
+| `account/verify-bank/pennyless` *(new 2026-08-24, cross-module)* | POST | `withdrawal_service.dart` `verifyAndAddBankPennyless()` | Yes (`account_no`/`ifsc_code`, path contains `verify-bank`) |
+| `account/verify-bank/rpd/initiate` *(new 2026-08-24)* | POST | `ReversePennyDropService.initiate` | Yes (path contains `verify-bank`) |
+| `account/verify-bank/rpd/status` *(new 2026-08-24)* | POST | `ReversePennyDropService.status` | Yes (path contains `verify-bank`) |
+| `account/verify-bank/rpd/history` *(new 2026-08-24)* | GET | `ReversePennyDropService.history` | Yes (path contains `verify-bank`) |
 
 None of this module's own endpoints appear in `AppConfig.encryptedEndpoints`
 (`core/config/app_config.dart:47-71`) — profile edit (name/email/dob/pincode/address) and bank-account
@@ -168,13 +192,14 @@ encrypted if the *endpoint path* also matches `encryptedEndpoints`, which is whe
 
 ## 8. Top Risks / Anti-Patterns Found
 
-1. **RULE-PROFILE-010** (critical): the actual bank-account-creation endpoint string
-  `'account\verify-bank'` (`withdrawal_service.dart:106`) contains an unescaped backslash-letter Dart
-  string escape (`\v` = vertical-tab), NOT a literal `/`. The runtime path is corrupted
-  (`"account" + U+000B + "erify-bank"`), which also means it never matches `'verify-bank'` in
-  `AppConfig.encryptedEndpoints`, so `account_no`/`ifsc_code` would ship unencrypted even if the request
-  otherwise succeeded. **Unconfirmed at runtime** (would need a live network capture) but the string
-  literal itself is unambiguous — see BUSINESS_RULES.md and FORENSIC_TEMPLATE.md.
+1. **RULE-PROFILE-010 — CORRECTED (2026-08-24), original finding does not reproduce**: this entry
+  previously claimed `withdrawal_service.dart:106` contained `'account\verify-bank'` (a `\v`
+  vertical-tab escape instead of a literal `/`). Direct read of the current file (byte-level check via
+  `cat -A`, confirming no `^K`/control character) and `git log -p` across the last 3 commits touching this
+  file all show a plain `'account/verify-bank'` with a literal forward slash — the string matches
+  `AppConfig.encryptedEndpoints`'s `'verify-bank'` entry correctly, and `account_no`/`ifsc_code` DO get
+  encrypted on this call. Whatever produced the original finding (stale read, tool artifact) was wrong;
+  treat this specific claim as retracted. See BUSINESS_RULES.md for the corresponding correction.
 2. Three separate standalone history screens (`BavHistoryScreen`, `PennyVerifyHistoryScreen`,
    `RefundHistoryScreen`) appear to be orphaned after the `BankVerificationHubScreen` redesign — still
    routed but not linked from any in-module UI found. Confirm before removing.
