@@ -271,6 +271,61 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
     if (finalState.phase == AadhaarPhase.approved) {
       await _checkAndHandleCompletion();
+      return;
+    }
+
+    // pollUntilTerminal exhausted its retries while DigiLocker was still
+    // processing (e.g. the provider's document-fetch/cross-verify chain
+    // outran the client's polling window) — it resets to awaitingConsent
+    // with an explanatory message instead of a terminal phase. Without this,
+    // the user sees the DigiLocker screen close and nothing else: no
+    // success, no error. Surface it so they know to check back / retry.
+    if (finalState.message != null) {
+      AppToast.show(context, finalState.message!, type: ToastType.info);
+    }
+  }
+
+  /// Alternate Aadhaar path — Meon's native DigiLocker SDK, launched
+  /// directly with merchant credentials fetched from
+  /// `KycRepository.getMeonSdkConfig()` rather than through
+  /// `AadhaarNotifier.initiate()` (that notifier's phases only model the
+  /// consent_url/sdk_token shapes the GatewayFactory abstraction produces —
+  /// Meon's package needs company_name+secret_token directly, which doesn't
+  /// fit either). Only succeeds while MEON is the backend's active KYC
+  /// gateway; surfaces a toast rather than a button state if it isn't.
+  Future<void> _onVerifyAadhaarMeon() async {
+    if (_aadhaarFormKey.currentState?.validate() == false) return;
+
+    Map<String, dynamic> config;
+    try {
+      config = await ref.read(kycRepositoryProvider).getMeonSdkConfig();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        e.toString().replaceFirst('Exception: ', ''),
+        type: ToastType.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final confirmed = await Navigator.pushNamed(
+      context,
+      AppRouter.meonDigilockerSdk,
+      arguments: {
+        'companyName': config['company_name'] as String,
+        'secretToken': config['secret_token'] as String,
+        'redirectUrl': (config['redirect_url'] as String?) ?? '',
+      },
+    );
+    if (!mounted) return;
+
+    if (confirmed == true) {
+      // Meon's SDK returns full verification data inline — no separate
+      // poll step like the webview/SurePass paths need. Refresh
+      // document-types the same way a completed submission does elsewhere.
+      await _checkAndHandleCompletion();
     }
   }
 
@@ -727,6 +782,19 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               isLoading: isBusy,
               onPressed: _onVerifyAadhaar,
               gradient: AppTheme.greenGradient,
+            ),
+            // Alternate path — only ever succeeds while MEON is the active
+            // KYC gateway backend-side; shows a toast otherwise. Not gated
+            // behind a feature flag on purpose for now — revisit before
+            // wide rollout if this shouldn't be visible to every user.
+            Center(
+              child: TextButton(
+                onPressed: isBusy ? null : _onVerifyAadhaarMeon,
+                child: Text(
+                  'Verify via Meon (native)',
+                  style: AppTextStyles.fieldLabel(isDark),
+                ),
+              ),
             ),
           ],
         ],

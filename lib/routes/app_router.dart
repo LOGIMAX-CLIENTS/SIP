@@ -30,6 +30,7 @@ import '../features/withdrawal/screens/withdrawal_success_screen.dart';
 import '../features/kyc/screens/kyc_screen.dart' as dynamic_kyc;
 import '../features/kyc/widgets/aadhaar_digilocker_webview.dart';
 import '../features/kyc/widgets/digilocker_sdk_screen.dart';
+import '../features/kyc/widgets/meon_digilocker_sdk_screen.dart';
 import '../features/profile/screens/reverse_penny_drop_screen.dart';
 import '../features/instant_saving/screens/payment_methods_screen.dart';
 import '../features/history/screens/transaction_history_screen.dart';
@@ -72,6 +73,7 @@ class AppRouter {
   static const String panVerification = '/pan-verification';
   static const String aadhaarVerification = '/aadhaar-verification';
   static const String digilockerSdk = '/digilocker-sdk';
+  static const String meonDigilockerSdk = '/meon-digilocker-sdk';
   static const String reversePennyDrop = '/reverse-penny-drop';
   static const String bankVerification = '/bank-verification';
   static const String instantSaving = '/instant-saving';
@@ -169,6 +171,17 @@ class AppRouter {
             sdkToken: args['sdkToken'] as String,
             clientId: args['clientId'] as String?,
             environment: args['environment'] as String?,
+          );
+        },
+        meonDigilockerSdk: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return MeonDigilockerSdkScreen(
+            companyName: args['companyName'] as String,
+            secretToken: args['secretToken'] as String,
+            redirectUrl: args['redirectUrl'] as String,
+            panName: args['panName'] as String?,
+            panNo: args['panNo'] as String?,
           );
         },
         reversePennyDrop: (context) {

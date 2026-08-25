@@ -189,6 +189,10 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         fullName: fullName,
         allowReverify: allowReverify,
       );
+      // See the identical guard in pollUntilTerminal — this notifier can be
+      // disposed while the request above was in flight (e.g. a 401 sends it
+      // through the interceptor's refresh-and-retry detour).
+      if (!mounted) return;
       final status = (data['status'] ?? '').toString();
 
       if (data['is_already_approved'] == true || status == 'already approved') {
@@ -226,6 +230,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         message: data['message']?.toString() ?? 'Unable to start Aadhaar verification.',
       );
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(phase: AadhaarPhase.failed, message: _sanitizeErrorMessage(e));
     }
   }
@@ -256,6 +261,14 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
           requestFrom: requestFrom,
           verificationId: verificationId,
         );
+        // The KYC screen (and this autoDispose notifier with it) can be torn
+        // down while this await was in flight — e.g. a 401 mid-poll sends
+        // the request through the interceptor's silent refresh-and-retry
+        // detour, which is slow enough for the screen to unmount before it
+        // resolves. Touching `state` after that throws "Bad state: Tried to
+        // use AadhaarNotifier after dispose was called" instead of just
+        // discarding the now-irrelevant result.
+        if (!mounted) return;
         final status = (data['status'] ?? '').toString();
 
         if (data['is_already_approved'] == true || status == 'already approved') {
@@ -294,6 +307,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
             return;
         }
       } catch (e) {
+        if (!mounted) return;
         state = state.copyWith(phase: AadhaarPhase.failed, message: _sanitizeErrorMessage(e));
         return;
       }

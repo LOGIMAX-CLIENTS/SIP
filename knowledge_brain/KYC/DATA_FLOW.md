@@ -96,6 +96,29 @@ Aadhaar are both visible on one scrollable page.
    `PENDING` → loop again; exhausted retries while still `PENDING` → reverts to `awaitingConsent` with a
    "taking longer than expected" message (NOT treated as failure — `verificationId` is preserved so a retry
    resumes polling rather than restarting consent).
+   - **Fixed 2026-08-24**: this timeout outcome used to fall through both branches in
+     `_onVerifyAadhaar()` (neither the terminal-failure toast nor the approved path matched
+     `awaitingConsent`), so the user saw the DigiLocker/SDK screen close and then nothing at all — no
+     success, no error. `_onVerifyAadhaar()` (`screens/kyc_screen.dart`) now falls back to an
+     `ToastType.info` toast showing `finalState.message` whenever the poll ends in a non-terminal phase.
+     Root latency contributor for the SurePass path specifically: `_check_aadhaar_kyc`
+     (`domains/masters/services/kyc.py`) now also runs `_try_persist_digilocker_pan` synchronously once
+     Aadhaar authenticates — up to ~8 sequential SurePass HTTP calls (status + 2×[list-documents +
+     download-document + XML fetch] + pan-comprehensive) inside the single poll response that flips
+     `APPROVED`. Each individual Dio call has a 60s timeout (`AppConfig.connectTimeout/receiveTimeout`,
+     `core/config/app_config.dart:32-33`) so that one heavy attempt won't itself time out, but if
+     DigiLocker's own document availability genuinely lags past the full ~20s client polling budget, the
+     toast above is what the user now sees instead of silence.
+   - **Fixed 2026-08-24 (crash, not just silence)**: a device log showed `pollAadhaar`'s request hitting a
+     401 mid-poll, going through `ApiSecurityInterceptor`'s silent refresh-and-retry detour
+     (`core/security/api_interceptor.dart:298-497` — a second Dio round trip), and by the time that
+     resolved the `KycScreen`/`aadhaarProvider` (`StateNotifierProvider.autoDispose`) had been disposed.
+     `AadhaarNotifier`'s `state = ...` write on the disposed notifier threw `Bad state: Tried to use
+     AadhaarNotifier after 'dispose' was called` as an **unhandled exception** on the button's `onPressed`
+     Future (nothing awaits/catches it) — so `_onVerifyAadhaar()` never reached its own post-poll checks at
+     all, no dialog and no toast, silently. Both `initiate()` and `pollUntilTerminal()`
+     (`controllers/kyc_controller.dart`) now check the notifier's own `mounted` (from `package:state_notifier`)
+     right after every `await` that can outlive the widget, before touching `state`.
 9. On `approved`, `_onVerifyAadhaar()` calls `_checkAndHandleCompletion()` (same as Flow 2 step 5).
 
 ## Flow 4 — Completion sequence (fires once BOTH PAN and Aadhaar are APPROVED)

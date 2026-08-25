@@ -65,6 +65,15 @@ dependencies:
   # release before first build; Android minSdk 28, iOS 15.0 required.
   digilocker_flutter_sdk: ^1.0.0
 
+  # KYC — Meon DigiLocker (Aadhaar/PAN verification), native SDK alternative
+  # to the webview flow. Unlike the SurePass SDK above (short-lived token
+  # fetched fresh per session from our backend), this package's
+  # DigiLockerConfig takes Meon's long-lived company_name + secret_token
+  # directly — see meon_digilocker_sdk_screen.dart for why that value is
+  # fetched from a dedicated backend endpoint rather than hardcoded, and the
+  # residual risk that remains even so.
+  flutter_digilocker_aadhar_pan: ^1.0.0
+
   # Splash Screen (must be in dependencies for native integration)
   flutter_native_splash: ^2.4.7
   flutter_widget_from_html_core: ^0.17.2

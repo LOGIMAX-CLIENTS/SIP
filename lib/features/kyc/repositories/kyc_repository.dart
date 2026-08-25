@@ -179,6 +179,30 @@ class KycRepository {
     throw Exception(serverMessage);
   }
 
+  /// Fetches the merchant config Meon's native `flutter_digilocker_aadhar_pan`
+  /// SDK needs to launch directly (companyName + secretToken + redirectUrl) —
+  /// see `meon_digilocker_sdk_screen.dart`'s SECURITY NOTE for why this is a
+  /// dedicated backend call rather than a bundled constant. Server-gated on
+  /// the MEON gateway row's own active status; throws if it's not enabled,
+  /// so callers should only offer this path when they expect it to succeed
+  /// (e.g. behind a feature flag) rather than showing it unconditionally.
+  Future<Map<String, dynamic>> getMeonSdkConfig() async {
+    final response = await _apiClient.post('kyc/meon-sdk-config', data: {});
+
+    if (response.data['success'] == true) {
+      final data = response.data['data'];
+      return data is Map<String, dynamic> ? data : <String, dynamic>{};
+    }
+
+    final errorObj = response.data['error'];
+    final dataObj = response.data['data'];
+    final String serverMessage = (errorObj is Map ? errorObj['message'] : null) ??
+        (dataObj is Map ? dataObj['message'] : null) ??
+        response.data['message'] ??
+        'Meon DigiLocker verification is not available right now.';
+    throw Exception(serverMessage);
+  }
+
   /// Updates the customer's profile name (cus_name) to the verified name
   /// from the latest APPROVED PAN or Aadhaar KYC record — used by the
   /// mandatory Profile Name Selection popup shown after every successful
