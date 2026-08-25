@@ -366,6 +366,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.3+50"
+  flutter_digilocker_aadhar_pan:
+    dependency: "direct main"
+    description:
+      name: flutter_digilocker_aadhar_pan
+      sha256: cfa121da5b72f723a05ef2e91656d7578913c1617ca725ce9732ce2183f87737
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   flutter_launcher_icons:
     dependency: "direct dev"
     description:
