@@ -8,6 +8,7 @@ import '../../core/error/failures.dart';
 import '../../features/withdrawal/services/withdrawal_service.dart';
 import '../../features/profile/services/bank_details_service.dart';
 import '../../features/profile/screens/bank_penny_verify_screen.dart';
+import '../../routes/app_router.dart';
 import 'custom_button.dart';
 import 'app_toast.dart';
 import 'secure_clipboard.dart';
@@ -205,12 +206,14 @@ void showAddBankAccountSheet(
                             setModalState(() => isVerifying = true);
                             try {
                               final withdrawalSvc = ref.read(withdrawalServiceProvider);
-                              // Which BAV method the active KYC gateway supports —
-                              // never hardcode a provider name client-side (see
+                              // Which BAV method the active KYC gateway supports,
+                              // AND which live-control second step (RPD vs the
+                              // ₹1-payment flow) is active — never hardcode a
+                              // provider name client-side for either (see
                               // getActiveBankVerificationMethod's doc comment).
-                              final method =
+                              final methodInfo =
                                   await withdrawalSvc.getActiveBankVerificationMethod();
-                              final isPennyless = method == 'pennyless';
+                              final isPennyless = methodInfo.bavMethod == 'pennyless';
 
                               final result = isPennyless
                                   ? await withdrawalSvc.verifyAndAddBankPennyless(
@@ -251,29 +254,42 @@ void showAddBankAccountSheet(
                                       type: ToastType.success,
                                     );
                                   }
-                                  // ── ₹1 verify layer — runs after Cashfree BAV succeeds only ──
-                                  // id_payout is CustomerBank.cbank_id (see
-                                  // CashfreeService.verify_bank()'s response —
-                                  // the key name is a holdover from its payout-
-                                  // beneficiary registration, not a payout itself).
-                                  // SurePass Pennyless BAV is already instant/complete —
-                                  // no extra payment step here; Reverse Penny Drop is a
-                                  // separate OPTIONAL check reached from the Bank
-                                  // Verification Hub instead (see reverse_penny_drop_screen.dart).
+                                  // ── Live-control second step — auto-chained
+                                  // for EVERY BAV path (Cashfree or Pennyless
+                                  // alike), not just Cashfree. id_payout is
+                                  // CustomerBank.cbank_id (see
+                                  // CashfreeService.verify_bank()'s /
+                                  // BankVerificationSurePassService.verify_pennyless()'s
+                                  // response — the key name is a holdover
+                                  // from Cashfree payout-beneficiary
+                                  // registration, not a payout itself; both
+                                  // BAV paths return it under the same key).
+                                  // Which screen to open is resolved from
+                                  // methodInfo.secondStepMethod — itself
+                                  // read straight off the backend's
+                                  // VerificationGatewayRouting(RPD) check,
+                                  // never off isPennyless/the BAV provider.
                                   final cbankId = (result['data']
                                           as Map<String, dynamic>?)?['id_payout']
                                       ?.toString();
-                                  if (!isPennyless &&
-                                      cbankId != null &&
+                                  if (cbankId != null &&
                                       cbankId.isNotEmpty &&
                                       context.mounted) {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => BankPennyVerifyScreen(
-                                            cbankId: cbankId),
-                                      ),
-                                    );
+                                    if (methodInfo.secondStepMethod == 'rpd') {
+                                      Navigator.pushNamed(
+                                        context,
+                                        AppRouter.reversePennyDrop,
+                                        arguments: {'cbankId': cbankId},
+                                      );
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => BankPennyVerifyScreen(
+                                              cbankId: cbankId),
+                                        ),
+                                      );
+                                    }
                                   }
                                 });
                               } else {

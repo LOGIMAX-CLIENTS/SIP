@@ -11,6 +11,16 @@ There is no partial-credit state. `_checkAndHandleCompletion()`
 result.aadhaarApproved`. Bank account is NOT part of this module's completion condition (see
 `CROSS_MODULE_MAP.md` — bank verification is a separate `profile`-module concern).
 
+⚠️ **This screen's own "complete" check is log-based and NOT the same thing the backend's actual
+SIP/withdrawal/purchase gate now uses** (backend change, 2026-08-26 — see `fintect_application`'s KYC brain,
+RULE-KYC-001/014/015). `documents[].alreadyUploaded`/`aadhaarApproved` flip true the instant DigiLocker/the
+PAN provider auto-verifies; the backend's `is_kyc_complete()` gate additionally requires the customer to have
+completed the mandatory Profile Name Selection popup (`_runCompletionSequence`/`updateProfileName()` below) —
+until then a customer can see "Verified" on both cards here while still being blocked from SIP/withdrawals
+server-side. `KycDocumentsResult.kycConfirmed` (new field, mirrors the backend's `kyc_confirmed`) is that
+second, stricter signal — `_checkCompletionRecoveryOnLoad()` (see `METHOD_INDEX.md`) uses it to detect and
+recover a customer who never reached the popup, rather than to gate anything shown on this screen itself.
+
 ## RULE-KYC-002 — `savings/check-eligibility` is the shared purchase/withdrawal gate
 
 Both InstantSaving and Withdrawal call the identical `POST savings/check-eligibility` endpoint
@@ -91,6 +101,18 @@ rule.
 (`core/security/api_interceptor.dart:166-182`) attempts to encrypt the entire (already-partially-encrypted)
 payload again. Do not copy this pattern into a new module's repository — either pre-encrypt AND keep the
 endpoint out of `encryptedEndpoints`, or rely solely on the interceptor, not both.
+
+## RULE-KYC-012 — Aadhaar-approved-but-PAN-pending is surfaced as a distinct "skipped in consent" state (added 2026-08-26)
+
+PAN has no consent flow of its own — it's fetched from the SAME DigiLocker session as Aadhaar (backend's
+`_try_persist_digilocker_pan`, run synchronously once Aadhaar authenticates; see `DATA_FLOW.md` Flow 3 step
+8). If the user unchecks "PAN Verification Record" in DigiLocker's document-selection screen, Aadhaar comes
+back APPROVED but PAN never does, and RULE-KYC-001 still holds (KYC isn't complete). Previously the PAN card
+kept showing the generic `_buildPanAutoVerifyNotice` text ("complete Aadhaar verification below") even once
+Aadhaar was already done — confusing, since there was nothing left to complete on the Aadhaar card. Now
+`_buildDocumentCard` (`screens/kyc_screen.dart`) detects `aadhaarState.phase == AadhaarPhase.approved && !isDone`
+for the PAN doc and renders `_buildPanSkippedNotice` instead, with a "Retry PAN Verification" button
+(`_onRetryPan()`) that re-runs the DigiLocker consent and explicitly tells the user to check PAN this time.
 
 ## Unconfirmed / needs a fresh backend-contract check
 

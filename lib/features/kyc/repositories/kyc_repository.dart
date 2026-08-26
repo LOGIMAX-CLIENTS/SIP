@@ -27,6 +27,7 @@ class KycRepository {
         aadhaarApproved: aadhaarStatus.toUpperCase() == 'APPROVED',
         aadhaarMaskedNumber: data['aadhaar_masked_number']?.toString(),
         aadhaarName: data['aadhaar_name']?.toString(),
+        kycConfirmed: data['kyc_confirmed'] == true,
       );
     } else {
       throw Exception(response.data['message'] ?? 'Failed to load documents');
