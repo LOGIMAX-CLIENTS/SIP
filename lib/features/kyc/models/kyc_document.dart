@@ -51,12 +51,22 @@ class KycDocumentsResult {
   final bool aadhaarApproved;
   final String? aadhaarMaskedNumber;
   final String? aadhaarName;
+  // True only once the backend's CustomerPan/CustomerAadhaar mirror is
+  // fully APPROVED for both PAN and Aadhaar — i.e. the customer has already
+  // completed the mandatory Profile Name Selection confirmation. Distinct
+  // from `documents[].alreadyUploaded`/`aadhaarApproved` above, which can
+  // both be true the instant DigiLocker/the PAN provider auto-verifies,
+  // before that confirmation ever happens. See kyc_screen.dart's on-load
+  // completion-recovery check, which uses this to detect a customer who
+  // auto-verified but never reached the confirmation dialog.
+  final bool kycConfirmed;
 
   KycDocumentsResult({
     required this.documents,
     required this.aadhaarApproved,
     this.aadhaarMaskedNumber,
     this.aadhaarName,
+    this.kycConfirmed = false,
   });
 }
 

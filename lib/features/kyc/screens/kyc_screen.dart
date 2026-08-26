@@ -51,6 +51,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   final Set<String> _submittingDocIds = {};
   bool _initialized = false;
   bool _aadhaarSeeded = false;
+  // Guards the on-load completion-recovery check below — fires at most
+  // once per screen instance, same pattern as _aadhaarSeeded.
+  bool _completionCheckedOnLoad = false;
   // Set when the user taps "Edit" on an already-verified Aadhaar card, so
   // the next _onVerifyAadhaar() call tells the backend to bypass its
   // already-approved idempotency short-circuit (see KYCRepository.initiateAadhaar).
@@ -135,6 +138,38 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     });
   }
 
+  /// Recovers a customer who auto-verified (both PAN and Aadhaar already
+  /// log-approved) but never reached the mandatory Profile Name Selection
+  /// dialog — e.g. the app was closed right after DigiLocker succeeded.
+  /// `_checkAndHandleCompletion()` only re-runs after a LIVE submit, so
+  /// merely reopening this screen wouldn't otherwise retry it — the cards
+  /// already show "Verified" everywhere, so nothing would look wrong, but
+  /// `result.kycConfirmed` (backed by CustomerPan/CustomerAadhaar, which
+  /// only flips once this dialog's choice is submitted) would stay false
+  /// forever, silently blocking SIP/withdrawals with no visible cause. Fires
+  /// at most once per screen instance; once `kycConfirmed` is true this
+  /// never fires again.
+  void _checkCompletionRecoveryOnLoad(KycDocumentsResult result) {
+    if (_completionCheckedOnLoad) return;
+    final bothComplete =
+        result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
+    if (!bothComplete || result.kycConfirmed) return;
+    _completionCheckedOnLoad = true;
+
+    final panDoc = result.documents.isEmpty
+        ? null
+        : result.documents.firstWhere(
+            (d) => d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'),
+            orElse: () => result.documents.first,
+          );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _runCompletionSequence(panName: panDoc?.verifiedName, aadhaarName: result.aadhaarName);
+      }
+    });
+  }
+
   /// Re-opens an already-verified document's form so the user can redo
   /// verification (e.g. fix a typo). PAN just needs its form shown again —
   /// a new/edited PAN number is verified fresh by the backend regardless.
@@ -149,6 +184,59 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   void _editAadhaar() {
     setState(() => _aadhaarEditing = true);
     ref.read(aadhaarProvider.notifier).reset();
+  }
+
+  /// PAN has no consent of its own — it's fetched from the SAME DigiLocker
+  /// session as Aadhaar (see `_buildPanAutoVerifyNotice`'s doc comment and
+  /// `MODULE_BRAIN.md` §2). If the user unchecks "PAN Verification Record" on
+  /// DigiLocker's document-selection screen, Aadhaar comes back APPROVED but
+  /// PAN never does — the only way to retry PAN is a fresh DigiLocker consent.
+  /// This re-runs that consent (reusing `_editAadhaar`'s reverify plumbing)
+  /// instead of leaving the user staring at a PAN card whose old copy still
+  /// said "complete Aadhaar verification below" even though Aadhaar was
+  /// already done.
+  Future<void> _onRetryPan() async {
+    _editAadhaar();
+    // The Aadhaar card was showing the verified banner (no Form in the tree)
+    // — wait one frame so `_aadhaarFormKey` is attached to the now-visible
+    // input form before validating it.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    if (_aadhaarFormKey.currentState?.validate() != true) {
+      // Aadhaar was approved in an earlier session, so these fields were
+      // never filled in this one — nothing to resubmit yet. Point the user
+      // at the now-reopened Aadhaar form below instead of doing nothing.
+      AppToast.show(
+        context,
+        "Re-enter your Aadhaar details below, then verify again — make sure "
+        "'PAN Verification Record' is selected on the DigiLocker consent "
+        "screen this time.",
+        type: ToastType.info,
+      );
+      return;
+    }
+
+    await _onVerifyAadhaar();
+    if (!mounted) return;
+
+    // _onVerifyAadhaar() already surfaces its own toast on failure/timeout,
+    // and already runs the completion sequence if PAN came back this time.
+    // The one gap it doesn't cover: Aadhaar re-approves fine but PAN is
+    // AGAIN missing (user skipped the checkbox a second time) — nothing
+    // else would tell the user that attempt didn't fix it.
+    if (ref.read(aadhaarProvider).phase != AadhaarPhase.approved) return;
+    final docs = ref.read(kycDocumentsProvider(widget.requestFrom)).valueOrNull;
+    final panStillMissing = docs != null && !docs.documents.every((d) => d.alreadyUploaded);
+    if (panStillMissing) {
+      AppToast.show(
+        context,
+        "PAN still isn't verified. Please try again and make sure 'PAN "
+        "Verification Record' is checked before tapping Allow on the "
+        "DigiLocker consent screen.",
+        type: ToastType.error,
+      );
+    }
   }
 
   Future<void> _submitDoc(KycDocumentType doc) async {
@@ -558,6 +646,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                   maskedNumber: result.aadhaarMaskedNumber,
                   name: result.aadhaarName,
                 );
+                _checkCompletionRecoveryOnLoad(result);
                 return SingleChildScrollView(
                   padding: EdgeInsets.all(24.w),
                   child: Column(
@@ -571,7 +660,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                         style: AppTextStyles.fieldHelper(isDark),
                       ),
                       SizedBox(height: 32.h),
-                      ...result.documents.map((doc) => _buildDocumentCard(doc, isDark)),
+                      ...result.documents
+                          .map((doc) => _buildDocumentCard(doc, isDark, aadhaarState)),
                       _buildAadhaarCard(isDark, aadhaarState),
                     ],
                   ),
@@ -592,10 +682,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// SurePass's /pan/pan-comprehensive) — there is deliberately no manual
   /// PAN entry form anymore. Any OTHER future document type still gets the
   /// generic field-form path below.
-  Widget _buildDocumentCard(KycDocumentType doc, bool isDark) {
+  Widget _buildDocumentCard(KycDocumentType doc, bool isDark, AadhaarState aadhaarState) {
     final isPan = doc.name.toUpperCase().contains('PAN') ||
         doc.code.toUpperCase().contains('PAN');
     final isDone = _completedDocIds.contains(doc.id);
+    // PAN rides on the same DigiLocker session as Aadhaar (see
+    // _buildPanAutoVerifyNotice). If Aadhaar already came back APPROVED but
+    // PAN's card is still pending, the user skipped/unchecked PAN in
+    // DigiLocker's document picker — show that explicitly instead of the
+    // generic "complete Aadhaar below" notice, which would be actively wrong
+    // once Aadhaar is done.
+    final panSkippedInConsent =
+        isPan && !isDone && aadhaarState.phase == AadhaarPhase.approved;
+    final aadhaarRetryBusy = aadhaarState.phase == AadhaarPhase.initiating ||
+        aadhaarState.phase == AadhaarPhase.polling;
 
     return Padding(
       padding: EdgeInsets.only(bottom: 32.h),
@@ -615,6 +715,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               // Edit) to trigger a fresh DigiLocker consent + PAN re-check.
               onEdit: isPan ? null : () => _editDocument(doc),
             )
+          else if (panSkippedInConsent)
+            _buildPanSkippedNotice(isDark, isBusy: aadhaarRetryBusy)
           else if (isPan)
             _buildPanAutoVerifyNotice(isDark)
           else ...[
@@ -661,6 +763,59 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               'same time.',
               style: AppTextStyles.fieldHelper(isDark),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shown instead of [_buildPanAutoVerifyNotice] once Aadhaar has already
+  /// come back APPROVED but this PAN card is still pending — i.e. the user
+  /// completed DigiLocker consent without "PAN Verification Record" checked.
+  /// Uses the app's existing amber "warning" palette (see `app_toast.dart`'s
+  /// `ToastType.warning` style) so this reads as "needs your attention", not
+  /// a hard failure, since re-running consent with PAN checked resolves it.
+  Widget _buildPanSkippedNotice(bool isDark, {required bool isBusy}) {
+    const warningColor = Color(0xFFD97706);
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(20.r),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(20.r),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 18.sp, color: warningColor),
+              SizedBox(width: 10.w),
+              Expanded(
+                child: Text(
+                  "Aadhaar is verified, but PAN wasn't shared during "
+                  "DigiLocker consent, so it couldn't be verified.",
+                  style: AppTextStyles.fieldHelper(isDark).copyWith(color: const Color(0xFF78350F)),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12.h),
+          CustomButton(
+            text: 'Retry PAN Verification',
+            svgIconPath: 'assets/buttons/tick.svg',
+            isLoading: isBusy,
+            onPressed: isBusy ? null : _onRetryPan,
+            gradient: AppTheme.greenGradient,
+          ),
+          SizedBox(height: 8.h),
+          Text(
+            "On the next DigiLocker screen, select 'PAN Verification "
+            "Record' before tapping Allow.",
+            style: AppTextStyles.fieldHelper(isDark)
+                .copyWith(color: const Color(0xFF78350F), fontStyle: FontStyle.italic),
           ),
         ],
       ),

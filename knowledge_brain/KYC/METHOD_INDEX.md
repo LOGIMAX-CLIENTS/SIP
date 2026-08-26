@@ -69,8 +69,10 @@ route name.
 |---|---|---|
 | `_initControllers(docs)` | 96-121 | Builds `TextEditingController`s per field per doc; seeds already-APPROVED docs into `_completedDocIds`. |
 | `_seedAadhaarIfApproved(...)` | 128-136 | Post-frame-callback seed of Aadhaar card if server reports already verified. |
+| `_checkCompletionRecoveryOnLoad(result)` *(new 2026-08-26)* | ~141-~170 | Fires once per screen instance from `build()`, alongside `_seedAadhaarIfApproved`. If both PAN and Aadhaar are already log-approved (`documents.every(alreadyUploaded) && aadhaarApproved`) but `result.kycConfirmed` is false, re-runs `_runCompletionSequence()` directly — recovers a customer who auto-verified but never reached the mandatory name-selection dialog (e.g. app closed mid-way), which would otherwise leave the backend's `CustomerPan`/`CustomerAadhaar` mirror (see fintect_application's `KYC` brain, RULE-KYC-015) unconfirmed forever with no visible symptom on this screen. |
 | `_editDocument(doc)` | 141-143 | Re-opens a verified PAN card's form for redo. |
 | `_editAadhaar()` | 149-152 | Re-opens Aadhaar form, sets `_aadhaarEditing = true` (drives `allowReverify`). |
+| `_onRetryPan()` *(new 2026-08-26)* | 154-~205 | Fires when Aadhaar is APPROVED but PAN is still pending (user unchecked "PAN Verification Record" in DigiLocker's document picker — PAN has no consent of its own, see `_buildPanAutoVerifyNotice`). Calls `_editAadhaar()`, awaits `WidgetsBinding.instance.endOfFrame` so the now-reopened Aadhaar `Form` is mounted, validates it, then re-runs `_onVerifyAadhaar()`. Toasts if the fields were empty (Aadhaar approved in an earlier session) or if PAN is still missing after the retry. |
 | `_submitDoc(doc)` | 154-207 | Validates form → `kycSubmitProvider.submit()` → on success marks doc complete → `_checkAndHandleCompletion()`. Sets `allow_reverify: true` field when `doc.alreadyUploaded`. |
 | `_onVerifyAadhaar()` | 213-258 | Orchestrates `initiate()` → push `AadhaarDigilockerWebView` if consent needed → `pollUntilTerminal()` → `_checkAndHandleCompletion()` on approval. |
 | `_checkAndHandleCompletion()` | 267-299 | Re-fetches `kycDocumentsProvider`, checks `all docs alreadyUploaded && aadhaarApproved`; if both, runs `_runCompletionSequence()`. |
@@ -79,6 +81,7 @@ route name.
 | `_showProfileNameSelectionDialog({panName, aadhaarName})` | 392-453 | `PopScope(canPop:false)` — not dismissible; returns `'PAN'`, `'AADHAAR'`, or `null`. "Not Now" button is commented out in source (lines 434-446) — effectively forces a choice today. |
 | `_validateAadhaarNumber(value)` | 79-89 | 12-digit, starts 2-9, rejects all-same-digit placeholder. Client-side sanity check only — real verification is DigiLocker. |
 | `build()` | 470-515 | Watches `kycDocumentsProvider(requestFrom)` + `aadhaarProvider`. |
+| `_buildPanSkippedNotice(isDark, {isBusy})` *(new 2026-08-26)* | ~677-~725 | Amber warning card rendered in place of `_buildPanAutoVerifyNotice` when `aadhaarState.phase == AadhaarPhase.approved` but the PAN doc isn't done yet — "Retry PAN Verification" button wired to `_onRetryPan()`. |
 
 ## KycScreen ⚠️ legacy (`kyc_screen.dart` root, `ConsumerWidget`)
 

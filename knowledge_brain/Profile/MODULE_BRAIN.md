@@ -77,9 +77,33 @@ DeleteAccountScreen ──> _deleteInfoProvider / _deleteAccountServiceProvider 
 - `BankVerificationHubScreen` gained an "Additional Verification (Reverse Penny Drop)" button per card, shown
   only when that card's BAV line is `Verified` AND the backend resolved a live `cbank_id` for it
   (`BavHistoryItem.cbankId`, threaded through `BankTimelineEntry`/`BankVerificationCard` from the now-extended
-  `account/verify-bank/bav-history` response). Opens `ReversePennyDropScreen` — an OPTIONAL extra check
-  layered on top of Pennyless BAV, not a replacement for it (SurePass's RPD API can't target a specific
-  account by itself; see backend `bank_verification_surepass.py` module docstring).
+  `account/verify-bank/bav-history` response). Opens `ReversePennyDropScreen` — this remains the manual
+  retry/backfill path (see 2026-08-26 entry below for the now-primary auto-chained path).
+
+**2026-08-26 — RPD/₹1 second step now auto-chains after EVERY add-bank, gateway-driven (not SurePass-hardcoded):**
+- Backend `cbank_is_verify` ("fully verified") is now set only at step-2 success (RPD or ₹1-payment), never
+  at BAV time alone — `cbank_bav_verified` is the new step-1-only flag (see backend
+  `shared/database/apps/customers/models.py` `CustomerBank`). This meant SurePass/Meon-BAV customers who
+  only ever reached the manual Hub button were left "added but not usable" (SIP mandate/payout/set-primary
+  all gate on `cbank_is_verify`).
+- `ActiveBankVerificationMethodView` (`GET account/verify-bank/active-method`) now ALSO returns
+  `second_step_method: "rpd" | "penny_payment"` and `second_step_provider`, resolved from
+  `GatewayFactory.get_gateway_config_for(VerificationCapability.RPD)` — i.e. straight off
+  `verification_gateway_routing`, independently of which provider did BAV. `"rpd"` wins whenever ANY
+  gateway (SurePass, Meon, or a future provider) is actively routed for the RPD capability; otherwise it
+  falls back to `"penny_payment"` (the existing Cashfree/Razorpay ₹1 flow).
+- `WithdrawalService.getActiveBankVerificationMethod()` return type changed from `Future<String>` to
+  `Future<({String bavMethod, String secondStepMethod})>` — confirmed (repo-wide search) to have exactly one
+  caller, `add_bank_account_sheet.dart`, so this was a safe non-breaking signature change.
+- `add_bank_account_sheet.dart`'s post-add auto-navigation no longer gates on `!isPennyless` (which only
+  ever fired for the Cashfree path). It now branches on `methodInfo.secondStepMethod`: `"rpd"` →
+  `Navigator.pushNamed(context, AppRouter.reversePennyDrop, arguments: {'cbankId': cbankId})` (the same
+  named-route contract the Hub button already used); `"penny_payment"` → unchanged direct `MaterialPageRoute`
+  push of `BankPennyVerifyScreen` (still no static route registered for it — see Screen & Route Table).
+  Since the sheet is shared by both `BankDetailsScreen` (this module) and SIP's `BankAccountPickerScreen`
+  (§7 cross-module coupling), this auto-chain now applies to both entry points, not just one.
+- The Hub screen's manual RPD button (previous entry above) is unchanged and still useful as a retry path
+  for accounts added before this change, or where the auto-chained screen was dismissed/interrupted.
 
 `ProfileNotifier` (`profile_controller.dart:121`) is the only `StateNotifier` in the module; every other
 screen uses plain `FutureProvider`/`FutureProvider.autoDispose` + a stateless service call — lighter-weight
@@ -130,7 +154,7 @@ mid-edit. See `profile_controller.dart:334-343` comment.
 | `account/verify-bank/bav-history` | GET | `BankVerificationHistoryService.fetchBavHistory` | No |
 | `account/verify-bank/penny/history` | GET | `BankVerificationHistoryService.fetchPennyVerifyHistory` | No |
 | `account/verify-bank` *(cross-module, see §7)* | POST | `withdrawal_service.dart` `verifyAndAddBank()` | Yes — see RULE-PROFILE-010 correction below |
-| `account/verify-bank/active-method` *(new 2026-08-24)* | GET | `withdrawal_service.dart` `getActiveBankVerificationMethod()` | No (no sensitive fields) |
+| `account/verify-bank/active-method` *(new 2026-08-24; response gained `second_step_method`/`second_step_provider` 2026-08-26)* | GET | `withdrawal_service.dart` `getActiveBankVerificationMethod()` | No (no sensitive fields) |
 | `account/verify-bank/pennyless` *(new 2026-08-24, cross-module)* | POST | `withdrawal_service.dart` `verifyAndAddBankPennyless()` | Yes (`account_no`/`ifsc_code`, path contains `verify-bank`) |
 | `account/verify-bank/rpd/initiate` *(new 2026-08-24)* | POST | `ReversePennyDropService.initiate` | Yes (path contains `verify-bank`) |
 | `account/verify-bank/rpd/status` *(new 2026-08-24)* | POST | `ReversePennyDropService.status` | Yes (path contains `verify-bank`) |

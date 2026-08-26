@@ -114,16 +114,30 @@ class WithdrawalService {
   }
 
   /// GET account/verify-bank/active-method — which BAV method the currently
-  /// active KYC verification gateway supports ("cashfree" | "pennyless").
+  /// active KYC verification gateway supports ("cashfree" | "pennyless"),
+  /// AND which live-control SECOND step is active ("rpd" | "penny_payment").
   /// Add Bank Account calls this once before verifying so it never
-  /// hardcodes a provider name client-side.
-  Future<String> getActiveBankVerificationMethod() async {
+  /// hardcodes a provider name client-side for either step. The second step
+  /// is resolved server-side straight off VerificationGatewayRouting(RPD) —
+  /// NOT derived from the BAV method here, since a gateway can be routed for
+  /// RPD independently of which provider did BAV (see backend
+  /// ActiveBankVerificationMethodView).
+  Future<({String bavMethod, String secondStepMethod})>
+      getActiveBankVerificationMethod() async {
     try {
       final response = await _apiClient.get('account/verify-bank/active-method');
-      final method = (response.data?['data']?['method'] as String?) ?? 'cashfree';
-      return method == 'pennyless' ? 'pennyless' : 'cashfree';
+      final data = response.data?['data'] as Map<String, dynamic>?;
+      final method = (data?['method'] as String?) ?? 'cashfree';
+      final secondStep = (data?['second_step_method'] as String?) ?? 'penny_payment';
+      return (
+        bavMethod: method == 'pennyless' ? 'pennyless' : 'cashfree',
+        secondStepMethod: secondStep == 'rpd' ? 'rpd' : 'penny_payment',
+      );
     } catch (_) {
-      return 'cashfree'; // Safe default — matches the only-ever-active provider today.
+      // Safe default — matches the only-ever-active BAV provider today, and
+      // falls back to the existing ₹1-payment flow when the second-step
+      // check itself fails.
+      return (bavMethod: 'cashfree', secondStepMethod: 'penny_payment');
     }
   }
 
