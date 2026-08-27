@@ -99,7 +99,60 @@ class PennyVerifyHistoryItem {
   }
 }
 
-enum BankTimelineKind { bav, pennyPayment, pennyRefund }
+/// One Reverse Penny Drop attempt — GET account/verify-bank/rpd/history.
+/// The SurePass/Meon-provider-based live-control second step, alternative
+/// to the Rs.1 Payment/Refund pair above (Cashfree/Razorpay in-app SDK) —
+/// see reverse_penny_drop_screen.dart. No refund step by product design.
+class RpdHistoryItem {
+  final int crpdId;
+  final String clientId;
+  final String status; // "Pending" | "Success" | "Failed"
+  final String? bankName;
+  final String? accountLast4;
+  final String? holderName;
+  final bool nameMatched;
+  final DateTime? createdOn;
+  // Live CustomerBank.cbank_id for this row — direct FK on the backend
+  // (crpd_cbank_id), unlike BavHistoryItem/PennyVerifyHistoryItem's last-4
+  // heuristic, so pairing to a card by id here is exact, not a guess.
+  final String? cbankId;
+  // Human-readable reason, populated only when status == "Failed" —
+  // disambiguates an account mismatch from a plain payment failure (both
+  // persist as the same crpd_status; see backend history()'s comment).
+  final String? failureReason;
+
+  RpdHistoryItem({
+    required this.crpdId,
+    required this.clientId,
+    required this.status,
+    this.bankName,
+    this.accountLast4,
+    this.holderName,
+    required this.nameMatched,
+    this.createdOn,
+    this.cbankId,
+    this.failureReason,
+  });
+
+  factory RpdHistoryItem.fromJson(Map<String, dynamic> json) {
+    return RpdHistoryItem(
+      crpdId: (json['crpd_id'] as num?)?.toInt() ?? 0,
+      clientId: json['client_id']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'Pending',
+      bankName: json['bank_name']?.toString(),
+      accountLast4: json['account_last4']?.toString(),
+      holderName: json['holder_name']?.toString(),
+      nameMatched: json['name_matched'] as bool? ?? false,
+      createdOn: json['created_on'] != null
+          ? DateTime.tryParse(json['created_on'].toString())
+          : null,
+      cbankId: json['cbank_id']?.toString(),
+      failureReason: json['failure_reason']?.toString(),
+    );
+  }
+}
+
+enum BankTimelineKind { bav, pennyPayment, pennyRefund, reversePennyDrop }
 
 /// One row in the merged Bank Account Verification timeline — combines BAV
 /// attempts and Rs.1 payment/refund attempts into a single chronological
@@ -138,6 +191,9 @@ class BankTimelineEntry {
       case BankTimelineKind.pennyRefund:
         if (s == 'success') return 'Refunded';
         return status;
+      case BankTimelineKind.reversePennyDrop:
+        if (s == 'success') return 'Verified';
+        return status;
     }
   }
 }
@@ -155,6 +211,7 @@ class BankVerificationCard {
   final BankTimelineEntry? bav;
   final BankTimelineEntry? payment;
   final BankTimelineEntry? refund;
+  final BankTimelineEntry? rpd;
   final DateTime? sortDate;
 
   BankVerificationCard({
@@ -163,22 +220,48 @@ class BankVerificationCard {
     this.bav,
     this.payment,
     this.refund,
+    this.rpd,
   });
 
   /// Groups BAV + Rs.1 payment/refund rows into per-attempt cards, newest
   /// first. Every Rs.1 row becomes its own card (paired with the nearest
   /// preceding BAV row for the same account, if any); any BAV row never
-  /// consumed by a Rs.1 pairing becomes its own standalone card.
+  /// consumed by a Rs.1 pairing becomes its own standalone card. RPD attempts
+  /// (a third, independent table) are attached AFTER cards are built, paired
+  /// by cbankId — exact, since crpd_cbank_id is a direct FK unlike the
+  /// last-4+timing heuristic the BAV<->penny pairing above needs.
   static List<BankVerificationCard> build(
     List<BavHistoryItem> bav,
-    List<PennyVerifyHistoryItem> penny,
-  ) {
+    List<PennyVerifyHistoryItem> penny, [
+    List<RpdHistoryItem> rpd = const [],
+  ]) {
     final sortedBav = [...bav]..sort((a, b) {
         if (a.attemptedOn == null) return 1;
         if (b.attemptedOn == null) return -1;
         return a.attemptedOn!.compareTo(b.attemptedOn!); // oldest first
       });
     final usedBav = <int>{}; // kycId of BAV rows already paired
+
+    // Latest RPD attempt per cbankId — rpd arrives newest-first from the
+    // backend (order_by('-crpd_id')), so first-seen-per-key wins.
+    final rpdByCbankId = <String, RpdHistoryItem>{};
+    for (final r in rpd) {
+      if (r.cbankId != null && !rpdByCbankId.containsKey(r.cbankId)) {
+        rpdByCbankId[r.cbankId!] = r;
+      }
+    }
+    BankTimelineEntry? rpdEntry(String? cbankId) {
+      final item = cbankId != null ? rpdByCbankId[cbankId] : null;
+      if (item == null) return null;
+      return BankTimelineEntry(
+        kind: BankTimelineKind.reversePennyDrop,
+        title: 'Reverse Penny Drop Verification',
+        status: item.status,
+        dateTime: item.createdOn,
+        cbankId: item.cbankId,
+        subtitle: item.failureReason,
+      );
+    }
 
     BankTimelineEntry bavEntry(BavHistoryItem item) => BankTimelineEntry(
           kind: BankTimelineKind.bav,
@@ -226,6 +309,7 @@ class BankVerificationCard {
           provider: item.gatewayProvider,
           dateTime: item.refundedOn ?? item.createdOn,
         ),
+        rpd: rpdEntry(matched?.cbankId),
       ));
     }
 
@@ -238,6 +322,7 @@ class BankVerificationCard {
             : 'Bank Account',
         sortDate: item.attemptedOn,
         bav: bavEntry(item),
+        rpd: rpdEntry(item.cbankId),
       ));
     }
 
