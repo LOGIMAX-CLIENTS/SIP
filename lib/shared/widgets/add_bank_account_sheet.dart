@@ -39,6 +39,12 @@ void showAddBankAccountSheet(
   bool isCheckingName = false;
   String? nameError;
   bool nameMatched = false;
+  // Persistent inline error for the "Verify & Add" submit itself — a toast
+  // alone can be missed, and the specific reason (account-status-code
+  // message, PAN/Aadhaar name mismatch, bank-registered-name mismatch) is
+  // worth the customer actually reading, not just glancing past. Cleared
+  // whenever a new submit attempt starts.
+  String? submitError;
 
   // StatefulBuilder hands back the SAME StateSetter across rebuilds (it's
   // bound to the underlying State), so capturing it here and registering
@@ -194,6 +200,31 @@ void showAddBankAccountSheet(
                       forceUpperCase: true,
                       ifscOnly: true,
                       onChanged: (_) => setModalState(() {})),
+                  if (submitError != null) ...[
+                    SizedBox(height: 16.h),
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10.r),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.error_outline_rounded, size: 18.sp, color: Colors.red.shade400),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: Text(
+                              submitError!,
+                              style: AppTextStyles.fieldError(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   SizedBox(height: 28.h),
                   CustomButton(
                     text: 'Verify & Add',
@@ -203,7 +234,10 @@ void showAddBankAccountSheet(
                         ? () async {
                             final user = ref.read(userProvider);
                             if (user == null) return;
-                            setModalState(() => isVerifying = true);
+                            setModalState(() {
+                              isVerifying = true;
+                              submitError = null;
+                            });
                             try {
                               final withdrawalSvc = ref.read(withdrawalServiceProvider);
                               // Which BAV method the active KYC gateway supports,
@@ -293,22 +327,28 @@ void showAddBankAccountSheet(
                                   }
                                 });
                               } else {
-                                setModalState(() => isVerifying = false);
                                 final errMsg = result['message'] ??
                                     (result['error']
                                             as Map<String, dynamic>?)?['message'] ??
                                     (result['data']
                                             as Map<String, dynamic>?)?['message'] ??
                                     'Verification failed';
+                                setModalState(() {
+                                  isVerifying = false;
+                                  submitError = errMsg.toString();
+                                });
                                 AppToast.show(sheetCtx, errMsg,
                                     type: ToastType.error);
                               }
                             } catch (e) {
                               if (sheetCtx.mounted) {
-                                setModalState(() => isVerifying = false);
                                 final message = e is Failure
                                     ? e.message
                                     : 'Could not verify bank details. Please try again.';
+                                setModalState(() {
+                                  isVerifying = false;
+                                  submitError = message;
+                                });
                                 AppToast.show(sheetCtx, message,
                                     type: ToastType.error);
                               }
