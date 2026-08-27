@@ -25,6 +25,20 @@ class BankVerificationHistoryService {
     }
     return [];
   }
+
+  /// GET account/verify-bank/rpd/history — the RPD line on the Bank Account
+  /// Verification hub. Same endpoint ReversePennyDropService.history() also
+  /// calls, but typed here alongside the other two history fetches so the
+  /// hub's data layer (bavHistoryProvider/pennyVerifyHistoryProvider) stays
+  /// self-contained rather than reaching into a screen-local service.
+  Future<List<RpdHistoryItem>> fetchRpdHistory() async {
+    final response = await _apiClient.get('account/verify-bank/rpd/history');
+    if (response.data != null && response.data['success'] == true) {
+      final List data = response.data['data'] ?? [];
+      return data.map((e) => RpdHistoryItem.fromJson(e)).toList();
+    }
+    return [];
+  }
 }
 
 final bankVerificationHistoryServiceProvider =
@@ -40,4 +54,9 @@ final pennyVerifyHistoryProvider =
   return ref
       .read(bankVerificationHistoryServiceProvider)
       .fetchPennyVerifyHistory();
+});
+
+final rpdHistoryProvider =
+    FutureProvider.autoDispose<List<RpdHistoryItem>>((ref) {
+  return ref.read(bankVerificationHistoryServiceProvider).fetchRpdHistory();
 });

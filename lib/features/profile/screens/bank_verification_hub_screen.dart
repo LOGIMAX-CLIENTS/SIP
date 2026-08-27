@@ -38,6 +38,8 @@ class BankVerificationHubScreen extends ConsumerWidget {
         return Icons.currency_rupee_rounded;
       case BankTimelineKind.pennyRefund:
         return Icons.replay_circle_filled_rounded;
+      case BankTimelineKind.reversePennyDrop:
+        return Icons.verified_user_outlined;
     }
   }
 
@@ -46,9 +48,10 @@ class BankVerificationHubScreen extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bavAsync = ref.watch(bavHistoryProvider);
     final pennyAsync = ref.watch(pennyVerifyHistoryProvider);
+    final rpdAsync = ref.watch(rpdHistoryProvider);
 
-    final isLoading = bavAsync.isLoading || pennyAsync.isLoading;
-    final hasError = bavAsync.hasError || pennyAsync.hasError;
+    final isLoading = bavAsync.isLoading || pennyAsync.isLoading || rpdAsync.isLoading;
+    final hasError = bavAsync.hasError || pennyAsync.hasError || rpdAsync.hasError;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -60,6 +63,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
               onRefresh: () async {
                 ref.invalidate(bavHistoryProvider);
                 ref.invalidate(pennyVerifyHistoryProvider);
+                ref.invalidate(rpdHistoryProvider);
               },
               child: isLoading
                   ? const Center(
@@ -87,6 +91,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
                           BankVerificationCard.build(
                             bavAsync.value ?? [],
                             pennyAsync.value ?? [],
+                            rpdAsync.value ?? [],
                           ),
                         ),
             ),
@@ -134,7 +139,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
     BankVerificationCard card,
     bool isDark,
   ) {
-    final lines = [card.bav, card.payment, card.refund]
+    final lines = [card.bav, card.payment, card.refund, card.rpd]
         .whereType<BankTimelineEntry>()
         .toList();
 
@@ -176,13 +181,16 @@ class BankVerificationHubScreen extends ConsumerWidget {
             ],
             _buildLine(lines[i], isDark),
           ],
-          // Optional SurePass extra check — only shown once BAV is Verified
-          // AND the backend resolved a live cbank_id for it (see
-          // BavHistoryItem.cbankId doc comment). Separate from the
-          // Rs.1-payment lines above (Cashfree's own layer).
+          // Extra-verification action — shown once BAV is Verified AND the
+          // backend resolved a live cbank_id for it (see BavHistoryItem.cbankId
+          // doc comment), but hidden once the RPD line above already shows
+          // Verified — the auto-chained flow (see add_bank_account_sheet.dart)
+          // makes this the retry/resume path now, not the primary trigger, so
+          // it would otherwise sit here permanently redundant after success.
           if (card.bav != null &&
               card.bav!.displayStatus == 'Verified' &&
-              card.bav!.cbankId != null) ...[
+              card.bav!.cbankId != null &&
+              card.rpd?.displayStatus != 'Verified') ...[
             SizedBox(height: 10.h),
             Align(
               alignment: Alignment.centerRight,
@@ -196,6 +204,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
                   if (confirmed == true) {
                     ref.invalidate(bavHistoryProvider);
                     ref.invalidate(pennyVerifyHistoryProvider);
+                    ref.invalidate(rpdHistoryProvider);
                   }
                 },
                 icon: Icon(Icons.verified_user_outlined, size: 16.sp, color: _accentGreen),
@@ -280,6 +289,16 @@ class BankVerificationHubScreen extends ConsumerWidget {
                     ),
                 ],
               ),
+              if (entry.subtitle != null && entry.subtitle!.isNotEmpty) ...[
+                SizedBox(height: 4.h),
+                Text(
+                  entry.subtitle!,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 10.5.sp,
+                    color: Colors.red.shade400,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

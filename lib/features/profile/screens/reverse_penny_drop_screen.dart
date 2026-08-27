@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -33,15 +35,66 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
   bool _paymentLaunched = false;
   String? _clientId;
   String? _paymentLink;
+  // Persistent inline error — a toast alone can be missed (especially for
+  // ACCOUNT_MISMATCH, which the customer needs to actually read and act on,
+  // not just glance past). Cleared whenever a new attempt starts.
+  String? _errorMessage;
+
+  // Auto-poll instead of relying solely on a manual "I've Paid" tap — the
+  // payment happens in an external UPI app (no in-app SDK callback like
+  // BankPennyVerifyScreen has), so nothing else tells us when it settles.
+  // Capped so it doesn't run forever if the customer leaves this screen
+  // open; the manual button below remains available after the cap.
+  static const _pollInterval = Duration(seconds: 5);
+  static const _maxPollAttempts = 24; // ~2 minutes
+  Timer? _pollTimer;
+  int _pollAttempts = 0;
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollAttempts = 0;
+    _pollTimer = Timer.periodic(_pollInterval, (_) {
+      _pollAttempts++;
+      if (_pollAttempts > _maxPollAttempts) {
+        _stopPolling();
+        return;
+      }
+      _checkStatus(silent: true);
+    });
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _stopPolling();
+    super.dispose();
+  }
 
   Future<void> _startVerification() async {
     if (_isProcessing || !mounted) return;
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+    });
     try {
       final result = await ref
           .read(reversePennyDropServiceProvider)
           .initiate(cbankId: widget.cbankId);
       if (!mounted) return;
+
+      // Dedup/self-heal on the backend: a retry may find this account was
+      // already fully verified by a previous attempt (webhook/earlier check
+      // never made it back to us) — nothing to pay, done immediately.
+      if (result['already_verified'] == true || result['verified'] == true) {
+        AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
+        Navigator.pop(context, true);
+        return;
+      }
+
       setState(() {
         _clientId = result['client_id']?.toString();
         _paymentLink = result['payment_link']?.toString();
@@ -50,7 +103,9 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
         final uri = Uri.parse(_paymentLink!);
         final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
         if (mounted) setState(() => _paymentLaunched = launched);
-        if (!launched && mounted) {
+        if (launched) {
+          _startPolling();
+        } else if (mounted) {
           AppToast.show(context, 'No UPI app found to open the payment link.', type: ToastType.error);
         }
       }
@@ -63,9 +118,21 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     }
   }
 
-  Future<void> _checkStatus() async {
-    if (_isProcessing || _clientId == null || !mounted) return;
-    setState(() => _isProcessing = true);
+  /// [silent] = true for background auto-polls: suppresses the "still
+  /// pending" toast (would otherwise spam every [_pollInterval]) and never
+  /// touches [_isProcessing] (so the manual button's spinner isn't driven by
+  /// background polling). Terminal outcomes (verified / FAILED /
+  /// ACCOUNT_MISMATCH) are always surfaced and always stop the poll timer,
+  /// silent or not.
+  Future<void> _checkStatus({bool silent = false}) async {
+    if (_clientId == null || !mounted) return;
+    if (!silent) {
+      if (_isProcessing) return;
+      setState(() {
+        _isProcessing = true;
+        _errorMessage = null; // clear any stale banner before this re-check
+      });
+    }
     try {
       final result = await ref
           .read(reversePennyDropServiceProvider)
@@ -74,25 +141,40 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
 
       final status = result['status']?.toString() ?? '';
       if (result['verified'] == true) {
+        _stopPolling();
         AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
         Navigator.pop(context, true);
         return;
       }
 
+      if (status == 'PENDING') {
+        if (!silent) {
+          AppToast.show(
+            context,
+            'Payment not received yet. Please complete the ₹1 payment and try again.',
+            type: ToastType.error,
+          );
+        }
+        return; // Not terminal — keep polling.
+      }
+
+      // Terminal failure — always surfaced (toast + persistent banner) and
+      // always stops polling, silent or not.
+      _stopPolling();
       final message = switch (status) {
-        'PENDING' => 'Payment not received yet. Please complete the ₹1 payment and try again.',
         'ACCOUNT_MISMATCH' =>
           'The ₹1 payment came from a different account than the one being verified.',
         'FAILED' => 'Verification failed. Please try again.',
         _ => result['message']?.toString() ?? 'Verification pending.',
       };
+      if (mounted) setState(() => _errorMessage = message);
       AppToast.show(context, message, type: ToastType.error);
     } catch (e) {
-      if (mounted) {
+      if (!silent && mounted) {
         AppToast.show(context, e.toString().replaceFirst('Exception: ', ''), type: ToastType.error);
       }
     } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (!silent && mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -121,6 +203,34 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                       color: isDark ? Colors.white70 : Colors.black87,
                     ),
                   ),
+                  if (_errorMessage != null) ...[
+                    SizedBox(height: 16.h),
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10.r),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.error_outline_rounded, size: 18.sp, color: Colors.red.shade400),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: GoogleFonts.playfairDisplay(
+                                fontSize: 12.sp,
+                                color: Colors.red.shade400,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   SizedBox(height: 32.h),
                   if (!_paymentLaunched)
                     ElevatedButton(
