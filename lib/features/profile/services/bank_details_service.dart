@@ -48,6 +48,13 @@ class BankDetailsService {
     return {
       'matched': data['matched'] == true,
       'message': data['message']?.toString() ?? '',
+      // Distinguishes "no verified PAN/Aadhaar at all" (customer needs to
+      // complete KYC) from "typed name doesn't match" (customer needs to
+      // fix the name) — both report matched=false, but call for different
+      // follow-up UI. Defaults true so older/unexpected response shapes
+      // don't wrongly show a "Complete KYC" prompt to an already-KYC'd
+      // customer who hit a genuine name mismatch.
+      'has_kyc': data['has_kyc'] != false,
     };
   }
 }
