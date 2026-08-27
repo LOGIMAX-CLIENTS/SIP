@@ -39,6 +39,10 @@ void showAddBankAccountSheet(
   bool isCheckingName = false;
   String? nameError;
   bool nameMatched = false;
+  // False only when checkBeneficiaryName() reports has_kyc=false — the
+  // customer has no verified PAN/Aadhaar at all, so "fix the name" isn't
+  // the right instruction; show a "Complete KYC" prompt instead.
+  bool nameHasKyc = true;
   // Persistent inline error for the "Verify & Add" submit itself — a toast
   // alone can be missed, and the specific reason (account-status-code
   // message, PAN/Aadhaar name mismatch, bank-registered-name mismatch) is
@@ -70,6 +74,7 @@ void showAddBankAccountSheet(
         isCheckingName = false;
         nameMatched = result['matched'] == true;
         nameError = nameMatched ? null : result['message']?.toString();
+        nameHasKyc = result['has_kyc'] != false;
       });
     } catch (_) {
       // Non-blocking: server-side verify_bank() still enforces this
@@ -78,6 +83,7 @@ void showAddBankAccountSheet(
         isCheckingName = false;
         nameMatched = true;
         nameError = null;
+        nameHasKyc = true;
       });
     }
   }
@@ -176,7 +182,31 @@ void showAddBankAccountSheet(
                       onChanged: (_) => setModalState(() {
                         nameMatched = false;
                         nameError = null;
+                        nameHasKyc = true;
                       })),
+                  // Shown only when the customer has NO verified PAN/Aadhaar
+                  // at all (has_kyc=false) — "fix the name" isn't the right
+                  // instruction here, they need to complete KYC first.
+                  if (nameError != null && !nameHasKyc) ...[
+                    SizedBox(height: 6.h),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (context.mounted) {
+                            Navigator.pushNamed(context, AppRouter.kyc);
+                          }
+                        });
+                      },
+                      child: Text(
+                        'Complete KYC →',
+                        style: AppTextStyles.fieldError(isDark).copyWith(
+                          color: accentGreen,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
                   SizedBox(height: 12.h),
                   _field('Account Number', 'Enter account number', accCtrl,
                       isDark,
