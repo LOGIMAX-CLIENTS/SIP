@@ -6,6 +6,8 @@ import '../../core/providers/user_provider.dart';
 class UserProfile {
   final String id;
   final String name;
+  final String firstName;
+  final String lastName;
   final String email;
   final bool isEmailVerified;
   final String phone;
@@ -26,6 +28,8 @@ class UserProfile {
   UserProfile({
     required this.id,
     required this.name,
+    this.firstName = '',
+    this.lastName = '',
     this.email = '',
     this.isEmailVerified = false,
     required this.phone,
@@ -46,6 +50,8 @@ class UserProfile {
 
   UserProfile copyWith({
     String? name,
+    String? firstName,
+    String? lastName,
     String? email,
     bool? isEmailVerified,
     String? phone,
@@ -66,6 +72,8 @@ class UserProfile {
     return UserProfile(
       id: this.id,
       name: name ?? this.name,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
       email: email ?? this.email,
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       phone: phone ?? this.phone,
@@ -159,6 +167,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
           user: UserProfile(
             id: _customerId,
             name: data['name'] ?? data['full_name'] ?? '',
+            firstName: data['first_name'] ?? '',
+            lastName: data['last_name'] ?? '',
             email: data['email'] ?? '',
             isEmailVerified: data['email_verified'] == true,
             phone: data['mobile'] ?? data['phone'] ?? '',
@@ -237,7 +247,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   }
 
   Future<bool> updateProfile({
-    required String name,
+    required String firstName,
+    String? lastName,
     required String email,
     required String dob,
     required String pincode,
@@ -250,7 +261,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     try {
       final result = await _profileService.updateProfile(
         customerId: _customerId,
-        name: name,
+        firstName: firstName,
+        lastName: lastName,
         email: email,
         dob: dob,
         pincode: pincode,
@@ -269,7 +281,9 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         final emailChanged =
             email.trim().toLowerCase() != state.user.email.trim().toLowerCase();
         final updatedUser = state.user.copyWith(
-          name: name,
+          name: '$firstName ${lastName ?? ''}'.trim(),
+          firstName: firstName,
+          lastName: lastName ?? '',
           email: email,
           isEmailVerified: emailChanged ? false : state.user.isEmailVerified,
           dob: dob,

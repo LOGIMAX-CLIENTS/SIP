@@ -97,13 +97,13 @@ class AuthService {
 
   Future<Map<String, dynamic>> sendEmailOtp({
     required String email,
-    String? fullName,
+    String? firstName,
   }) async {
     final response = await _apiClient.post(
       'users/auth/generate-email-otp',
       data: {
         'email': email,
-        'full_name': fullName,
+        'first_name': firstName,
       },
     );
     return response.data;
@@ -127,7 +127,8 @@ class AuthService {
 
   Future<Map<String, dynamic>> register({
     required String mobile,
-    required String fullName,
+    required String firstName,
+    String? lastName,
     required String email,
     required String tempToken,
     String? dob,
@@ -137,7 +138,8 @@ class AuthService {
       'users/auth/register',
       data: {
         'mobile': mobile,
-        'full_name': fullName,
+        'first_name': firstName,
+        'last_name': lastName,
         'email': email,
         'dob': dob,
         'referral_code': referralCode,
@@ -177,7 +179,8 @@ class AuthService {
   /// Returns the raw API response for the caller to check success/error.
   Future<Map<String, dynamic>> registerCheck({
     required String mobile,
-    required String fullName,
+    required String firstName,
+    String? lastName,
     required String email,
     required String tempToken,
     String? dob,
@@ -187,7 +190,8 @@ class AuthService {
       'users/auth/register-check',
       data: {
         'mobile': mobile,
-        'full_name': fullName,
+        'first_name': firstName,
+        'last_name': lastName,
         'email': email,
         'dob': dob,
         'referral_code': referralCode,
@@ -402,11 +406,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> sendEmailOtp(String email, {String? fullName}) async {
+  Future<bool> sendEmailOtp(String email, {String? firstName}) async {
     if (state.isLoading) return false;
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final data = await _authService.sendEmailOtp(email: email, fullName: fullName);
+      final data = await _authService.sendEmailOtp(email: email, firstName: firstName);
 
       if (data['success'] == true) {
         state = state.copyWith(isLoading: false, data: data['data']);
@@ -518,7 +522,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<bool> register({
     required String mobile,
-    required String fullName,
+    required String firstName,
+    String? lastName,
     required String email,
     required String tempToken,
     String? dob,
@@ -529,7 +534,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final data = await _authService.register(
         mobile: mobile,
-        fullName: fullName,
+        firstName: firstName,
+        lastName: lastName,
         email: email,
         tempToken: tempToken,
         dob: dob,

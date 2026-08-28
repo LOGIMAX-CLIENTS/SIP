@@ -19,7 +19,7 @@ Future<bool?> showEmailOtpSheet(
   BuildContext context, {
   required String email,
   required String otpReferenceId,
-  String? fullName,
+  String? firstName,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -28,7 +28,7 @@ Future<bool?> showEmailOtpSheet(
     builder: (_) => EmailOtpSheet(
       email: email,
       otpReferenceId: otpReferenceId,
-      fullName: fullName,
+      firstName: firstName,
     ),
   );
 }
@@ -36,13 +36,13 @@ Future<bool?> showEmailOtpSheet(
 class EmailOtpSheet extends ConsumerStatefulWidget {
   final String email;
   final String otpReferenceId;
-  final String? fullName;
+  final String? firstName;
 
   const EmailOtpSheet({
     super.key,
     required this.email,
     required this.otpReferenceId,
-    this.fullName,
+    this.firstName,
   });
 
   @override
@@ -92,7 +92,7 @@ class _EmailOtpSheetState extends ConsumerState<EmailOtpSheet> {
 
     final success = await ref
         .read(authControllerProvider.notifier)
-        .sendEmailOtp(widget.email, fullName: widget.fullName);
+        .sendEmailOtp(widget.email, firstName: widget.firstName);
 
     if (!mounted) return;
     if (success) {

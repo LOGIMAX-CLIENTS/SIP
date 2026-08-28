@@ -10,11 +10,11 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 
 class RegistrationSuccessScreen extends ConsumerWidget {
-  final String fullName;
+  final String firstName;
 
   const RegistrationSuccessScreen({
     super.key,
-    required this.fullName,
+    required this.firstName,
   });
 
   @override
@@ -25,9 +25,6 @@ class RegistrationSuccessScreen extends ConsumerWidget {
     final accentGreen = const Color(0xFF064E3B);
     final secondaryTextColor =
         isDark ? Colors.white60 : const Color(0xFF555555);
-
-    // Extract first name for the greeting
-    final firstName = fullName.split(' ').first;
 
     return PopScope(
       canPop: false,

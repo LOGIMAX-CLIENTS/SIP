@@ -23,7 +23,8 @@ import '../../../core/utils/validators.dart';
 
 class PinCreationScreen extends ConsumerStatefulWidget {
   final String mobile;
-  final String fullName;
+  final String firstName;
+  final String lastName;
   final String email;
   final String dob;
   final String referralCode;
@@ -31,7 +32,8 @@ class PinCreationScreen extends ConsumerStatefulWidget {
   const PinCreationScreen({
     super.key,
     required this.mobile,
-    this.fullName = '',
+    this.firstName = '',
+    this.lastName = '',
     this.email = '',
     this.dob = '',
     this.referralCode = '',
@@ -427,7 +429,8 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
       final registerSuccess =
           await ref.read(authControllerProvider.notifier).register(
                 mobile: widget.mobile,
-                fullName: widget.fullName,
+                firstName: widget.firstName,
+                lastName: widget.lastName,
                 email: widget.email,
                 tempToken: widget.tempToken,
                 dob: widget.dob,
@@ -460,11 +463,11 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
       // Fire-and-forget — never blocks navigation.
       _registerFcmToken();
 
-      if (widget.fullName.isNotEmpty) {
+      if (widget.firstName.isNotEmpty) {
         Navigator.pushReplacementNamed(
           context,
           AppRouter.registrationSuccess,
-          arguments: {'fullName': widget.fullName},
+          arguments: {'firstName': widget.firstName},
         );
       } else {
         Navigator.pushNamedAndRemoveUntil(
