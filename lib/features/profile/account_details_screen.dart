@@ -27,7 +27,8 @@ class AccountDetailsScreen extends ConsumerStatefulWidget {
 }
 
 class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
-  late TextEditingController _nameController;
+  late TextEditingController _firstNameController;
+  late TextEditingController _lastNameController;
   late TextEditingController _emailController;
   late TextEditingController _dobController;
   late TextEditingController _pincodeController;
@@ -41,17 +42,18 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
 
   // Returns true only when all mandatory fields have content
   bool get _canSave {
-    final name = _nameController.text.trim();
+    final firstName = _firstNameController.text.trim();
     final email = _emailController.text.trim();
     final pincode = _pincodeController.text.trim();
-    return name.isNotEmpty && email.isNotEmpty && pincode.length == 6 && _isPincodeValid;
+    return firstName.isNotEmpty && email.isNotEmpty && pincode.length == 6 && _isPincodeValid;
   }
 
   @override
   void initState() {
     super.initState();
     final user = ref.read(profileProvider).user;
-    _nameController = TextEditingController(text: user.name);
+    _firstNameController = TextEditingController(text: user.firstName);
+    _lastNameController = TextEditingController(text: user.lastName);
     _emailController = TextEditingController(text: user.email);
     _dobController = TextEditingController(text: user.dob);
     _pincodeController = TextEditingController(text: user.pincode);
@@ -60,7 +62,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     _addressController = TextEditingController(text: user.address);
 
     // Rebuild whenever mandatory fields change so Save button reacts live
-    _nameController.addListener(() => setState(() {}));
+    _firstNameController.addListener(() => setState(() {}));
     _emailController.addListener(() => setState(() {}));
     _pincodeController.addListener(() => setState(() {}));
 
@@ -73,7 +75,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         if (!mounted) return;
         // Sync controllers with freshly loaded data
         final updated = ref.read(profileProvider).user;
-        _nameController.text = updated.name;
+        _firstNameController.text = updated.firstName;
+        _lastNameController.text = updated.lastName;
         _emailController.text = updated.email;
         _dobController.text = updated.dob;
         _pincodeController.text = updated.pincode;
@@ -90,7 +93,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     Future.microtask(() {
       ref.read(profileProvider.notifier).setEditing(false);
     });
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
     _dobController.dispose();
     _pincodeController.dispose();
@@ -145,8 +149,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     setState(() => _isVerifyingEmail = true);
     final success = await ref.read(authControllerProvider.notifier).sendEmailOtp(
           email,
-          fullName: _nameController.text.trim().isNotEmpty
-              ? _nameController.text.trim()
+          firstName: _firstNameController.text.trim().isNotEmpty
+              ? _firstNameController.text.trim()
               : null,
         );
 
@@ -162,7 +166,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       context,
       email: email,
       otpReferenceId: otpReferenceId,
-      fullName: _nameController.text.trim(),
+      firstName: _firstNameController.text.trim(),
     );
 
     if (verified == true && mounted) {
@@ -175,13 +179,14 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
 
   Future<void> _handleSubmit() async {
     // â”€â”€ Validate Name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    final name = _nameController.text.trim();
-    if (name.isEmpty) {
-      AppToast.show(context, 'Name as per PAN is required', type: ToastType.error);
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    if (firstName.isEmpty) {
+      AppToast.show(context, 'First name as per PAN is required', type: ToastType.error);
       return;
     }
-    if (name.length < 2) {
-      AppToast.show(context, 'Enter a valid name', type: ToastType.error);
+    if (firstName.length < 2) {
+      AppToast.show(context, 'Enter a valid first name', type: ToastType.error);
       return;
     }
 
@@ -206,7 +211,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     }
 
     final success = await ref.read(profileProvider.notifier).updateProfile(
-          name: name,
+          firstName: firstName,
+          lastName: lastName,
           email: email,
           dob: _dobController.text,
           pincode: pincode,
@@ -241,7 +247,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
 
     ref.listen(profileProvider, (previous, next) {
       if (!next.isEditing && (previous == null || previous.user != next.user)) {
-        _nameController.text = next.user.name;
+        _firstNameController.text = next.user.firstName;
+        _lastNameController.text = next.user.lastName;
         _emailController.text = next.user.email;
         _dobController.text = next.user.dob;
         _pincodeController.text = next.user.pincode;
@@ -270,10 +277,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
               onPressed: () {
                 if (profileState.isEditing) {
                   // Block cancel if mandatory fields are empty
-                  final name = _nameController.text.trim();
+                  final firstName = _firstNameController.text.trim();
                   final pincode = _pincodeController.text.trim();
-                  if (name.isEmpty) {
-                    AppToast.show(context, 'Name as per PAN is required', type: ToastType.error);
+                  if (firstName.isEmpty) {
+                    AppToast.show(context, 'First name as per PAN is required', type: ToastType.error);
                     return;
                   }
                   if (pincode.length != 6) {
@@ -323,7 +330,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                           ),
                         ),
                         SizedBox(height: 32.h),
-                        _buildInputField(label: 'Name as per PAN *', controller: _nameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(60)]),
+                        _buildInputField(label: 'First Name as per PAN *', controller: _firstNameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)]),
+                        _buildInputField(label: 'Last Name as per PAN (Optional)', controller: _lastNameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)]),
                         _buildInputField(label: 'Phone Number *', hint: MaskingUtils.maskMobile(user.phone), isEditable: false, isDark: isDark, isNumeric: true),
                         _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, labelAction: _buildEmailVerifyBadge(user, isDark)),
                         _buildInputField(label: 'DOB *', hint: user.dob, isEditable: false, isDark: isDark, isNumeric: true),

@@ -26,7 +26,8 @@ class ProfileService {
   /// Returns `{'success': true}` or `{'success': false, 'message': '...'}`.
   Future<Map<String, dynamic>> updateProfile({
     required String customerId,
-    required String name,
+    required String firstName,
+    String? lastName,
     required String email,
     required String dob,
     required String pincode,
@@ -42,7 +43,8 @@ class ProfileService {
         'profile/update',
         data: {
           'id_customer': customerId,
-          'name': name,
+          'first_name': firstName,
+          'last_name': lastName,
           'email': email,
           'dob': dob,
           'pincode': pincode,

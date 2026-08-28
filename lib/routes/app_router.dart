@@ -213,7 +213,8 @@ class AppRouter {
               {};
           return PinCreationScreen(
             mobile: args['mobile'] ?? '',
-            fullName: args['fullName'] ?? '',
+            firstName: args['firstName'] ?? '',
+            lastName: args['lastName'] ?? '',
             email: args['email'] ?? '',
             dob: args['dob'] ?? '',
             referralCode: args['referralCode'] ?? '',
@@ -320,7 +321,7 @@ class AppRouter {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??
               {};
-          return RegistrationSuccessScreen(fullName: args['fullName'] ?? '');
+          return RegistrationSuccessScreen(firstName: args['firstName'] ?? '');
         },
         maintenance: (context) {
           final args = ModalRoute.of(context)!.settings.arguments

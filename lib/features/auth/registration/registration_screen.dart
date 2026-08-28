@@ -30,7 +30,8 @@ class RegistrationScreen extends ConsumerStatefulWidget {
 
 class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _dobController = TextEditingController();
   final _referralController = TextEditingController();
@@ -65,7 +66,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
     _dobController.dispose();
     _referralController.dispose();
@@ -182,34 +184,35 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                         ),
                         SizedBox(height: 36.h),
 
-                        // Full Name Field
-                        _buildInputLabel('Full Name *', primaryTextColor),
+                        // First Name Field
+                        _buildInputLabel('First Name *', primaryTextColor),
                         SizedBox(height: 8.h),
                         _buildClassicTextField(
-                          controller: _nameController,
-                          hint: 'Enter Your Full Name',
+                          controller: _firstNameController,
+                          hint: 'Enter Your First Name',
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
                           textCapitalization: TextCapitalization.words,
-                          maxLength: 60,
-                          inputFormatters: [
-                            // Allow only letters and spaces — no special characters
-                            FilteringTextInputFormatter.allow(
-                                RegExp(r"[a-zA-Z ]")),
-                            // Capitalise first letter of every word
-                            TextInputFormatter.withFunction((oldValue, newValue) {
-                              final text = newValue.text;
-                              if (text.isEmpty) return newValue;
-                              final capitalized = text.split(' ').map((word) {
-                                if (word.isEmpty) return word;
-                                return word[0].toUpperCase() + word.substring(1);
-                              }).join(' ');
-                              return newValue.copyWith(text: capitalized);
-                            }),
-                          ],
+                          maxLength: 30,
+                          inputFormatters: _nameInputFormatters(),
                           validator: (v) => v == null || v.trim().length < 2
-                              ? 'Enter a valid name'
+                              ? 'Enter a valid first name'
                               : null,
+                        ),
+                        SizedBox(height: 16.h),
+
+                        // Last Name Field
+                        _buildInputLabel(
+                            'Last Name (Optional)', primaryTextColor),
+                        SizedBox(height: 8.h),
+                        _buildClassicTextField(
+                          controller: _lastNameController,
+                          hint: 'Enter Your Last Name',
+                          bgColor: inputBgColor,
+                          textColor: primaryTextColor,
+                          textCapitalization: TextCapitalization.words,
+                          maxLength: 30,
+                          inputFormatters: _nameInputFormatters(),
                         ),
                         SizedBox(height: 6.h),
                         Row(
@@ -223,7 +226,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                             SizedBox(width: 6.w),
                             Expanded(
                               child: Text(
-                                'Note: Enter full name exactly as on your PAN Card.',
+                                'Note: Enter your name exactly as on your PAN Card.',
                                 style: GoogleFonts.playfairDisplay(
                                   fontSize: 11.sp,
                                   color: isDark ? Colors.white54 : const Color(0xFF92400E),
@@ -437,6 +440,23 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     );
   }
 
+  List<TextInputFormatter> _nameInputFormatters() {
+    return [
+      // Allow only letters and spaces — no special characters
+      FilteringTextInputFormatter.allow(RegExp(r"[a-zA-Z ]")),
+      // Capitalise first letter of every word
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        final text = newValue.text;
+        if (text.isEmpty) return newValue;
+        final capitalized = text.split(' ').map((word) {
+          if (word.isEmpty) return word;
+          return word[0].toUpperCase() + word.substring(1);
+        }).join(' ');
+        return newValue.copyWith(text: capitalized);
+      }),
+    ];
+  }
+
   Widget _buildInputLabel(String label, Color color) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Text(
@@ -516,8 +536,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     setState(() => _isVerifyingEmail = true);
     final success = await ref.read(authControllerProvider.notifier).sendEmailOtp(
           email,
-          fullName: _nameController.text.trim().isNotEmpty
-              ? _nameController.text.trim()
+          firstName: _firstNameController.text.trim().isNotEmpty
+              ? _firstNameController.text.trim()
               : null,
         );
 
@@ -533,7 +553,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       context,
       email: email,
       otpReferenceId: otpReferenceId,
-      fullName: _nameController.text.trim(),
+      firstName: _firstNameController.text.trim(),
     );
 
     if (verified == true && mounted) {
@@ -560,7 +580,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       final authService = ref.read(authServiceProvider);
       final result = await authService.registerCheck(
         mobile: widget.mobile,
-        fullName: _nameController.text.trim(),
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
         email: _emailController.text.trim(),
         tempToken: widget.tempToken,
         dob: _dobController.text,
@@ -575,7 +596,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
           context,
           AppRouter.mpinCreation,
           arguments: {
-            'fullName': _nameController.text.trim(),
+            'firstName': _firstNameController.text.trim(),
+            'lastName': _lastNameController.text.trim(),
             'mobile': widget.mobile,
             'email': _emailController.text.trim(),
             'dob': _dobController.text,
