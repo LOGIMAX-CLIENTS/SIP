@@ -474,7 +474,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
     final bothComplete =
         result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
-    if (!bothComplete) return;
+    // Skip if KYC is already confirmed — e.g. resolving the Aadhaar/PAN
+    // name-mismatch dialog just ran confirm_and_sync() on the backend
+    // (same call the popup below itself triggers on Save), so re-showing
+    // it here would ask the customer to confirm a name they just entered.
+    // Mirrors the identical guard in _checkCompletionRecoveryOnLoad.
+    if (!bothComplete || result.kycConfirmed) return;
 
     final panDoc = result.documents.isEmpty
         ? null
