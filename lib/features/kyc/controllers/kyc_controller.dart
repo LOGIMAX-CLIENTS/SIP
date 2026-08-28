@@ -224,6 +224,17 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
   );
 
   String _sanitizeErrorMessage(Object e) {
+    // A deliberate 4xx business response (NAME_MISMATCH, REJECTED, EXPIRED,
+    // PROFILE_NAME_MISMATCH, etc.) — ApiClient maps every non-2xx response
+    // to a Failure, so without this check a real, backend-authored,
+    // safe-to-show message (e.g. "Your profile name and/or date of birth
+    // doesn't match your Aadhaar record...") was being discarded below and
+    // replaced with the generic technical-issue string, regardless of the
+    // real reason. Only 4xx is trusted here — a 5xx is still an
+    // infrastructure fault, not a business message.
+    if (e is ServerFailure && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+      return e.message;
+    }
     // Network/provider-infrastructure failures (timeouts, 5xx, connection
     // drops, SSL errors) never carry a message safe to show verbatim.
     if (e is Failure) {
