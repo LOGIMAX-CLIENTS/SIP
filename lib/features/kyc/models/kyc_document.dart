@@ -9,6 +9,18 @@
   final KycImagesRequirement images;
   final String? maskedValue;
   final String? verifiedName;
+  // Not returned by the backend today — and not just because
+  // kyc/document-types hasn't been extended to send it. Backend confirmed
+  // the verified PAN DOB is never persisted anywhere retrievable in the
+  // first place: KYCService._try_persist_digilocker_pan parses it
+  // (authoritative_dob_raw) purely to run a transient mismatch check, then
+  // discards it — no verified_dob key is written back onto the approved KYC
+  // row's kyc_response. Backend needs to persist that key at approval time
+  // before document-types could ever surface it here. Parsed defensively
+  // from `verified_dob` (matching the update-profile-name endpoint's
+  // `verified_name`-style naming) so this activates with no frontend change
+  // once both the persistence and the document-types exposure exist.
+  final String? verifiedDob;
 
   KycDocumentType({
     required this.id,
@@ -21,6 +33,7 @@
     this.alreadyUploaded = false,
     this.maskedValue,
     this.verifiedName,
+    this.verifiedDob,
   });
 
   factory KycDocumentType.fromJson(Map<String, dynamic> json) {
@@ -33,6 +46,7 @@
       alreadyUploaded: json['already_uploaded'] ?? false,
       maskedValue: json['masked_value']?.toString(),
       verifiedName: json['verified_name']?.toString(),
+      verifiedDob: json['verified_dob']?.toString(),
       fields: (json['fields'] as List?)
               ?.map((e) => KycField.fromJson(e))
               .toList() ??
@@ -51,6 +65,12 @@ class KycDocumentsResult {
   final bool aadhaarApproved;
   final String? aadhaarMaskedNumber;
   final String? aadhaarName;
+  // Same caveat as KycDocumentType.verifiedDob above, Aadhaar side:
+  // KYCService._check_aadhaar_kyc computes verified_dob_parsed purely for
+  // its own mismatch gate and never writes it back onto the approved row's
+  // kyc_response — so there's nothing for document-types to expose yet
+  // either. Parsed defensively from `aadhaar_dob`.
+  final String? aadhaarDob;
   // True only once the backend's CustomerPan/CustomerAadhaar mirror is
   // fully APPROVED for both PAN and Aadhaar — i.e. the customer has already
   // completed the mandatory Profile Name Selection confirmation. Distinct
@@ -66,6 +86,7 @@ class KycDocumentsResult {
     required this.aadhaarApproved,
     this.aadhaarMaskedNumber,
     this.aadhaarName,
+    this.aadhaarDob,
     this.kycConfirmed = false,
   });
 }
