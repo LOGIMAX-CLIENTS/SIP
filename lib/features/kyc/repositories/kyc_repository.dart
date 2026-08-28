@@ -27,6 +27,7 @@ class KycRepository {
         aadhaarApproved: aadhaarStatus.toUpperCase() == 'APPROVED',
         aadhaarMaskedNumber: data['aadhaar_masked_number']?.toString(),
         aadhaarName: data['aadhaar_name']?.toString(),
+        aadhaarDob: data['aadhaar_dob']?.toString(),
         kycConfirmed: data['kyc_confirmed'] == true,
       );
     } else {
@@ -139,14 +140,36 @@ class KycRepository {
 
   /// Step 2: poll for the DigiLocker consent outcome using the
   /// `verification_id` returned by [initiateAadhaar]. Returns `data` with
-  /// `status` in PENDING | APPROVED | EXPIRED | REJECTED.
+  /// `status` in PENDING | APPROVED | EXPIRED | REJECTED | CONFIRM_NAME_UPDATE.
+  ///
+  /// CONFIRM_NAME_UPDATE (KYC_NAME_MISMATCH_RESOLUTION, backend
+  /// `KYCService._check_aadhaar_kyc`) means the Aadhaar-verified name/DOB
+  /// don't match the profile on file — a plain re-poll (leave
+  /// [confirmNameUpdate] false) just re-returns the same prompt, it doesn't
+  /// re-call DigiLocker. To resolve it, resubmit with the SAME
+  /// [verificationId], [confirmNameUpdate]=true, and the customer's
+  /// corrected [name]/[dob] (`DD-MM-YYYY`, matching KYCService's
+  /// `_parse_flexible_date`) — the backend re-validates them against the
+  /// Aadhaar record it already fetched (no second DigiLocker round trip)
+  /// and, on match, applies them to the profile in that same call. A
+  /// continued mismatch comes back as a thrown Exception (status
+  /// NAME_MISMATCH), same as any other rejected `success:false` response —
+  /// there is no separate "still mismatched" data shape to branch on.
   Future<Map<String, dynamic>> pollAadhaar({
     required String requestFrom,
     required String verificationId,
+    bool confirmNameUpdate = false,
+    String? name,
+    String? dob,
   }) {
     return _uploadAadhaar(
       requestFrom: requestFrom,
-      fields: {'verification_id': verificationId},
+      fields: {
+        'verification_id': verificationId,
+        if (confirmNameUpdate) 'confirm_name_update': true,
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (dob != null && dob.isNotEmpty) 'dob': dob,
+      },
     );
   }
 
@@ -180,6 +203,53 @@ class KycRepository {
     throw Exception(serverMessage);
   }
 
+  /// Resolves a PAN name/DOB mismatch prompt (`pan_confirmation` piggybacked
+  /// on an Aadhaar poll response — see NameMismatchPrompt's doc comment in
+  /// kyc_controller.dart). Unlike Aadhaar's mismatch resolution, this is
+  /// NOT part of the `kyc/upload` id_document="2" poll cycle — PAN has no
+  /// verification_id/poll of its own, so the backend created a dedicated
+  /// PENDING PAN KYC row instead and this targets it directly via
+  /// `id_document="3"` (`KYCService._confirm_pan_name_mismatch`).
+  ///
+  /// [panKycId] is [NameMismatchPrompt.verificationId] from that prompt
+  /// (the dedicated PAN row's id, despite the field's name). [confirm]=true
+  /// with [name]/[dob] re-validates them against the PAN-verified record and
+  /// applies them to the profile on match (same
+  /// `_validate_mismatch_resubmission` rule Aadhaar uses — DD-MM-YYYY for
+  /// [dob], matching `KYCService._parse_flexible_date`); [confirm]=false
+  /// declines and leaves the PAN row PENDING (a successful no-op, not an
+  /// error). Returns `data` — `status` is APPROVED | NAME_MISMATCH |
+  /// DECLINED.
+  Future<Map<String, dynamic>> confirmPanNameMismatch({
+    required String panKycId,
+    required bool confirm,
+    String? name,
+    String? dob,
+  }) async {
+    final fields = {
+      'pan_kyc_id': panKycId,
+      'confirm': confirm,
+      if (name != null && name.isNotEmpty) 'name': name,
+      if (dob != null && dob.isNotEmpty) 'dob': dob,
+    };
+    final response = await _apiClient.post('kyc/upload', data: {
+      'id_document': '3', // PAN_NAME_MISMATCH_CONFIRM
+      'fields': fields,
+    });
+
+    final data = response.data['data'];
+    if (response.data['success'] == true) {
+      return data is Map<String, dynamic> ? data : <String, dynamic>{};
+    }
+
+    final errorObj = response.data['error'];
+    final String serverMessage = (errorObj is Map ? errorObj['message'] : null) ??
+        (data is Map ? data['message'] : null) ??
+        response.data['message'] ??
+        'Could not confirm PAN details.';
+    throw Exception(serverMessage);
+  }
+
   /// Fetches the merchant config Meon's native `flutter_digilocker_aadhar_pan`
   /// SDK needs to launch directly (companyName + secretToken + redirectUrl) —
   /// see `meon_digilocker_sdk_screen.dart`'s SECURITY NOTE for why this is a
@@ -204,15 +274,20 @@ class KycRepository {
     throw Exception(serverMessage);
   }
 
-  /// Updates the customer's profile name (cus_name) to the verified name
-  /// from the latest APPROVED PAN or Aadhaar KYC record — used by the
-  /// mandatory Profile Name Selection popup shown after every successful
-  /// PAN + Aadhaar completion. [source] must be `'PAN'` or `'AADHAAR'`; the
-  /// backend resolves the actual name server-side from the verified
-  /// record, never trusting a client-supplied name string.
-  Future<void> updateProfileName({required String source}) async {
+  /// Updates the customer's profile name (cus_name) from the latest
+  /// APPROVED PAN or Aadhaar KYC record — used by the mandatory verified-
+  /// details confirmation dialog shown after every successful PAN/Aadhaar
+  /// completion. [source] must be `'PAN'` or `'AADHAAR'`.
+  ///
+  /// [name] is what the customer typed/edited in that dialog's Profile Name
+  /// field — the backend (`update_profile_name_from_kyc`) requires it to
+  /// match the verified [source] name (NameMatchingService) and rejects a
+  /// mismatch with PROFILE_NAME_MISMATCH rather than storing it; omitting
+  /// [name] falls back to the server-resolved verified name as-is.
+  Future<void> updateProfileName({required String source, String? name}) async {
     final response = await _apiClient.post('kyc/update-profile-name', data: {
       'source': source,
+      if (name != null && name.isNotEmpty) 'name': name,
     });
 
     if (response.data['success'] == true) return;
@@ -223,6 +298,42 @@ class KycRepository {
         (dataObj is Map ? dataObj['message'] : null) ??
         response.data['message'] ??
         'Could not update profile name.';
+    throw Exception(serverMessage);
+  }
+
+  /// Companion to [updateProfileName] for the customer's date of birth
+  /// (cus_dob) — mirrors its contract exactly: [source] is `'PAN'` or
+  /// `'AADHAAR'`, [dob] is what the customer typed/picked in the
+  /// confirmation dialog's date field, sent as `DD-MM-YYYY` (see
+  /// _VerifiedDetailsDialogState._formatDob in kyc_screen.dart) because
+  /// that's the one format `KYCService._parse_flexible_date` tries first —
+  /// do not switch this to ISO without checking that server-side parser.
+  /// A mismatch against the verified [source] DOB is expected to come back
+  /// the same way PROFILE_NAME_MISMATCH does (a `PROFILE_DOB_MISMATCH`-coded
+  /// error with a human-readable `message`), which the generic error
+  /// handling below already surfaces correctly without special-casing it.
+  ///
+  /// NOT backed by a live endpoint yet — `kyc/update-profile-dob` doesn't
+  /// exist on the backend, and building it needs a prerequisite the name
+  /// endpoint didn't: the verified DOB isn't persisted anywhere retrievable
+  /// today (see KycDocumentType.verifiedDob's doc comment), so even the
+  /// "resolve without a typed value" fallback path can't work until that's
+  /// fixed. Callers must treat this as best-effort (catch and ignore) so it
+  /// stays dormant rather than blocking the dialog's save action.
+  Future<void> updateProfileDob({required String source, String? dob}) async {
+    final response = await _apiClient.post('kyc/update-profile-dob', data: {
+      'source': source,
+      if (dob != null && dob.isNotEmpty) 'dob': dob,
+    });
+
+    if (response.data['success'] == true) return;
+
+    final errorObj = response.data['error'];
+    final dataObj = response.data['data'];
+    final String serverMessage = (errorObj is Map ? errorObj['message'] : null) ??
+        (dataObj is Map ? dataObj['message'] : null) ??
+        response.data['message'] ??
+        'Could not update profile date of birth.';
     throw Exception(serverMessage);
   }
 }
