@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:startgold/core/security/secure_logger.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/core/security/app_lifecycle_observer.dart';
@@ -356,7 +357,13 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         // they backed out (hardware back → pops with a null result) there is
         // nothing new to check yet, so skip the round trip.
         if (consentConfirmed == true) {
-          await notifier.pollUntilTerminal(widget.requestFrom);
+          // Re-read rather than reuse the `notifier` captured above: aadhaarProvider
+          // is .autoDispose, and the pushed sub-screen can outlive its last
+          // listener long enough for Riverpod to tear it down and recreate it —
+          // calling pollUntilTerminal on the stale instance would silently no-op
+          // via its own `mounted` guard, dropping a real CONFIRM_NAME_UPDATE/
+          // APPROVED/etc. result on the floor with no error shown.
+          await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
         }
       } else if (afterInitiate.phase == AadhaarPhase.awaitingSdk &&
           afterInitiate.sdkToken != null) {
@@ -372,12 +379,22 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         );
         if (!mounted) return;
         if (sdkConfirmed == true) {
-          await notifier.pollUntilTerminal(widget.requestFrom);
+          // Re-read — see the webview branch's comment above. Especially
+          // relevant here: the native SDK renders via a platform view
+          // (PlatformViewsController), which is more likely than a plain
+          // Flutter WebView route to suspend the underlying widget tree long
+          // enough for the autoDispose provider to be torn down.
+          await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
         }
       }
 
       if (!mounted) return;
       var finalState = ref.read(aadhaarProvider);
+      SecureLogger.d(
+        '[KYC DEBUG] post-poll finalState.phase=${finalState.phase} '
+        'aadhaarMismatchPrompt=${finalState.aadhaarMismatchPrompt != null} '
+        'panMismatchPrompt=${finalState.panMismatchPrompt != null}',
+      );
 
       // PAN's mismatch prompt (if any) is independent of Aadhaar's own
       // phase below — it can be set alongside APPROVED, already-approved, or
@@ -408,7 +425,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       }
 
       if (finalState.phase == AadhaarPhase.awaitingNameMismatchConfirm) {
+        SecureLogger.d('[KYC DEBUG] entering awaitingNameMismatchConfirm branch, calling _showMismatchDialog');
         final resolved = await _showMismatchDialog(finalState.aadhaarMismatchPrompt!);
+        SecureLogger.d('[KYC DEBUG] _showMismatchDialog returned resolved=$resolved');
         if (!mounted) return;
         if (resolved) await _checkAndHandleCompletion();
         return;
@@ -641,6 +660,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// resolvable by re-typing, so the customer can back out rather than
   /// being stuck. Returns true only once the submit actually resolves it.
   Future<bool> _showMismatchDialog(NameMismatchPrompt prompt) async {
+    SecureLogger.d('[KYC DEBUG] _showMismatchDialog entered, mounted=$mounted, document=${prompt.document}');
     final resolved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
