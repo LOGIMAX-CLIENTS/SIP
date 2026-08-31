@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:startgold/core/security/secure_logger.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:startgold/core/security/app_lifecycle_observer.dart';
 import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
@@ -326,113 +327,124 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
   Future<void> _runVerifyAadhaar() async {
     final notifier = ref.read(aadhaarProvider.notifier);
-    await notifier.initiate(
-      widget.requestFrom,
-      aadhaarNumber: AadhaarInputFormatter.unformat(_aadhaarNumberController.text),
-      fullName: _aadhaarNameController.text.trim(),
-      allowReverify: _aadhaarEditing,
-    );
-    if (!mounted) return;
-
-    final afterInitiate = ref.read(aadhaarProvider);
-    if (afterInitiate.phase == AadhaarPhase.awaitingConsent &&
-        afterInitiate.consentUrl != null) {
-      // Cashfree — webview consent flow.
-      final consentConfirmed = await Navigator.pushNamed(
-        context,
-        AppRouter.aadhaarVerification,
-        arguments: {'consentUrl': afterInitiate.consentUrl},
+    // DigiLocker (webview or native SDK) can run long enough for the screen
+    // to auto-lock mid-flow — without this, AppLifecycleObserver's resume
+    // handler pushes the MPIN re-lock screen on top the instant the app
+    // regains focus, burying whatever this flow was about to show (most
+    // visibly the CONFIRM_NAME_UPDATE mismatch dialog below). Same pattern
+    // as the payment handlers (see hdfc_payment_handler.dart etc.).
+    AppLifecycleObserver.suppressAppLock = true;
+    try {
+      await notifier.initiate(
+        widget.requestFrom,
+        aadhaarNumber: AadhaarInputFormatter.unformat(_aadhaarNumberController.text),
+        fullName: _aadhaarNameController.text.trim(),
+        allowReverify: _aadhaarEditing,
       );
       if (!mounted) return;
-      // Only poll if the user tapped "I've completed verification" — if
-      // they backed out (hardware back → pops with a null result) there is
-      // nothing new to check yet, so skip the round trip.
-      if (consentConfirmed == true) {
-        // Re-read rather than reuse the `notifier` captured above: aadhaarProvider
-        // is .autoDispose, and the pushed sub-screen can outlive its last
-        // listener long enough for Riverpod to tear it down and recreate it —
-        // calling pollUntilTerminal on the stale instance would silently no-op
-        // via its own `mounted` guard, dropping a real CONFIRM_NAME_UPDATE/
-        // APPROVED/etc. result on the floor with no error shown.
-        await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
+
+      final afterInitiate = ref.read(aadhaarProvider);
+      if (afterInitiate.phase == AadhaarPhase.awaitingConsent &&
+          afterInitiate.consentUrl != null) {
+        // Cashfree — webview consent flow.
+        final consentConfirmed = await Navigator.pushNamed(
+          context,
+          AppRouter.aadhaarVerification,
+          arguments: {'consentUrl': afterInitiate.consentUrl},
+        );
+        if (!mounted) return;
+        // Only poll if the user tapped "I've completed verification" — if
+        // they backed out (hardware back → pops with a null result) there is
+        // nothing new to check yet, so skip the round trip.
+        if (consentConfirmed == true) {
+          // Re-read rather than reuse the `notifier` captured above: aadhaarProvider
+          // is .autoDispose, and the pushed sub-screen can outlive its last
+          // listener long enough for Riverpod to tear it down and recreate it —
+          // calling pollUntilTerminal on the stale instance would silently no-op
+          // via its own `mounted` guard, dropping a real CONFIRM_NAME_UPDATE/
+          // APPROVED/etc. result on the floor with no error shown.
+          await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
+        }
+      } else if (afterInitiate.phase == AadhaarPhase.awaitingSdk &&
+          afterInitiate.sdkToken != null) {
+        // SurePass — native DigiLocker Flutter SDK flow.
+        final sdkConfirmed = await Navigator.pushNamed(
+          context,
+          AppRouter.digilockerSdk,
+          arguments: {
+            'sdkToken': afterInitiate.sdkToken,
+            'clientId': afterInitiate.providerClientId,
+            'environment': afterInitiate.sdkEnvironment,
+          },
+        );
+        if (!mounted) return;
+        if (sdkConfirmed == true) {
+          // Re-read — see the webview branch's comment above. Especially
+          // relevant here: the native SDK renders via a platform view
+          // (PlatformViewsController), which is more likely than a plain
+          // Flutter WebView route to suspend the underlying widget tree long
+          // enough for the autoDispose provider to be torn down.
+          await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
+        }
       }
-    } else if (afterInitiate.phase == AadhaarPhase.awaitingSdk &&
-        afterInitiate.sdkToken != null) {
-      // SurePass — native DigiLocker Flutter SDK flow.
-      final sdkConfirmed = await Navigator.pushNamed(
-        context,
-        AppRouter.digilockerSdk,
-        arguments: {
-          'sdkToken': afterInitiate.sdkToken,
-          'clientId': afterInitiate.providerClientId,
-          'environment': afterInitiate.sdkEnvironment,
-        },
-      );
+
       if (!mounted) return;
-      if (sdkConfirmed == true) {
-        // Re-read — see the webview branch's comment above. Especially
-        // relevant here: the native SDK renders via a platform view
-        // (PlatformViewsController), which is more likely than a plain
-        // Flutter WebView route to suspend the underlying widget tree long
-        // enough for the autoDispose provider to be torn down.
-        await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
+      var finalState = ref.read(aadhaarProvider);
+      SecureLogger.d(
+        '[KYC DEBUG] post-poll finalState.phase=${finalState.phase} '
+        'aadhaarMismatchPrompt=${finalState.aadhaarMismatchPrompt != null} '
+        'panMismatchPrompt=${finalState.panMismatchPrompt != null}',
+      );
+
+      // PAN's mismatch prompt (if any) is independent of Aadhaar's own
+      // phase below — it can be set alongside APPROVED, already-approved, or
+      // even REJECTED (see AadhaarState.panMismatchPrompt's doc comment) — so
+      // it's handled first, unconditionally, before branching on phase.
+      if (finalState.panMismatchPrompt != null) {
+        final resolved = await _showMismatchDialog(finalState.panMismatchPrompt!);
+        if (!mounted) return;
+        if (resolved) await _checkAndHandleCompletion();
+        finalState = ref.read(aadhaarProvider);
       }
-    }
 
-    if (!mounted) return;
-    var finalState = ref.read(aadhaarProvider);
-    SecureLogger.d(
-      '[KYC DEBUG] post-poll finalState.phase=${finalState.phase} '
-      'aadhaarMismatchPrompt=${finalState.aadhaarMismatchPrompt != null} '
-      'panMismatchPrompt=${finalState.panMismatchPrompt != null}',
-    );
+      if (finalState.phase == AadhaarPhase.expired ||
+          finalState.phase == AadhaarPhase.rejected ||
+          finalState.phase == AadhaarPhase.failed) {
+        if (!mounted) return;
+        AppToast.show(
+          context,
+          finalState.message ?? 'Aadhaar verification failed. Please try again.',
+          type: ToastType.error,
+        );
+        return;
+      }
 
-    // PAN's mismatch prompt (if any) is independent of Aadhaar's own
-    // phase below — it can be set alongside APPROVED, already-approved, or
-    // even REJECTED (see AadhaarState.panMismatchPrompt's doc comment) — so
-    // it's handled first, unconditionally, before branching on phase.
-    if (finalState.panMismatchPrompt != null) {
-      final resolved = await _showMismatchDialog(finalState.panMismatchPrompt!);
-      if (!mounted) return;
-      if (resolved) await _checkAndHandleCompletion();
-      finalState = ref.read(aadhaarProvider);
-    }
+      if (finalState.phase == AadhaarPhase.approved) {
+        await _checkAndHandleCompletion();
+        return;
+      }
 
-    if (finalState.phase == AadhaarPhase.expired ||
-        finalState.phase == AadhaarPhase.rejected ||
-        finalState.phase == AadhaarPhase.failed) {
-      if (!mounted) return;
-      AppToast.show(
-        context,
-        finalState.message ?? 'Aadhaar verification failed. Please try again.',
-        type: ToastType.error,
-      );
-      return;
-    }
+      if (finalState.phase == AadhaarPhase.awaitingNameMismatchConfirm) {
+        SecureLogger.d('[KYC DEBUG] entering awaitingNameMismatchConfirm branch, calling _showMismatchDialog');
+        final resolved = await _showMismatchDialog(finalState.aadhaarMismatchPrompt!);
+        SecureLogger.d('[KYC DEBUG] _showMismatchDialog returned resolved=$resolved');
+        if (!mounted) return;
+        if (resolved) await _checkAndHandleCompletion();
+        return;
+      }
 
-    if (finalState.phase == AadhaarPhase.approved) {
-      await _checkAndHandleCompletion();
-      return;
-    }
-
-    if (finalState.phase == AadhaarPhase.awaitingNameMismatchConfirm) {
-      SecureLogger.d('[KYC DEBUG] entering awaitingNameMismatchConfirm branch, calling _showMismatchDialog');
-      final resolved = await _showMismatchDialog(finalState.aadhaarMismatchPrompt!);
-      SecureLogger.d('[KYC DEBUG] _showMismatchDialog returned resolved=$resolved');
-      if (!mounted) return;
-      if (resolved) await _checkAndHandleCompletion();
-      return;
-    }
-
-    // pollUntilTerminal exhausted its retries while DigiLocker was still
-    // processing (e.g. the provider's document-fetch/cross-verify chain
-    // outran the client's polling window) — it resets to awaitingConsent
-    // with an explanatory message instead of a terminal phase. Without this,
-    // the user sees the DigiLocker screen close and nothing else: no
-    // success, no error. Surface it so they know to check back / retry.
-    if (finalState.message != null) {
-      if (!mounted) return;
-      AppToast.show(context, finalState.message!, type: ToastType.info);
+      // pollUntilTerminal exhausted its retries while DigiLocker was still
+      // processing (e.g. the provider's document-fetch/cross-verify chain
+      // outran the client's polling window) — it resets to awaitingConsent
+      // with an explanatory message instead of a terminal phase. Without this,
+      // the user sees the DigiLocker screen close and nothing else: no
+      // success, no error. Surface it so they know to check back / retry.
+      if (finalState.message != null) {
+        if (!mounted) return;
+        AppToast.show(context, finalState.message!, type: ToastType.info);
+      }
+    } finally {
+      AppLifecycleObserver.suppressAppLock = false;
     }
   }
 
@@ -461,22 +473,29 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     }
     if (!mounted) return;
 
-    final confirmed = await Navigator.pushNamed(
-      context,
-      AppRouter.meonDigilockerSdk,
-      arguments: {
-        'companyName': config['company_name'] as String,
-        'secretToken': config['secret_token'] as String,
-        'redirectUrl': (config['redirect_url'] as String?) ?? '',
-      },
-    );
-    if (!mounted) return;
+    // See the matching suppressAppLock note in _runVerifyAadhaar — same risk
+    // applies here, this SDK screen can run long enough to trigger it too.
+    AppLifecycleObserver.suppressAppLock = true;
+    try {
+      final confirmed = await Navigator.pushNamed(
+        context,
+        AppRouter.meonDigilockerSdk,
+        arguments: {
+          'companyName': config['company_name'] as String,
+          'secretToken': config['secret_token'] as String,
+          'redirectUrl': (config['redirect_url'] as String?) ?? '',
+        },
+      );
+      if (!mounted) return;
 
-    if (confirmed == true) {
-      // Meon's SDK returns full verification data inline — no separate
-      // poll step like the webview/SurePass paths need. Refresh
-      // document-types the same way a completed submission does elsewhere.
-      await _checkAndHandleCompletion();
+      if (confirmed == true) {
+        // Meon's SDK returns full verification data inline — no separate
+        // poll step like the webview/SurePass paths need. Refresh
+        // document-types the same way a completed submission does elsewhere.
+        await _checkAndHandleCompletion();
+      }
+    } finally {
+      AppLifecycleObserver.suppressAppLock = false;
     }
   }
 
