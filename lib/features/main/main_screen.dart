@@ -41,6 +41,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   // Same dedupe role, for the terminal expired/rejected/failed toast — see
   // _maybeShowAadhaarFailureDialog's doc comment.
   final Set<String> _shownAadhaarFailureKeys = {};
+  // Same dedupe role, for a clean APPROVED outcome — see
+  // _maybeHandleAadhaarApproved's doc comment.
+  final Set<String> _shownAadhaarApprovedKeys = {};
 
   @override
   void initState() {
@@ -168,6 +171,22 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     _navigateToKycAndLetItHandle();
   }
 
+  /// Success counterpart — same reasoning applies to a clean APPROVED
+  /// outcome too: if the SDK bounce leaves no KycScreen mounted to run its
+  /// own _checkAndHandleCompletion() (the Profile Name Selection dialog /
+  /// verified confirmation), the customer never sees any success feedback
+  /// at all, silently — indistinguishable from nothing having happened.
+  /// Keyed by verificationId so this fires once per genuine approval, not
+  /// on every rebuild that still reports the same already-approved state
+  /// (e.g. the ordinary case where KycScreen is mounted and handling this
+  /// itself — this dedupe guard, not a `mounted` check on MainScreen's
+  /// side, is what keeps that from also triggering a redundant navigation).
+  void _maybeHandleAadhaarApproved(AadhaarState state) {
+    final key = state.verificationId ?? 'approved-${state.maskedNumber}';
+    if (!_shownAadhaarApprovedKeys.add(key)) return;
+    _navigateToKycAndLetItHandle();
+  }
+
   Widget build(BuildContext context) {
     final selectedIndex = ref.watch(selectedTabProvider);
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
@@ -198,6 +217,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           next.phase == AadhaarPhase.rejected ||
           next.phase == AadhaarPhase.failed) {
         _maybeShowAadhaarFailureDialog(next);
+      }
+      if (next.phase == AadhaarPhase.approved) {
+        _maybeHandleAadhaarApproved(next);
       }
     });
 

@@ -912,9 +912,16 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                         style: AppTextStyles.fieldHelper(isDark),
                       ),
                       SizedBox(height: 32.h),
-                      ...result.documents
-                          .map((doc) => _buildDocumentCard(doc, isDark, aadhaarState)),
-                      _buildAadhaarCard(isDark, aadhaarState),
+                      ...result.documents.map((doc) => _buildDocumentCard(
+                            doc, isDark, aadhaarState,
+                            backendAadhaarApproved: result.aadhaarApproved,
+                          )),
+                      _buildAadhaarCard(
+                        isDark, aadhaarState,
+                        backendApproved: result.aadhaarApproved,
+                        backendMaskedNumber: result.aadhaarMaskedNumber,
+                        backendVerifiedName: result.aadhaarName,
+                      ),
                     ],
                   ),
                 );
@@ -934,7 +941,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// SurePass's /pan/pan-comprehensive) — there is deliberately no manual
   /// PAN entry form anymore. Any OTHER future document type still gets the
   /// generic field-form path below.
-  Widget _buildDocumentCard(KycDocumentType doc, bool isDark, AadhaarState aadhaarState) {
+  Widget _buildDocumentCard(
+    KycDocumentType doc,
+    bool isDark,
+    AadhaarState aadhaarState, {
+    required bool backendAadhaarApproved,
+  }) {
     final isPan = doc.name.toUpperCase().contains('PAN') ||
         doc.code.toUpperCase().contains('PAN');
     final isDone = _completedDocIds.contains(doc.id);
@@ -943,9 +955,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     // PAN's card is still pending, the user skipped/unchecked PAN in
     // DigiLocker's document picker — show that explicitly instead of the
     // generic "complete Aadhaar below" notice, which would be actively wrong
-    // once Aadhaar is done.
-    final panSkippedInConsent =
-        isPan && !isDone && aadhaarState.phase == AadhaarPhase.approved;
+    // once Aadhaar is done. Checks the backend's own aadhaar_status too, not
+    // just the local aadhaarProvider phase — _seedAadhaarIfApproved seeds
+    // that provider a frame late (see its doc comment), so on first load
+    // this card would otherwise show the generic notice for one frame even
+    // though the backend already confirms Aadhaar is done. Suppressed while
+    // _aadhaarEditing is true — that's the user actively mid-Edit/Retry-PAN
+    // (the Aadhaar card below is showing an input form for it, see
+    // _buildAadhaarCard's matching guard) — showing this "Retry PAN
+    // Verification" card at the same time would be redundant with the form
+    // already open for exactly that.
+    final panSkippedInConsent = isPan &&
+        !isDone &&
+        !_aadhaarEditing &&
+        (aadhaarState.phase == AadhaarPhase.approved || backendAadhaarApproved);
     final aadhaarRetryBusy = aadhaarState.phase == AadhaarPhase.initiating ||
         aadhaarState.phase == AadhaarPhase.polling;
 
@@ -1074,8 +1097,34 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
-  Widget _buildAadhaarCard(bool isDark, AadhaarState state) {
-    final isDone = state.phase == AadhaarPhase.approved;
+  Widget _buildAadhaarCard(
+    bool isDark,
+    AadhaarState state, {
+    required bool backendApproved,
+    String? backendMaskedNumber,
+    String? backendVerifiedName,
+  }) {
+    // Falls back to the backend's own aadhaar_status (from get_document_types
+    // / kyc/document-types, always current) when the local provider hasn't
+    // caught up yet — _seedAadhaarIfApproved seeds it a frame late (see its
+    // doc comment). Without this, a customer whose Aadhaar the backend
+    // already reports as approved briefly sees the fresh "enter your
+    // Aadhaar number" form instead of the Verified banner — and if they
+    // type into it and submit during that window, the backend's own
+    // idempotency short-circuit rejects it as a no-op (`allow_reverify`
+    // wasn't set, since this wasn't reached through the Edit/Retry-PAN
+    // flow that sets it), which reads as "my first tap did nothing."
+    // Restricted to phase == idle specifically — never overrides a
+    // genuinely in-progress or failed local phase with a stale backend flag
+    // from before a fresh reverify attempt started. Also suppressed while
+    // _aadhaarEditing is true: that flag means the user deliberately
+    // triggered Edit or Retry PAN Verification, which ALSO resets the local
+    // phase to idle (see _editAadhaar) specifically to reopen the input
+    // form — without this guard, the stale backendApproved flag (from
+    // before this reverify attempt) would immediately re-collapse that
+    // freshly-reopened form back into the Verified banner.
+    final isDone = state.phase == AadhaarPhase.approved ||
+        (backendApproved && state.phase == AadhaarPhase.idle && !_aadhaarEditing);
     final isBusy = _verifyingAadhaar ||
         state.phase == AadhaarPhase.initiating ||
         state.phase == AadhaarPhase.polling;
@@ -1112,9 +1161,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             _buildVerifiedBanner(
               isDark,
               numberLabel: 'Aadhaar Number',
-              maskedValue: state.maskedNumber,
+              maskedValue: state.maskedNumber ?? backendMaskedNumber,
               nameLabel: 'Name as on Aadhaar',
-              verifiedName: state.verifiedName,
+              verifiedName: state.verifiedName ?? backendVerifiedName,
               onEdit: _editAadhaar,
             )
           else ...[
