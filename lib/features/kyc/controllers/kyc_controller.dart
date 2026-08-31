@@ -377,6 +377,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         // resolves. Touching `state` after that throws "Bad state: Tried to
         // use AadhaarNotifier after dispose was called" instead of just
         // discarding the now-irrelevant result.
+        SecureLogger.d('[KYC DEBUG] pollUntilTerminal response received, mounted=$mounted, status=${data['status']}');
         if (!mounted) return;
         final status = (data['status'] ?? '').toString();
         // Piggybacked PAN mismatch — independent of Aadhaar's own status
