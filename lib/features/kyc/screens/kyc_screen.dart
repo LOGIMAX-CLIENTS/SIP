@@ -474,7 +474,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
     final bothComplete =
         result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
-    if (!bothComplete) return;
+    // Mirrors _checkCompletionRecoveryOnLoad's guard — without this, editing
+    // Aadhaar (e.g. resolving a name mismatch) after KYC was already fully
+    // confirmed re-triggers the ENTIRE mandatory sequence again, including
+    // PAN's "verified details" dialog, even though PAN wasn't touched.
+    if (!bothComplete || result.kycConfirmed) return;
 
     final panDoc = result.documents.isEmpty
         ? null
