@@ -18,9 +18,8 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../features/auth/controller/auth_controller.dart';
 import '../../core/services/notification_service.dart';
+import '../../routes/app_router.dart';
 import '../kyc/controllers/kyc_controller.dart';
-import '../kyc/repositories/kyc_repository.dart';
-import '../kyc/screens/kyc_screen.dart' show NameMismatchDialog;
 
 /// Shared provider so any child screen can switch tabs
 final selectedTabProvider = StateProvider<int>((ref) => 0);
@@ -39,6 +38,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   // — see their doc comments.
   final Set<String> _shownAadhaarMismatchIds = {};
   final Set<String> _shownPanMismatchIds = {};
+  // Same dedupe role, for the terminal expired/rejected/failed toast — see
+  // _maybeShowAadhaarFailureDialog's doc comment.
+  final Set<String> _shownAadhaarFailureKeys = {};
 
   @override
   void initState() {
@@ -121,67 +123,49 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     }
   }
 
-  /// Shows the Aadhaar name/DOB mismatch dialog using THIS (always-alive)
-  /// context, regardless of which tab/screen the user is actually looking
-  /// at. [_shownAadhaarMismatchIds] — keyed by verificationId, not a plain
-  /// bool — makes this a no-op if KycScreen's own listener already handled
-  /// this exact attempt (the normal case where nothing disposes it), and
-  /// still allows a genuine reverify (new verification_id) to show again.
-  Future<void> _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) async {
-    if (!_shownAadhaarMismatchIds.add(prompt.verificationId)) return;
+  /// App-shell-level fallback for the Aadhaar/PAN mismatch dialogs AND the
+  /// terminal expired/rejected/failed dialog: rather than showing anything
+  /// itself on whatever tab the user happens to be on (Profile, Home,
+  /// wherever the SDK bounce landed them — confusing, since that's not
+  /// where they were verifying), this navigates back to the KYC
+  /// Verification screen and lets IT show the result. KycScreen's own
+  /// initState (_checkAadhaarOutcomeRecoveryOnLoad) reads aadhaarProvider's
+  /// current state on mount and shows whichever dialog applies — the state
+  /// itself is still there because aadhaarProvider is kept alive across
+  /// this whole span (AadhaarNotifier.pauseAutoDispose/resumeAutoDispose).
+  /// A plain push (not pushNamedAndRemoveUntil) — if the user is already
+  /// mid-navigation elsewhere, this just adds KYC on top, same as if they'd
+  /// tapped into it from Profile themselves.
+  void _navigateToKycAndLetItHandle() {
     if (!mounted) return;
-    final resolved = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => NameMismatchDialog(
-        prompt: prompt,
-        onSubmit: (name, dob) => ref.read(aadhaarProvider.notifier).confirmNameMismatch(
-              'profile',
-              name: name,
-              dob: dob,
-            ),
-      ),
-    );
-    if (resolved == true) {
-      ref.invalidate(profileProvider);
-    }
+    Navigator.of(context).pushNamed(AppRouter.kyc, arguments: {'request_from': 'profile'});
   }
 
-  /// PAN counterpart to _maybeShowAadhaarMismatchDialog — same app-shell
-  /// fallback role, same dedupe reasoning. [prompt.verificationId] for PAN
-  /// actually holds the dedicated PAN KYC row id (KycRepository.
-  /// confirmPanNameMismatch's [panKycId] — see NameMismatchPrompt's doc
-  /// comment in kyc_controller.dart for why PAN reuses this field name).
-  Future<void> _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) async {
+  /// [_shownAadhaarMismatchIds] — keyed by verificationId, not a plain bool
+  /// — makes this a no-op if KycScreen's own listener already handled this
+  /// exact attempt (the normal case where nothing disposes it), and still
+  /// allows a genuine reverify (new verification_id) to trigger again.
+  void _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) {
+    if (!_shownAadhaarMismatchIds.add(prompt.verificationId)) return;
+    _navigateToKycAndLetItHandle();
+  }
+
+  /// PAN counterpart — same reasoning. [prompt.verificationId] for PAN
+  /// actually holds the dedicated PAN KYC row id (see NameMismatchPrompt's
+  /// doc comment in kyc_controller.dart for why PAN reuses this field name).
+  void _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) {
     if (!_shownPanMismatchIds.add(prompt.verificationId)) return;
-    if (!mounted) return;
-    final resolved = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => NameMismatchDialog(
-        prompt: prompt,
-        onSubmit: (name, dob) async {
-          try {
-            final data = await ref.read(kycRepositoryProvider).confirmPanNameMismatch(
-                  panKycId: prompt.verificationId,
-                  confirm: true,
-                  name: name,
-                  dob: dob,
-                );
-            final status = (data['status'] ?? '').toString();
-            if (status == 'APPROVED') return (NameMismatchOutcome.resolved, null);
-            return (NameMismatchOutcome.stillMismatched, data['message']?.toString());
-          } catch (e) {
-            String msg = e.toString();
-            if (msg.startsWith('Exception: ')) msg = msg.substring('Exception: '.length);
-            return (NameMismatchOutcome.stillMismatched, msg);
-          }
-        },
-      ),
-    );
-    if (resolved == true) {
-      ref.invalidate(profileProvider);
-    }
+    _navigateToKycAndLetItHandle();
+  }
+
+  /// Terminal expired/rejected/failed counterpart — same reasoning. Keyed
+  /// the same way as KycScreen's own _shownFailureKeys (verificationId+
+  /// phase, falling back to message+phase) so this and KycScreen's copy
+  /// don't both navigate when nothing actually disposes the screen.
+  void _maybeShowAadhaarFailureDialog(AadhaarState state) {
+    final key = '${state.verificationId ?? state.message}-${state.phase}';
+    if (!_shownAadhaarFailureKeys.add(key)) return;
+    _navigateToKycAndLetItHandle();
   }
 
   Widget build(BuildContext context) {
@@ -209,6 +193,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       }
       if (next.panMismatchPrompt != null) {
         _maybeShowPanMismatchDialog(next.panMismatchPrompt!);
+      }
+      if (next.phase == AadhaarPhase.expired ||
+          next.phase == AadhaarPhase.rejected ||
+          next.phase == AadhaarPhase.failed) {
+        _maybeShowAadhaarFailureDialog(next);
       }
     });
 

@@ -57,10 +57,25 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   // Guards the on-load completion-recovery check below — fires at most
   // once per screen instance, same pattern as _aadhaarSeeded.
   bool _completionCheckedOnLoad = false;
+  // Guards _checkAadhaarOutcomeRecoveryOnLoad — fires at most once per
+  // screen instance. Covers the case where MainScreen's app-shell fallback
+  // navigated back to THIS (freshly (re)pushed) KycScreen instance because
+  // its own listener caught a pending mismatch/failure that happened while
+  // no KycScreen was mounted to show it — see main_screen.dart's
+  // _navigateToKycAndLetItHandle doc comment for the full chain.
+  bool _aadhaarOutcomeCheckedOnLoad = false;
   // Set when the user taps "Edit" on an already-verified Aadhaar card, so
   // the next _onVerifyAadhaar() call tells the backend to bypass its
   // already-approved idempotency short-circuit (see KYCRepository.initiateAadhaar).
   bool _aadhaarEditing = false;
+  // Set specifically by _onRetryPan (never by the plain "Edit" button) —
+  // distinguishes "redoing DigiLocker only to fetch PAN, Aadhaar itself is
+  // fine" from "the customer is actually correcting their Aadhaar details".
+  // ref.read(aadhaarProvider.notifier).reset() (inside _editAadhaar) drops
+  // the local phase back to idle either way, which would otherwise make the
+  // Aadhaar card render as if it needed verifying from scratch — misleading
+  // when it's already approved server-side and this is purely a PAN retry.
+  bool _retryingPanOnly = false;
   // Dedupe guard for _maybeShowAadhaarMismatchDialog: the reactive
   // ref.listen in build() and the linear await-chain in _runVerifyAadhaar()
   // can both observe the same awaitingNameMismatchConfirm transition (the
@@ -69,6 +84,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   // a plain bool, so a genuine reverify (new verification_id) isn't blocked
   // by an earlier attempt's entry.
   final Set<String> _shownMismatchIds = {};
+  // Same dedupe role as _shownMismatchIds, for the terminal
+  // expired/rejected/failed toast (_maybeShowAadhaarFailureDialog) — keyed by
+  // verificationId+phase since a failure has no analogue to a KYC row id;
+  // falls back to message+phase for the rare failure with no verificationId
+  // at all (e.g. initiate() failing before one was ever assigned).
+  final Set<String> _shownFailureKeys = {};
   // Re-entrancy guard for _onVerifyAadhaar(): true for the whole duration of
   // the call (initiate -> consent/SDK sub-screen -> poll), not just the
   // initiating/polling AadhaarState phases. Without this, awaitingSdk/
@@ -80,6 +101,42 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   final _aadhaarNumberController = TextEditingController();
   final _aadhaarNameController = TextEditingController();
   final _aadhaarFormKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // aadhaarProvider is kept alive (see AadhaarNotifier.pauseAutoDispose)
+    // across the SDK-bounce navigation that can land the user somewhere
+    // other than this screen mid-verify — so if MainScreen's app-shell
+    // fallback just navigated the user back HERE because it caught a
+    // pending outcome no KycScreen was mounted to show, that outcome is
+    // still sitting in aadhaarProvider's current state, unconsumed. Check
+    // once, post-frame (dialogs need a laid-out context).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAadhaarOutcomeRecoveryOnLoad());
+  }
+
+  /// See initState's doc comment. Reads aadhaarProvider's CURRENT state
+  /// directly rather than relying on ref.listen — a listener registered in
+  /// build() only fires on FUTURE transitions, not the one that already
+  /// happened before this (possibly freshly-pushed) screen existed.
+  void _checkAadhaarOutcomeRecoveryOnLoad() {
+    if (_aadhaarOutcomeCheckedOnLoad) return;
+    _aadhaarOutcomeCheckedOnLoad = true;
+    if (!mounted) return;
+    final state = ref.read(aadhaarProvider);
+    if (state.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
+        state.aadhaarMismatchPrompt != null) {
+      _maybeShowAadhaarMismatchDialog(state.aadhaarMismatchPrompt!);
+    }
+    if (state.panMismatchPrompt != null) {
+      _maybeShowPanMismatchDialog(state.panMismatchPrompt!);
+    }
+    if (state.phase == AadhaarPhase.expired ||
+        state.phase == AadhaarPhase.rejected ||
+        state.phase == AadhaarPhase.failed) {
+      _maybeShowAadhaarFailureDialog(state);
+    }
+  }
 
   @override
   void dispose() {
@@ -204,8 +261,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// `_onVerifyAadhaar()` call to pass `allowReverify: true`, since the
   /// backend otherwise short-circuits any Aadhaar re-verification attempt
   /// once one is already APPROVED.
-  void _editAadhaar() {
-    setState(() => _aadhaarEditing = true);
+  void _editAadhaar({bool panOnly = false}) {
+    setState(() {
+      _aadhaarEditing = true;
+      _retryingPanOnly = panOnly;
+    });
     ref.read(aadhaarProvider.notifier).reset();
   }
 
@@ -219,7 +279,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// said "complete Aadhaar verification below" even though Aadhaar was
   /// already done.
   Future<void> _onRetryPan() async {
-    _editAadhaar();
+    _editAadhaar(panOnly: true);
     // The Aadhaar card was showing the verified banner (no Form in the tree)
     // — wait one frame so `_aadhaarFormKey` is attached to the now-visible
     // input form before validating it.
@@ -329,7 +389,19 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     try {
       await _runVerifyAadhaar();
     } finally {
-      if (mounted) setState(() => _verifyingAadhaar = false);
+      // Unconditional — not gated behind `mounted`. If the SDK-bounce
+      // navigation left this screen unmounted right when _runVerifyAadhaar
+      // finished, the OLD (mounted) reset would never run, and this flag
+      // would stay stuck `true` on this State instance forever. That
+      // wouldn't matter for a genuinely disposed instance — except
+      // Navigator can keep a popped-then-reused KycScreen route's State
+      // alive in some cases, and a stuck guard here means EVERY future tap
+      // on that instance silently no-ops (`if (_verifyingAadhaar) return;`
+      // above), which is exactly the "first tap does nothing" symptom this
+      // fixes. setState still needs `mounted` (calling it on a disposed
+      // State throws) — the field write does not.
+      _verifyingAadhaar = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -353,6 +425,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     // result actually reaches the UI.
     notifier.pauseAutoDispose();
     try {
+      SecureLogger.d(
+        '[KYC DEBUG] initiate() call: _aadhaarEditing=$_aadhaarEditing '
+        '_retryingPanOnly=$_retryingPanOnly '
+        'aadhaarNumberEmpty=${_aadhaarNumberController.text.isEmpty} '
+        'nameEmpty=${_aadhaarNameController.text.isEmpty}',
+      );
       await notifier.initiate(
         widget.requestFrom,
         aadhaarNumber: AadhaarInputFormatter.unformat(_aadhaarNumberController.text),
@@ -428,12 +506,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       if (finalState.phase == AadhaarPhase.expired ||
           finalState.phase == AadhaarPhase.rejected ||
           finalState.phase == AadhaarPhase.failed) {
-        if (!mounted) return;
-        AppToast.show(
-          context,
-          finalState.message ?? 'Aadhaar verification failed. Please try again.',
-          type: ToastType.error,
-        );
+        _maybeShowAadhaarFailureDialog(finalState);
         return;
       }
 
@@ -742,6 +815,38 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     if (resolved) await _checkAndHandleCompletion();
   }
 
+  /// Reactive counterpart to the terminal expired/rejected/failed branch in
+  /// _runVerifyAadhaar() — same widget-disposal risk as the mismatch dialogs
+  /// above (confirmed: the backend sends a proper, safe-to-show message —
+  /// e.g. "Your profile name and/or date of birth doesn't match your
+  /// Aadhaar record..." — but the linear chain's `if (!mounted) return;`
+  /// silently swallowed it before this ever ran). A dialog, not a toast — a
+  /// toast auto-dismisses in ~3s, easy to miss entirely if the user's
+  /// attention is elsewhere right after the SDK-bounce navigation this is
+  /// usually paired with; this stays up until the user explicitly closes it.
+  /// [_shownFailureKeys] is keyed by verificationId+phase (falling back to
+  /// message+phase when verificationId is unset) since a failure has no
+  /// per-attempt id the way a mismatch prompt's own verificationId provides.
+  Future<void> _maybeShowAadhaarFailureDialog(AadhaarState state) async {
+    final key = '${state.verificationId ?? state.message}-${state.phase}';
+    if (!_shownFailureKeys.add(key)) return;
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Aadhaar Verification'),
+        content: Text(state.message ?? 'Aadhaar verification failed. Please try again.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -770,6 +875,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       // doc comment), independent of [phase], so it's checked unconditionally.
       if (next.panMismatchPrompt != null) {
         _maybeShowPanMismatchDialog(next.panMismatchPrompt!);
+      }
+      if (next.phase == AadhaarPhase.expired ||
+          next.phase == AadhaarPhase.rejected ||
+          next.phase == AadhaarPhase.failed) {
+        _maybeShowAadhaarFailureDialog(next);
       }
     });
 
@@ -977,7 +1087,19 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         state.phase == AadhaarPhase.rejected;
     const defaultHelperText =
         'Enter your Aadhaar number, then verify via DigiLocker to complete KYC.';
-    final helperText = isErrorPhase ? defaultHelperText : (state.message ?? defaultHelperText);
+    // Shown instead of the generic helper (and instead of any backend
+    // message) whenever this form reopened via "Retry PAN Verification" —
+    // Aadhaar itself doesn't need re-entry, this round trip through
+    // DigiLocker exists only to fetch PAN. Takes priority over isErrorPhase
+    // too: a stale REJECTED/EXPIRED message from a much earlier Aadhaar
+    // attempt has no bearing on this PAN-only retry.
+    const panRetryHelperText =
+        "Your Aadhaar is already verified — this step only redoes DigiLocker "
+        "consent so PAN can be fetched. Select 'PAN Verification Record' "
+        "this time before tapping Allow.";
+    final helperText = _retryingPanOnly
+        ? panRetryHelperText
+        : (isErrorPhase ? defaultHelperText : (state.message ?? defaultHelperText));
 
     return Padding(
       padding: EdgeInsets.only(bottom: 32.h),
@@ -1009,6 +1131,19 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (_retryingPanOnly) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.check_circle, size: 16.sp, color: const Color(0xFF16A34A)),
+                          SizedBox(width: 6.w),
+                          Text(
+                            'Aadhaar Verified',
+                            style: AppTextStyles.fieldLabel(isDark).copyWith(color: const Color(0xFF16A34A)),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8.h),
+                    ],
                     Text(
                       helperText,
                       style: AppTextStyles.fieldHelper(isDark),
