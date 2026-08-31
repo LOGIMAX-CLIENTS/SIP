@@ -18,6 +18,9 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../features/auth/controller/auth_controller.dart';
 import '../../core/services/notification_service.dart';
+import '../kyc/controllers/kyc_controller.dart';
+import '../kyc/repositories/kyc_repository.dart';
+import '../kyc/screens/kyc_screen.dart' show NameMismatchDialog;
 
 /// Shared provider so any child screen can switch tabs
 final selectedTabProvider = StateProvider<int>((ref) => 0);
@@ -32,6 +35,10 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen> {
   final Set<int> _visitedTabs = {0};
   DateTime? _lastBackPressTime; // tracks double-tap-to-exit timing
+  // Dedupe guards for _maybeShowAadhaarMismatchDialog / _maybeShowPanMismatchDialog
+  // — see their doc comments.
+  final Set<String> _shownAadhaarMismatchIds = {};
+  final Set<String> _shownPanMismatchIds = {};
 
   @override
   void initState() {
@@ -114,9 +121,96 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     }
   }
 
+  /// Shows the Aadhaar name/DOB mismatch dialog using THIS (always-alive)
+  /// context, regardless of which tab/screen the user is actually looking
+  /// at. [_shownAadhaarMismatchIds] — keyed by verificationId, not a plain
+  /// bool — makes this a no-op if KycScreen's own listener already handled
+  /// this exact attempt (the normal case where nothing disposes it), and
+  /// still allows a genuine reverify (new verification_id) to show again.
+  Future<void> _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) async {
+    if (!_shownAadhaarMismatchIds.add(prompt.verificationId)) return;
+    if (!mounted) return;
+    final resolved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => NameMismatchDialog(
+        prompt: prompt,
+        onSubmit: (name, dob) => ref.read(aadhaarProvider.notifier).confirmNameMismatch(
+              'profile',
+              name: name,
+              dob: dob,
+            ),
+      ),
+    );
+    if (resolved == true) {
+      ref.invalidate(profileProvider);
+    }
+  }
+
+  /// PAN counterpart to _maybeShowAadhaarMismatchDialog — same app-shell
+  /// fallback role, same dedupe reasoning. [prompt.verificationId] for PAN
+  /// actually holds the dedicated PAN KYC row id (KycRepository.
+  /// confirmPanNameMismatch's [panKycId] — see NameMismatchPrompt's doc
+  /// comment in kyc_controller.dart for why PAN reuses this field name).
+  Future<void> _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) async {
+    if (!_shownPanMismatchIds.add(prompt.verificationId)) return;
+    if (!mounted) return;
+    final resolved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => NameMismatchDialog(
+        prompt: prompt,
+        onSubmit: (name, dob) async {
+          try {
+            final data = await ref.read(kycRepositoryProvider).confirmPanNameMismatch(
+                  panKycId: prompt.verificationId,
+                  confirm: true,
+                  name: name,
+                  dob: dob,
+                );
+            final status = (data['status'] ?? '').toString();
+            if (status == 'APPROVED') return (NameMismatchOutcome.resolved, null);
+            return (NameMismatchOutcome.stillMismatched, data['message']?.toString());
+          } catch (e) {
+            String msg = e.toString();
+            if (msg.startsWith('Exception: ')) msg = msg.substring('Exception: '.length);
+            return (NameMismatchOutcome.stillMismatched, msg);
+          }
+        },
+      ),
+    );
+    if (resolved == true) {
+      ref.invalidate(profileProvider);
+    }
+  }
+
   Widget build(BuildContext context) {
     final selectedIndex = ref.watch(selectedTabProvider);
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+
+    // App-shell-level fallback for the Aadhaar CONFIRM_NAME_UPDATE mismatch
+    // dialog. KycScreen has its own ref.listen for this, but SurePass's
+    // native DigiLocker SDK Activity can leave the app on a COMPLETELY
+    // different screen by the time the poll result comes back — confirmed
+    // by testing: the user lands back on this Profile tab, with KycScreen
+    // popped off the stack entirely, not merely unmounted underneath
+    // something else. No screen-local listener can catch that. MainScreen
+    // is the one widget that's guaranteed to stay alive for as long as the
+    // user is in the logged-in app shell, so it's the only reliable place
+    // for a listener that must survive arbitrary navigation churn.
+    // aadhaarProvider itself is kept alive across that churn by
+    // AadhaarNotifier.pauseAutoDispose()/resumeAutoDispose() (see
+    // kyc_screen.dart's _runVerifyAadhaar) — without that, the provider
+    // would already be disposed by the time this fires.
+    ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
+      if (next.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
+          next.aadhaarMismatchPrompt != null) {
+        _maybeShowAadhaarMismatchDialog(next.aadhaarMismatchPrompt!);
+      }
+      if (next.panMismatchPrompt != null) {
+        _maybeShowPanMismatchDialog(next.panMismatchPrompt!);
+      }
+    });
 
     // Mark current tab as visited
     if (!_visitedTabs.contains(selectedIndex)) {

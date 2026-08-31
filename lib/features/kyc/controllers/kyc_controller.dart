@@ -197,13 +197,38 @@ class AadhaarState {
 
 final aadhaarProvider =
     StateNotifierProvider.autoDispose<AadhaarNotifier, AadhaarState>((ref) {
-  return AadhaarNotifier(ref.read(kycRepositoryProvider));
+  return AadhaarNotifier(ref.read(kycRepositoryProvider), ref);
 });
 
 class AadhaarNotifier extends StateNotifier<AadhaarState> {
   final KycRepository _repository;
+  final Ref _ref;
+  KeepAliveLink? _keepAliveLink;
 
-  AadhaarNotifier(this._repository) : super(const AadhaarState());
+  AadhaarNotifier(this._repository, this._ref) : super(const AadhaarState());
+
+  /// Blocks aadhaarProvider's .autoDispose teardown for the duration of the
+  /// initiate -> consent/SDK sub-screen -> poll sequence. Without this, the
+  /// provider can lose its listener and be disposed while the pushed
+  /// sub-screen is on top — most reliably reproduced with SurePass's native
+  /// DigiLocker SDK, which runs in its own Android Activity and triggers a
+  /// real onPause/onResume on the host Activity — and a poll response that
+  /// arrives after that silently no-ops via this notifier's own `mounted`
+  /// guard, dropping CONFIRM_NAME_UPDATE/APPROVED/etc. with no error shown.
+  /// Call from the widget alongside AppLifecycleObserver.suppressAppLock
+  /// (same try/finally scope — see kyc_screen.dart's _runVerifyAadhaar).
+  void pauseAutoDispose() {
+    _keepAliveLink ??= _ref.keepAlive();
+  }
+
+  /// Releases the link acquired by [pauseAutoDispose] so the provider goes
+  /// back to disposing normally once the flow ends (success, failure, or the
+  /// user backing out) — must be called in every case, hence the finally
+  /// block pairing at the call site.
+  void resumeAutoDispose() {
+    _keepAliveLink?.close();
+    _keepAliveLink = null;
+  }
 
   /// Shown to the user instead of ANY backend/provider exception, gateway
   /// error, or network failure — never the technical detail itself. That

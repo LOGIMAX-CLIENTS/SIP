@@ -61,6 +61,14 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   // the next _onVerifyAadhaar() call tells the backend to bypass its
   // already-approved idempotency short-circuit (see KYCRepository.initiateAadhaar).
   bool _aadhaarEditing = false;
+  // Dedupe guard for _maybeShowAadhaarMismatchDialog: the reactive
+  // ref.listen in build() and the linear await-chain in _runVerifyAadhaar()
+  // can both observe the same awaitingNameMismatchConfirm transition (the
+  // normal case where nothing disposes the screen mid-flow) — this ensures
+  // only one of them actually opens the dialog. Keyed by verificationId, not
+  // a plain bool, so a genuine reverify (new verification_id) isn't blocked
+  // by an earlier attempt's entry.
+  final Set<String> _shownMismatchIds = {};
   // Re-entrancy guard for _onVerifyAadhaar(): true for the whole duration of
   // the call (initiate -> consent/SDK sub-screen -> poll), not just the
   // initiating/polling AadhaarState phases. Without this, awaitingSdk/
@@ -334,6 +342,16 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     // visibly the CONFIRM_NAME_UPDATE mismatch dialog below). Same pattern
     // as the payment handlers (see hdfc_payment_handler.dart etc.).
     AppLifecycleObserver.suppressAppLock = true;
+    // Separately from the app-lock suppression above: SurePass's native SDK
+    // Activity still triggers a genuine onPause/onResume on the host
+    // Activity even with the lock suppressed, and that's enough for
+    // aadhaarProvider (.autoDispose) to lose its listener and be torn down
+    // mid-flow — confirmed via [KYC DEBUG] logging showing mounted=false on
+    // a poll response that otherwise arrived with the correct
+    // CONFIRM_NAME_UPDATE payload. Pausing autoDispose for this same
+    // initiate -> sub-screen -> poll span keeps the notifier alive so the
+    // result actually reaches the UI.
+    notifier.pauseAutoDispose();
     try {
       await notifier.initiate(
         widget.requestFrom,
@@ -388,6 +406,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         }
       }
 
+      SecureLogger.d('[KYC DEBUG] after poll branches, widget mounted=$mounted');
       if (!mounted) return;
       var finalState = ref.read(aadhaarProvider);
       SecureLogger.d(
@@ -401,9 +420,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       // even REJECTED (see AadhaarState.panMismatchPrompt's doc comment) — so
       // it's handled first, unconditionally, before branching on phase.
       if (finalState.panMismatchPrompt != null) {
-        final resolved = await _showMismatchDialog(finalState.panMismatchPrompt!);
+        await _maybeShowPanMismatchDialog(finalState.panMismatchPrompt!);
         if (!mounted) return;
-        if (resolved) await _checkAndHandleCompletion();
         finalState = ref.read(aadhaarProvider);
       }
 
@@ -425,11 +443,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       }
 
       if (finalState.phase == AadhaarPhase.awaitingNameMismatchConfirm) {
-        SecureLogger.d('[KYC DEBUG] entering awaitingNameMismatchConfirm branch, calling _showMismatchDialog');
-        final resolved = await _showMismatchDialog(finalState.aadhaarMismatchPrompt!);
-        SecureLogger.d('[KYC DEBUG] _showMismatchDialog returned resolved=$resolved');
-        if (!mounted) return;
-        if (resolved) await _checkAndHandleCompletion();
+        await _maybeShowAadhaarMismatchDialog(finalState.aadhaarMismatchPrompt!);
         return;
       }
 
@@ -445,6 +459,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       }
     } finally {
       AppLifecycleObserver.suppressAppLock = false;
+      notifier.resumeAutoDispose();
     }
   }
 
@@ -651,6 +666,18 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
+  /// Aadhaar-mismatch entry point shared by the reactive ref.listen in
+  /// build() and the linear await-chain in _runVerifyAadhaar() — see the
+  /// listener's doc comment for why both exist. [_shownMismatchIds] ensures
+  /// only whichever one runs first actually opens the dialog; the other
+  /// becomes a no-op.
+  Future<void> _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) async {
+    if (!_shownMismatchIds.add(prompt.verificationId)) return;
+    final resolved = await _showMismatchDialog(prompt);
+    if (!mounted) return;
+    if (resolved) await _checkAndHandleCompletion();
+  }
+
   /// Shown for EITHER mismatch prompt — AADHAAR's own (CONFIRM_NAME_UPDATE
   /// from the poll response, resolved via AadhaarNotifier.confirmNameMismatch)
   /// or PAN's piggybacked one (resolved via KycRepository.confirmPanNameMismatch
@@ -664,7 +691,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final resolved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _NameMismatchDialog(
+      builder: (_) => NameMismatchDialog(
         prompt: prompt,
         onSubmit: (name, dob) => prompt.document == 'PAN'
             ? _confirmPanMismatch(prompt.verificationId, name, dob)
@@ -703,11 +730,48 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     }
   }
 
+  /// PAN counterpart to _maybeShowAadhaarMismatchDialog — same dedupe
+  /// reasoning (shared with the reactive ref.listen in build() and
+  /// MainScreen's own app-shell-level fallback), keyed by
+  /// prompt.verificationId which for PAN actually holds the dedicated PAN
+  /// KYC row id (see _confirmPanMismatch's doc comment).
+  Future<void> _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) async {
+    if (!_shownMismatchIds.add(prompt.verificationId)) return;
+    final resolved = await _showMismatchDialog(prompt);
+    if (!mounted) return;
+    if (resolved) await _checkAndHandleCompletion();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final docsAsync = ref.watch(kycDocumentsProvider(widget.requestFrom));
     final aadhaarState = ref.watch(aadhaarProvider);
+
+    // Reactive fallback for the CONFIRM_NAME_UPDATE mismatch dialog —
+    // primary path when the linear await-chain in _runVerifyAadhaar() can't
+    // deliver it itself: SurePass's native DigiLocker SDK Activity can leave
+    // THIS specific KycScreen State instance unmounted by the time
+    // pollUntilTerminal()'s result comes back (confirmed via [KYC DEBUG]
+    // logging — the aadhaarProvider notifier itself stays alive thanks to
+    // pauseAutoDispose/resumeAutoDispose, but widget.mounted was still false
+    // afterward), silently dropping the dialog via that chain's `if
+    // (!mounted) return;` guards. ref.listen ties its callback to whichever
+    // KycScreen instance is CURRENTLY built and watching aadhaarProvider, so
+    // it fires regardless of which instance's async chain the state change
+    // actually happened under.
+    ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
+      if (next.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
+          next.aadhaarMismatchPrompt != null) {
+        _maybeShowAadhaarMismatchDialog(next.aadhaarMismatchPrompt!);
+      }
+      // Same rationale, PAN side — panMismatchPrompt can be set alongside
+      // APPROVED/already-approved/REJECTED (see AadhaarState.panMismatchPrompt's
+      // doc comment), independent of [phase], so it's checked unconditionally.
+      if (next.panMismatchPrompt != null) {
+        _maybeShowPanMismatchDialog(next.panMismatchPrompt!);
+      }
+    });
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -1263,7 +1327,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
 }
 
-// Shared by both _VerifiedDetailsDialog and _NameMismatchDialog below — DOB
+// Shared by both _VerifiedDetailsDialog and NameMismatchDialog below — DOB
 // display/entry always goes through these two so the format stays paired
 // with the backend's KYCService._parse_flexible_date.
 DateTime? _parseKycDob(String? raw) {
@@ -1497,20 +1561,20 @@ class _VerifiedDetailsDialogState extends State<_VerifiedDetailsDialog> {
 /// — and returns the same outcome contract either way; a continued
 /// mismatch re-shows this same dialog with an inline error instead of
 /// closing.
-class _NameMismatchDialog extends StatefulWidget {
+class NameMismatchDialog extends StatefulWidget {
   final NameMismatchPrompt prompt;
   final Future<(NameMismatchOutcome, String?)> Function(String name, String dob) onSubmit;
 
-  const _NameMismatchDialog({
+  const NameMismatchDialog({
     required this.prompt,
     required this.onSubmit,
   });
 
   @override
-  State<_NameMismatchDialog> createState() => _NameMismatchDialogState();
+  State<NameMismatchDialog> createState() => NameMismatchDialogState();
 }
 
-class _NameMismatchDialogState extends State<_NameMismatchDialog> {
+class NameMismatchDialogState extends State<NameMismatchDialog> {
   late final TextEditingController _nameController;
   DateTime? _selectedDob;
   bool _saving = false;
