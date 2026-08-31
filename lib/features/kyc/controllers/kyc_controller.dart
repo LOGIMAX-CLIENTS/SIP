@@ -319,6 +319,21 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         return;
       }
 
+      // Some providers (SurePass) can resolve the whole check synchronously
+      // within the initiate call itself — no consent_url/sdk_token round
+      // trip at all — so CONFIRM_NAME_UPDATE can arrive here too, not just
+      // from pollUntilTerminal's matching case below. Without this branch it
+      // fell into the generic `failed` case, showing the message as a plain
+      // error toast instead of opening the mismatch dialog.
+      if (status == 'CONFIRM_NAME_UPDATE') {
+        state = state.copyWith(
+          phase: AadhaarPhase.awaitingNameMismatchConfirm,
+          aadhaarMismatchPrompt: NameMismatchPrompt.fromJson(data),
+          message: data['message']?.toString(),
+        );
+        return;
+      }
+
       state = state.copyWith(
         phase: AadhaarPhase.failed,
         message: data['message']?.toString() ?? 'Unable to start Aadhaar verification.',
