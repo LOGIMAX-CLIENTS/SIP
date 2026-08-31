@@ -59,6 +59,13 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   // the next _onVerifyAadhaar() call tells the backend to bypass its
   // already-approved idempotency short-circuit (see KYCRepository.initiateAadhaar).
   bool _aadhaarEditing = false;
+  // Re-entrancy guard for _onVerifyAadhaar(): true for the whole duration of
+  // the call (initiate -> consent/SDK sub-screen -> poll), not just the
+  // initiating/polling AadhaarState phases. Without this, awaitingSdk/
+  // awaitingConsent leave the button tappable while the previous call is
+  // still awaiting its pushed route, so a second tap fires an overlapping
+  // _onVerifyAadhaar() that re-initiates and pushes a duplicate sub-screen.
+  bool _verifyingAadhaar = false;
 
   final _aadhaarNumberController = TextEditingController();
   final _aadhaarNameController = TextEditingController();
@@ -305,8 +312,18 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// resolves instantly without opening the WebView (see
   /// `AadhaarNotifier.initiate`).
   Future<void> _onVerifyAadhaar() async {
+    if (_verifyingAadhaar) return;
     if (_aadhaarFormKey.currentState?.validate() == false) return;
 
+    setState(() => _verifyingAadhaar = true);
+    try {
+      await _runVerifyAadhaar();
+    } finally {
+      if (mounted) setState(() => _verifyingAadhaar = false);
+    }
+  }
+
+  Future<void> _runVerifyAadhaar() async {
     final notifier = ref.read(aadhaarProvider.notifier);
     await notifier.initiate(
       widget.requestFrom,
@@ -846,7 +863,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
   Widget _buildAadhaarCard(bool isDark, AadhaarState state) {
     final isDone = state.phase == AadhaarPhase.approved;
-    final isBusy = state.phase == AadhaarPhase.initiating ||
+    final isBusy = _verifyingAadhaar ||
+        state.phase == AadhaarPhase.initiating ||
         state.phase == AadhaarPhase.polling;
     // Error/failure text is surfaced only via AppToast (see
     // _onVerifyAadhaar) — never rendered inline on the card, so no backend
