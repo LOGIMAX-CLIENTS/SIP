@@ -54,6 +54,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   final Set<String> _submittingDocIds = {};
   bool _initialized = false;
   bool _aadhaarSeeded = false;
+  // Guards the stale-approved reconciliation below — fires at most once per
+  // screen instance, same pattern as _aadhaarSeeded.
+  bool _aadhaarReconciled = false;
   // Guards the on-load completion-recovery check below — fires at most
   // once per screen instance, same pattern as _aadhaarSeeded.
   bool _completionCheckedOnLoad = false;
@@ -210,6 +213,27 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       if (mounted) {
         ref.read(aadhaarProvider.notifier).seedApproved(maskedNumber: maskedNumber, name: name, dob: dob);
       }
+    });
+  }
+
+  /// Inverse of `_seedAadhaarIfApproved` — aadhaarProvider is kept alive for
+  /// the app's whole lifetime (MainScreen permanently watches it via
+  /// ref.listen for the mismatch/failure/approved fallback routing), so a
+  /// phase of APPROVED set by an earlier verify can still be sitting in the
+  /// provider when this screen is freshly reopened for a customer whose
+  /// current backend status is no longer APPROVED (re-verification was
+  /// invalidated, a different account, etc). Without this, the Verified
+  /// banner keeps showing purely from that stale local phase even though
+  /// aadhaar_status from /kyc/document-types now reports PENDING. Fires at
+  /// most once per screen instance so it never fights a live verify that's
+  /// genuinely in flight in this same instance (see _aadhaarReconciled).
+  void _reconcileAadhaarWithBackend(bool aadhaarApproved) {
+    if (_aadhaarReconciled) return;
+    _aadhaarReconciled = true;
+    if (aadhaarApproved) return;
+    if (ref.read(aadhaarProvider).phase != AadhaarPhase.approved) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(aadhaarProvider.notifier).reset();
     });
   }
 
@@ -898,6 +922,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                   name: result.aadhaarName,
                   dob: result.aadhaarDob,
                 );
+                _reconcileAadhaarWithBackend(result.aadhaarApproved);
                 _checkCompletionRecoveryOnLoad(result);
                 return SingleChildScrollView(
                   padding: EdgeInsets.all(24.w),
