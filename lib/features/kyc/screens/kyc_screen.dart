@@ -674,6 +674,25 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     if (!mounted) return;
     SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: wasAlreadyConfirmed=$wasAlreadyConfirmed aadhaarApproved=${result.aadhaarApproved} kycConfirmedNow=${result.kycConfirmed} allDocsUploaded=${result.documents.every((d) => d.alreadyUploaded)}');
 
+    // _initControllers only ever populates _completedDocIds from the VERY
+    // FIRST docs fetch (it's a one-shot init, guarded by _initialized) — so
+    // a document that gets approved DURING this screen's lifetime (exactly
+    // what just happened) never gets added to it by that path. Without this
+    // resync, its card keeps rendering from the stale pre-completion data
+    // forever, e.g. still showing "Retry PAN Verification" right after PAN
+    // was actually just approved. Also clears the Edit/Retry-PAN flags —
+    // they exist only to reopen a form for a redo in progress; once that
+    // redo has genuinely completed, leaving them set forces
+    // _buildDocumentCard's !_aadhaarEditing guards to keep suppressing the
+    // now-correct Verified state for the SAME reason.
+    for (final doc in result.documents) {
+      if (doc.alreadyUploaded) _completedDocIds.add(doc.id);
+    }
+    setState(() {
+      _aadhaarEditing = false;
+      _retryingPanOnly = false;
+    });
+
     // Sync the Aadhaar card's own display (separate from this dialog) —
     // pollUntilTerminal's APPROVED case only flips the phase, it doesn't
     // carry the masked number/name itself.
