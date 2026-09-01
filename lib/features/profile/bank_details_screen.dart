@@ -6,6 +6,7 @@ import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/add_bank_account_sheet.dart';
 import '../../core/error/failures.dart';
+import '../../routes/app_router.dart';
 import 'models/bank_account.dart';
 import 'services/bank_details_service.dart';
 
@@ -45,6 +46,23 @@ class BankDetailsScreen extends ConsumerWidget {
             e is Failure ? e.message : 'Could not remove this bank account.';
         AppToast.show(context, message, type: ToastType.error);
       }
+    }
+  }
+
+  /// Pending accounts previously had no way forward from this screen at
+  /// all — the card just showed an "Pending Verification" label with no
+  /// tap target. Sends the customer straight to the ₹1 penny-drop screen
+  /// for THIS account; on success, refreshes the list so it re-renders as
+  /// Verified immediately.
+  Future<void> _verifyPendingAccount(
+      BuildContext context, WidgetRef ref, BankAccount account) async {
+    final verified = await Navigator.pushNamed(
+      context,
+      AppRouter.reversePennyDrop,
+      arguments: {'cbankId': account.idBank},
+    );
+    if (verified == true) {
+      ref.invalidate(bankAccountsProvider);
     }
   }
 
@@ -218,7 +236,18 @@ class BankDetailsScreen extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              if (!account.isPrimary && account.isVerified)
+              if (!account.isVerified)
+                TextButton(
+                  onPressed: () => _verifyPendingAccount(context, ref, account),
+                  style: TextButton.styleFrom(
+                      padding: EdgeInsets.symmetric(horizontal: 8.w)),
+                  child: Text('Verify Now',
+                      style: GoogleFonts.playfairDisplay(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.orange.shade800)),
+                )
+              else if (!account.isPrimary)
                 TextButton(
                   onPressed: () => _setPrimary(context, ref, account),
                   style: TextButton.styleFrom(

@@ -263,7 +263,13 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           next.phase == AadhaarPhase.failed) {
         _maybeShowAadhaarFailureDialog(next);
       }
-      if (next.phase == AadhaarPhase.approved) {
+      if (next.phase == AadhaarPhase.approved ||
+          next.phase == AadhaarPhase.aadhaarNotShared) {
+        // Same fallback for both — aadhaarNotShared shares
+        // handledApprovedKeys' claim with KycScreen's own on-load recovery
+        // (see kyc_screen.dart's _checkAadhaarOutcomeRecoveryOnLoad), so
+        // reusing this handler here keeps both sides checking/claiming the
+        // exact same key instead of drifting into a second, parallel guard.
         _maybeHandleAadhaarApproved(next);
       }
     });

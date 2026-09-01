@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/add_bank_account_sheet.dart';
+import '../../../routes/app_router.dart';
 import '../../profile/models/bank_account.dart';
 import '../../profile/services/bank_details_service.dart';
 
@@ -95,11 +96,31 @@ class BankAccountPickerScreen extends ConsumerWidget {
     );
   }
 
+  /// A pending account's row previously had onTap: null — a dead tap with
+  /// no way forward except the separate Bank Account Verification hub.
+  /// Sends the customer straight to the ₹1 penny-drop screen for THIS
+  /// account instead; on success, refreshes the list so it re-renders as
+  /// selectable/verified immediately rather than needing a manual pull-to-
+  /// refresh.
+  Future<void> _verifyPendingAccount(
+      BuildContext context, WidgetRef ref, BankAccount account) async {
+    final verified = await Navigator.pushNamed(
+      context,
+      AppRouter.reversePennyDrop,
+      arguments: {'cbankId': account.idBank},
+    );
+    if (verified == true) {
+      ref.invalidate(bankAccountsProvider);
+    }
+  }
+
   Widget _buildAccountTile(BuildContext context, WidgetRef ref,
       BankAccount account, bool isDark) {
     final selectable = account.isVerified;
     return GestureDetector(
-      onTap: selectable ? () => Navigator.pop(context, account) : null,
+      onTap: selectable
+          ? () => Navigator.pop(context, account)
+          : () => _verifyPendingAccount(context, ref, account),
       child: Container(
         margin: EdgeInsets.only(bottom: 12.h),
         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),

@@ -68,6 +68,22 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     _pollTimer = null;
   }
 
+  /// Resets back to the initial "Pay ₹1 & Verify" state after a terminal
+  /// failure (ACCOUNT_MISMATCH/FAILED) — previously the UI stayed stuck on
+  /// "I've Paid — Verify Now" forever after a failure, which just re-checks
+  /// the SAME already-failed client_id/session and returns the same error
+  /// every time. The customer had no way to actually pay again from the
+  /// correct account.
+  void _retryAfterFailure() {
+    _stopPolling();
+    setState(() {
+      _paymentLaunched = false;
+      _clientId = null;
+      _paymentLink = null;
+      _errorMessage = null;
+    });
+  }
+
   @override
   void dispose() {
     _stopPolling();
@@ -243,7 +259,19 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                             )
                           : const Text('Pay ₹1 & Verify', style: TextStyle(color: Colors.white)),
                     )
-                  else ...[
+                  else if (_errorMessage != null) ...[
+                    Text(
+                      'Please retry with the correct bank account.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
+                    ),
+                    SizedBox(height: 16.h),
+                    ElevatedButton(
+                      onPressed: _retryAfterFailure,
+                      style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
+                      child: const Text('Try Again', style: TextStyle(color: Colors.white)),
+                    ),
+                  ] else ...[
                     Text(
                       'Complete the ₹1 payment in your UPI app, then tap below to confirm.',
                       textAlign: TextAlign.center,
