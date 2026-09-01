@@ -72,6 +72,14 @@ enum AadhaarPhase {
   expired,
   rejected,
   failed,
+  // Backend status "NOT_SHARED" — the customer didn't select Aadhaar in
+  // DigiLocker's document picker this round, but PAN may still have come
+  // through from the same session (see KYCService._check_aadhaar_kyc's
+  // NOT_SHARED branch: "not a failure ... report this as a genuine
+  // success"). Deliberately distinct from `failed` — that phase's callers
+  // treat it as a dead end (show a failure dialog, stop); this one needs
+  // its own handling so a PAN approval landing here isn't silently lost.
+  aadhaarNotShared,
 }
 
 /// Shared shape of a CONFIRM_NAME_UPDATE prompt (backend
@@ -486,6 +494,18 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
               await Future.delayed(delay);
             }
             continue;
+          case 'NOT_SHARED':
+            // Aadhaar wasn't shared this round — PAN may still have been
+            // captured (data['pan_status'] can be APPROVED). Must NOT fall
+            // into `default`/`failed` below: kyc_screen.dart only refreshes
+            // document-types (and thus ever shows PAN as verified) for
+            // phases it specifically knows about — `failed` was silently
+            // eating a real PAN approval before this case existed.
+            state = state.copyWith(
+              phase: AadhaarPhase.aadhaarNotShared,
+              message: data['message']?.toString(),
+            );
+            return;
           default:
             SecureLogger.e('[Aadhaar] unexpected DigiLocker status (not shown to user): $status');
             state = state.copyWith(
