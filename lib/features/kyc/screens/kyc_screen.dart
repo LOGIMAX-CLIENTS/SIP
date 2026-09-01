@@ -91,12 +91,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   // of how that left the dialog stuck on "Processing..." forever).
   Set<String> get _shownMismatchIds => AadhaarNotifier.handledMismatchIds;
   Set<String> get _shownFailureKeys => AadhaarNotifier.handledFailureKeys;
-  // Re-entrancy guard for _onVerifyAadhaar(): true for the whole duration of
-  // the call (initiate -> consent/SDK sub-screen -> poll), not just the
-  // initiating/polling AadhaarState phases. Without this, awaitingSdk/
-  // awaitingConsent leave the button tappable while the previous call is
-  // still awaiting its pushed route, so a second tap fires an overlapping
-  // _onVerifyAadhaar() that re-initiates and pushes a duplicate sub-screen.
+  // Re-entrancy guard AND loading indicator for ANY Aadhaar verification
+  // attempt in flight — true for the whole duration of whichever method is
+  // running (_onVerifyAadhaar: initiate -> consent/SDK sub-screen -> poll,
+  // OR _onVerifyAadhaarMeon: getMeonSdkConfig -> SDK screen -> completion
+  // check), not just the initiating/polling AadhaarState phases (which the
+  // Meon path never even moves through — it bypasses AadhaarNotifier
+  // entirely, see _onVerifyAadhaarMeon's doc comment). Deliberately ONE
+  // shared flag rather than one per gateway/method: Aadhaar can only be
+  // verified one way at a time, so any future alternate path just reuses
+  // this same flag — nothing else (the PopScope guard, the in-progress
+  // banner, both busy computations below) needs to learn a new name. Without
+  // this, awaitingSdk/awaitingConsent leave the button tappable while the
+  // previous call is still awaiting its pushed route, so a second tap fires
+  // an overlapping attempt that re-initiates and pushes a duplicate sub-screen.
   bool _verifyingAadhaar = false;
 
   final _aadhaarNumberController = TextEditingController();
@@ -623,45 +631,55 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// fit either). Only succeeds while MEON is the backend's active KYC
   /// gateway; surfaces a toast rather than a button state if it isn't.
   Future<void> _onVerifyAadhaarMeon() async {
+    if (_verifyingAadhaar) return;
     if (_aadhaarFormKey.currentState?.validate() == false) return;
 
-    Map<String, dynamic> config;
+    setState(() => _verifyingAadhaar = true);
     try {
-      config = await ref.read(kycRepositoryProvider).getMeonSdkConfig();
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.show(
-        context,
-        e.toString().replaceFirst('Exception: ', ''),
-        type: ToastType.error,
-      );
-      return;
-    }
-    if (!mounted) return;
-
-    // See the matching suppressAppLock note in _runVerifyAadhaar — same risk
-    // applies here, this SDK screen can run long enough to trigger it too.
-    AppLifecycleObserver.suppressAppLock = true;
-    try {
-      final confirmed = await Navigator.pushNamed(
-        context,
-        AppRouter.meonDigilockerSdk,
-        arguments: {
-          'companyName': config['company_name'] as String,
-          'secretToken': config['secret_token'] as String,
-          'redirectUrl': (config['redirect_url'] as String?) ?? '',
-        },
-      );
+      Map<String, dynamic> config;
+      try {
+        config = await ref.read(kycRepositoryProvider).getMeonSdkConfig();
+      } catch (e) {
+        if (!mounted) return;
+        AppToast.show(
+          context,
+          e.toString().replaceFirst('Exception: ', ''),
+          type: ToastType.error,
+        );
+        return;
+      }
       if (!mounted) return;
 
-      if (confirmed == true) {
-        // Meon's SDK returns full verification data inline — no separate
-        // poll step like the webview/SurePass paths need. Refresh
-        // document-types the same way a completed submission does elsewhere.
-        await _checkAndHandleCompletion();
+      // See the matching suppressAppLock note in _runVerifyAadhaar — same risk
+      // applies here, this SDK screen can run long enough to trigger it too.
+      AppLifecycleObserver.suppressAppLock = true;
+      try {
+        final confirmed = await Navigator.pushNamed(
+          context,
+          AppRouter.meonDigilockerSdk,
+          arguments: {
+            'companyName': config['company_name'] as String,
+            'secretToken': config['secret_token'] as String,
+            'redirectUrl': (config['redirect_url'] as String?) ?? '',
+          },
+        );
+        if (!mounted) return;
+
+        if (confirmed == true) {
+          // Meon's SDK returns full verification data inline — no separate
+          // poll step like the webview/SurePass paths need. Refresh
+          // document-types the same way a completed submission does elsewhere.
+          await _checkAndHandleCompletion();
+        }
+      } finally {
+        AppLifecycleObserver.suppressAppLock = false;
       }
     } finally {
-      AppLifecycleObserver.suppressAppLock = false;
+      // Unconditional for the same reason _onVerifyAadhaar's reset is —
+      // see that method's doc comment on why the field write must not be
+      // gated behind `mounted`.
+      _verifyingAadhaar = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -1038,6 +1056,19 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final docsAsync = ref.watch(kycDocumentsProvider(widget.requestFrom));
     final aadhaarState = ref.watch(aadhaarProvider);
 
+    // Blocks the customer from backing out of this screen mid-verification —
+    // previously nothing stopped a back-press while _runVerifyAadhaar()'s
+    // Aadhaar+PAN DigiLocker poll was still in flight, so they'd land back
+    // on MainScreen (or wherever) while the request was still pending, then
+    // return to a freshly-built KycScreen showing stale/contradictory state
+    // (the entry form again, or a leftover message) instead of the actual
+    // in-progress verification. Same condition as _buildAadhaarCard's own
+    // `isBusy`, plus any generic doc submit in flight.
+    final verificationInFlight = _verifyingAadhaar ||
+        _submittingDocIds.isNotEmpty ||
+        aadhaarState.phase == AadhaarPhase.initiating ||
+        aadhaarState.phase == AadhaarPhase.polling;
+
     // Reactive fallback for the CONFIRM_NAME_UPDATE mismatch dialog —
     // primary path when the linear await-chain in _runVerifyAadhaar() can't
     // deliver it itself: SurePass's native DigiLocker SDK Activity can leave
@@ -1068,11 +1099,21 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       }
     });
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
-        children: [
-          const GradientHeader(title: 'Verification'),
+    return PopScope(
+      canPop: !verificationInFlight,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        AppToast.show(
+          context,
+          'Please wait — verification is in progress.',
+          type: ToastType.info,
+        );
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            const GradientHeader(title: 'Verification'),
           Expanded(
             child: docsAsync.when(
               data: (result) {
@@ -1097,6 +1138,10 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                         'Aadhaar and PAN are verified together via DigiLocker.',
                         style: AppTextStyles.fieldHelper(isDark),
                       ),
+                      if (verificationInFlight) ...[
+                        SizedBox(height: 16.h),
+                        _buildVerificationInProgressBanner(isDark),
+                      ],
                       SizedBox(height: 32.h),
                       ...result.documents.map((doc) => _buildDocumentCard(
                             doc, isDark, aadhaarState,
@@ -1117,6 +1162,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -1194,6 +1240,39 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               gradient: AppTheme.greenGradient,
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Screen-level "something is happening, stay here" indicator for the
+  /// whole span _runVerifyAadhaar()/_onVerifyAadhaarMeon()/_submitDoc() are
+  /// awaiting a response — the per-button spinner (CustomButton.isLoading)
+  /// only reads as "this one button is busy", not "don't leave this
+  /// screen". Paired with the PopScope guard in build() that blocks the
+  /// back-press this banner is telling the customer not to use.
+  Widget _buildVerificationInProgressBanner(bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(16.r),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(16.r),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 18.w,
+            height: 18.w,
+            child: const CircularProgressIndicator(strokeWidth: 2.2),
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Text(
+              'Verifying your details — please stay on this screen until it finishes.',
+              style: AppTextStyles.fieldHelper(isDark),
+            ),
+          ),
         ],
       ),
     );
@@ -1458,10 +1537,23 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             Center(
               child: TextButton(
                 onPressed: isBusy ? null : _onVerifyAadhaarMeon,
-                child: Text(
-                  'Verify via Meon (native)',
-                  style: AppTextStyles.fieldLabel(isDark),
-                ),
+                child: isBusy
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 14.w,
+                            height: 14.w,
+                            child: const CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 8.w),
+                          Text('Processing...', style: AppTextStyles.fieldLabel(isDark)),
+                        ],
+                      )
+                    : Text(
+                        'Verify via Meon (native)',
+                        style: AppTextStyles.fieldLabel(isDark),
+                      ),
               ),
             ),
           ],
