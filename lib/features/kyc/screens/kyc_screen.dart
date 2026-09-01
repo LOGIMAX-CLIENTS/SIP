@@ -581,6 +581,22 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         return;
       }
 
+      // Aadhaar wasn't shared this round, but PAN may have been (backend's
+      // own framing: "not a failure ... report this as a genuine success").
+      // Must refresh document-types here — this is the only phase-branch
+      // that can carry a fresh PAN approval without Aadhaar's own phase
+      // also being `approved`, so it needed its own call to
+      // _checkAndHandleCompletion() rather than falling through to the
+      // generic message-only toast below (which never re-fetches anything).
+      if (finalState.phase == AadhaarPhase.aadhaarNotShared) {
+        if (mounted && finalState.message != null) {
+          AppToast.show(context, finalState.message!, type: ToastType.info);
+        }
+        if (!mounted) return;
+        await _checkAndHandleCompletion();
+        return;
+      }
+
       if (finalState.phase == AadhaarPhase.approved) {
         // Claim the SAME shared key MainScreen's own approved-fallback
         // checks (see AadhaarNotifier.handledApprovedKeys / MainScreen's
@@ -1108,6 +1124,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           next.phase == AadhaarPhase.rejected ||
           next.phase == AadhaarPhase.failed) {
         _maybeShowAadhaarFailureDialog(next);
+      }
+      // Same reactive-fallback rationale as above, for the case
+      // _runVerifyAadhaar's own linear chain documents (SurePass SDK
+      // Activity onPause/onResume tearing down this instance before the
+      // poll result lands) — without this, a PAN approval piggybacked on
+      // an aadhaarNotShared outcome is silently dropped exactly like the
+      // mismatch dialog used to be. _checkAndHandleCompletion() is
+      // idempotent (AadhaarNotifier.completionInFlight dedupes concurrent
+      // calls), so this is safe even if the linear chain also reaches it.
+      if (next.phase == AadhaarPhase.aadhaarNotShared) {
+        if (next.message != null) {
+          AppToast.show(context, next.message!, type: ToastType.info);
+        }
+        _checkAndHandleCompletion();
       }
     });
 
