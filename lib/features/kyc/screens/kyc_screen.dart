@@ -8,6 +8,7 @@ import 'package:startgold/core/security/app_lifecycle_observer.dart';
 import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
+import 'package:startgold/features/profile/profile_controller.dart' as pc;
 import 'package:startgold/routes/app_router.dart';
 import 'package:startgold/shared/theme/app_theme.dart';
 import 'package:startgold/shared/theme/app_text_styles.dart';
@@ -135,6 +136,32 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         state.phase == AadhaarPhase.rejected ||
         state.phase == AadhaarPhase.failed) {
       _maybeShowAadhaarFailureDialog(state);
+    }
+    // APPROVED counterpart — confirmed via [KYC DEBUG] logs that the
+    // ORIGINAL screen can be disposed by the SDK bounce before its own
+    // linear _runVerifyAadhaar() chain ever reaches its approved branch
+    // (the "widget mounted=false" log fires right there), so nothing ever
+    // claims AadhaarNotifier.handledApprovedKeys and MainScreen's fallback
+    // navigates here — but until this branch existed, THIS freshly-pushed
+    // screen never re-ran the completion sequence either: it just showed
+    // "Verified" cards from its own normal doc-types fetch and stopped,
+    // with no success animation, no auto Navigator.pop(context, true), and
+    // therefore no refreshed "Verified" badge back on the Profile screen
+    // (that badge only refreshes when THIS route pops with `true`).
+    //
+    // Guarded on verificationId != null specifically to NOT fire for a
+    // customer who casually reopens an already-long-verified KYC screen
+    // (AadhaarNotifier.seedApproved() also sets phase=approved, purely for
+    // display, whenever the backend reports Aadhaar approved on ANY fresh
+    // load — but it never sets verificationId, so that case is excluded
+    // here). AadhaarNotifier.handledApprovedKeys.add() below is the second,
+    // durable guard — even a genuine verificationId only ever runs this
+    // once, matching _checkAndHandleCompletion's own claim for the case
+    // where the original screen DOES survive to run it itself.
+    if (state.phase == AadhaarPhase.approved && state.verificationId != null) {
+      if (AadhaarNotifier.handledApprovedKeys.add(state.verificationId!)) {
+        _checkAndHandleCompletion();
+      }
     }
   }
 
@@ -699,14 +726,27 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
+  /// True when the customer's profile already carries this exact verified
+  /// name — e.g. AADHAAR's name/DOB was just synced to the profile moments
+  /// earlier via the CONFIRM_NAME_UPDATE mismatch flow (KYCService's
+  /// `_finalize_name_mismatch_confirmation`, `profile_updated: true` in
+  /// that response). Asking the customer to "Save" a name that's already
+  /// saved is pure redundancy, not a genuine confirmation of anything new.
+  bool _profileAlreadyMatches(String? verifiedName) {
+    if (verifiedName == null || verifiedName.trim().isEmpty) return false;
+    final currentName = ref.read(pc.profileProvider).user.name;
+    return currentName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
+  }
+
   /// Success animation, then the MANDATORY verified-details confirmation —
   /// one dialog per document (Aadhaar first, then PAN — see
   /// _showVerifiedDetailsDialog), each saving straight from its own dialog
-  /// rather than a single "pick one source" choice. Every caller
-  /// (SIP/Withdrawal/Investment/Profile) awaits this screen and decides
-  /// what to do next itself (typically retrying the original blocked
-  /// action via KycVerificationFlow) — no requestFrom-specific navigation
-  /// lives here.
+  /// rather than a single "pick one source" choice, UNLESS the profile
+  /// already carries that exact name (see _profileAlreadyMatches — nothing
+  /// to confirm/save in that case). Every caller (SIP/Withdrawal/
+  /// Investment/Profile) awaits this screen and decides what to do next
+  /// itself (typically retrying the original blocked action via
+  /// KycVerificationFlow) — no requestFrom-specific navigation lives here.
   Future<void> _runCompletionSequence({
     String? panName,
     String? panDob,
@@ -720,21 +760,37 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       return;
     }
 
-    await _showVerifiedDetailsDialog(
-      source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob,
-    );
-    if (!mounted) {
-      SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after AADHAAR dialog');
-      return;
+    if (!_profileAlreadyMatches(aadhaarName)) {
+      await _showVerifiedDetailsDialog(
+        source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob,
+      );
+      if (!mounted) {
+        SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after AADHAAR dialog');
+        return;
+      }
     }
 
-    await _showVerifiedDetailsDialog(
-      source: 'PAN', verifiedName: panName, verifiedDob: panDob,
-    );
-    if (!mounted) {
-      SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after PAN dialog');
-      return;
+    if (!_profileAlreadyMatches(panName)) {
+      await _showVerifiedDetailsDialog(
+        source: 'PAN', verifiedName: panName, verifiedDob: panDob,
+      );
+      if (!mounted) {
+        SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after PAN dialog');
+        return;
+      }
     }
+
+    // Refreshed directly here, not left to the caller's own pop-result
+    // handling — Profile's own "KYC Verification" tap-in DOES await this
+    // push and refresh on `result == true`, but this screen can just as
+    // easily be reached via MainScreen's app-shell fallback navigation
+    // (SDK-bounce recovery — see MainScreen's _navigateToKycAndLetItHandle),
+    // which pushes this route directly and never awaits a result at all.
+    // Without this, that path's customer would see a still-unverified
+    // "KYC Verification" badge on Profile despite everything having just
+    // succeeded, until they happened to revisit another tab that also
+    // invalidates profileProvider.
+    ref.read(pc.profileProvider.notifier).fetchProfileDetails();
 
     SecureLogger.d('[KYC DEBUG] _runCompletionSequence: popping(true)');
     Navigator.pop(context, true);
