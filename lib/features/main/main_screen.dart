@@ -19,6 +19,7 @@ import '../../shared/widgets/app_toast.dart';
 import '../../features/auth/controller/auth_controller.dart';
 import '../../core/services/notification_service.dart';
 import '../../routes/app_router.dart';
+import '../../core/security/secure_logger.dart';
 import '../kyc/controllers/kyc_controller.dart';
 
 /// Shared provider so any child screen can switch tabs
@@ -34,16 +35,23 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen> {
   final Set<int> _visitedTabs = {0};
   DateTime? _lastBackPressTime; // tracks double-tap-to-exit timing
-  // Dedupe guards for _maybeShowAadhaarMismatchDialog / _maybeShowPanMismatchDialog
-  // — see their doc comments.
-  final Set<String> _shownAadhaarMismatchIds = {};
-  final Set<String> _shownPanMismatchIds = {};
-  // Same dedupe role, for the terminal expired/rejected/failed toast — see
-  // _maybeShowAadhaarFailureDialog's doc comment.
-  final Set<String> _shownAadhaarFailureKeys = {};
-  // Same dedupe role, for a clean APPROVED outcome — see
-  // _maybeHandleAadhaarApproved's doc comment.
-  final Set<String> _shownAadhaarApprovedKeys = {};
+  // Dedupe guards for MainScreen's OWN navigation decision only — kept
+  // PRIVATE, deliberately NOT the same Set that KycScreen claims into
+  // (AadhaarNotifier.handledMismatchIds/etc.). These two concerns looked
+  // identical but aren't: when no KycScreen is mounted, MainScreen must
+  // navigate to KycScreen SO THAT it can then claim the shared Set and show
+  // its dialog — if MainScreen itself claimed the shared Set first (a prior
+  // version of this fix did exactly that), the freshly-navigated-to
+  // KycScreen's own claim attempt would find it already taken and silently
+  // skip showing anything at all, confirmed live via [KYC DEBUG] logs
+  // (MainScreen navigated, then dead silence — no _showMismatchDialog
+  // entered ever logged). MainScreen only ever READS the shared Set (via
+  // AadhaarNotifier.handledMismatchIds.contains(...)) to check "has someone
+  // already claimed this," and uses its own private Set purely to avoid
+  // scheduling more than one navigation for the same outcome.
+  final Set<String> _navigatedMismatchIds = {};
+  final Set<String> _navigatedFailureKeys = {};
+  final Set<String> _navigatedApprovedKeys = {};
 
   @override
   void initState() {
@@ -144,21 +152,47 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     Navigator.of(context).pushNamed(AppRouter.kyc, arguments: {'request_from': 'profile'});
   }
 
+  /// Grace period before MainScreen's own fallback claims a given outcome.
+  /// [_shownAadhaarMismatchIds] etc. are now SHARED with KycScreen's own
+  /// dedupe (AadhaarNotifier.handledMismatchIds/etc.) — whoever calls
+  /// .add() FIRST wins and is the only one that acts. KycScreen's own
+  /// ref.listen reacts synchronously the instant the state changes, but
+  /// Riverpod doesn't guarantee listener ordering ACROSS separate widgets,
+  /// so without a delay MainScreen could occasionally win that race even
+  /// while a KycScreen is genuinely mounted and about to show its dialog —
+  /// which would silently swallow the claim and the dialog would never
+  /// appear at all (confirmed live: this is exactly what a first version of
+  /// this fix, with no delay, did). Waiting one frame's worth first gives a
+  /// live KycScreen instance's own (near-instant) listener priority; this
+  /// fallback only fires when nothing has claimed the outcome after that —
+  /// i.e. no KycScreen was actually there to react.
+  static const _fallbackGracePeriod = Duration(milliseconds: 150);
+
   /// [_shownAadhaarMismatchIds] — keyed by verificationId, not a plain bool
   /// — makes this a no-op if KycScreen's own listener already handled this
   /// exact attempt (the normal case where nothing disposes it), and still
   /// allows a genuine reverify (new verification_id) to trigger again.
   void _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) {
-    if (!_shownAadhaarMismatchIds.add(prompt.verificationId)) return;
-    _navigateToKycAndLetItHandle();
+    SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: scheduling fallback for ${prompt.verificationId}');
+    Future.delayed(_fallbackGracePeriod, () {
+      final alreadyShown = AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId);
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: grace period elapsed, mounted=$mounted, alreadyShownByKycScreen=$alreadyShown');
+      if (!mounted || alreadyShown) return;
+      if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: navigating');
+      _navigateToKycAndLetItHandle();
+    });
   }
 
   /// PAN counterpart — same reasoning. [prompt.verificationId] for PAN
   /// actually holds the dedicated PAN KYC row id (see NameMismatchPrompt's
   /// doc comment in kyc_controller.dart for why PAN reuses this field name).
   void _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) {
-    if (!_shownPanMismatchIds.add(prompt.verificationId)) return;
-    _navigateToKycAndLetItHandle();
+    Future.delayed(_fallbackGracePeriod, () {
+      if (!mounted || AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId)) return;
+      if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
+      _navigateToKycAndLetItHandle();
+    });
   }
 
   /// Terminal expired/rejected/failed counterpart — same reasoning. Keyed
@@ -167,8 +201,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// don't both navigate when nothing actually disposes the screen.
   void _maybeShowAadhaarFailureDialog(AadhaarState state) {
     final key = '${state.verificationId ?? state.message}-${state.phase}';
-    if (!_shownAadhaarFailureKeys.add(key)) return;
-    _navigateToKycAndLetItHandle();
+    Future.delayed(_fallbackGracePeriod, () {
+      if (!mounted || AadhaarNotifier.handledFailureKeys.contains(key)) return;
+      if (!_navigatedFailureKeys.add(key)) return;
+      _navigateToKycAndLetItHandle();
+    });
   }
 
   /// Success counterpart — same reasoning applies to a clean APPROVED
@@ -183,8 +220,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// side, is what keeps that from also triggering a redundant navigation).
   void _maybeHandleAadhaarApproved(AadhaarState state) {
     final key = state.verificationId ?? 'approved-${state.maskedNumber}';
-    if (!_shownAadhaarApprovedKeys.add(key)) return;
-    _navigateToKycAndLetItHandle();
+    Future.delayed(_fallbackGracePeriod, () {
+      if (!mounted || AadhaarNotifier.handledApprovedKeys.contains(key)) return;
+      if (!_navigatedApprovedKeys.add(key)) return;
+      _navigateToKycAndLetItHandle();
+    });
   }
 
   Widget build(BuildContext context) {
@@ -206,6 +246,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     // kyc_screen.dart's _runVerifyAadhaar) — without that, the provider
     // would already be disposed by the time this fires.
     ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
+      SecureLogger.d('[KYC DEBUG] MainScreen.ref.listen fired: previous=${previous?.phase} next=${next.phase} mounted=$mounted');
       if (next.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
           next.aadhaarMismatchPrompt != null) {
         _maybeShowAadhaarMismatchDialog(next.aadhaarMismatchPrompt!);

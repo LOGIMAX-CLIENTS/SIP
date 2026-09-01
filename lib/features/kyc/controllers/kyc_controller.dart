@@ -207,6 +207,28 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
 
   AadhaarNotifier(this._repository, this._ref) : super(const AadhaarState());
 
+  // ── Cross-widget outcome-handling dedupe ─────────────────────────────────
+  // Shared by KycScreen (shows the mismatch dialog / failure dialog in
+  // place, via its own ref.listen) and MainScreen (a fallback that
+  // navigates back to KycScreen when no KycScreen is currently mounted to
+  // react itself — see main_screen.dart). Both listen to the SAME
+  // AadhaarState transitions, so each one having only its own private
+  // dedupe set stops IT from double-handling but not the OTHER side from
+  // ALSO acting: confirmed via [KYC DEBUG] logs that KycScreen would open
+  // the mismatch dialog while MainScreen independently pushed a fresh
+  // KycScreen route on top of it in the same instant. The dialog's own
+  // Navigator.pop() then popped that redundant top route instead of
+  // itself — Navigator.pop() always removes whichever route is CURRENTLY
+  // topmost, not "my own route" — so the dialog stayed visually stuck on
+  // "Processing..." forever even though the backend call had already
+  // succeeded underneath. Keyed by verificationId (mismatch/PAN-mismatch)
+  // or verificationId+phase (failure/approved) — whichever side observes a
+  // given outcome FIRST claims it via .add() and proceeds; the other sees
+  // .add() return false and skips entirely.
+  static final Set<String> handledMismatchIds = {};
+  static final Set<String> handledFailureKeys = {};
+  static final Set<String> handledApprovedKeys = {};
+
   /// Blocks aadhaarProvider's .autoDispose teardown for the duration of the
   /// initiate -> consent/SDK sub-screen -> poll sequence. Without this, the
   /// provider can lose its listener and be disposed while the pushed
@@ -520,6 +542,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
       state = state.copyWith(phase: AadhaarPhase.failed, message: msg);
       return (NameMismatchOutcome.failed, msg);
     }
+    SecureLogger.d('[KYC DEBUG] confirmNameMismatch: sending, verificationId=$verificationId');
     try {
       final data = await _repository.pollAadhaar(
         requestFrom: requestFrom,
@@ -528,10 +551,12 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         name: name,
         dob: dob,
       );
+      SecureLogger.d('[KYC DEBUG] confirmNameMismatch: response received, notifier.mounted=$mounted, status=${data['status']}');
       if (!mounted) return (NameMismatchOutcome.failed, null);
       final status = (data['status'] ?? '').toString();
       if (status == 'APPROVED') {
         state = state.copyWith(phase: AadhaarPhase.approved);
+        SecureLogger.d('[KYC DEBUG] confirmNameMismatch: returning resolved');
         return (NameMismatchOutcome.resolved, null);
       }
       // Unexpected non-APPROVED, non-thrown status — treat the same as a
@@ -540,6 +565,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
       final msg = data['message']?.toString();
       return (NameMismatchOutcome.stillMismatched, msg);
     } catch (e) {
+      SecureLogger.d('[KYC DEBUG] confirmNameMismatch: threw, notifier.mounted=$mounted, error=$e');
       if (!mounted) return (NameMismatchOutcome.failed, null);
       // The common case: backend rejects with NAME_MISMATCH (still doesn't
       // match) as a thrown Exception, not a data payload — same

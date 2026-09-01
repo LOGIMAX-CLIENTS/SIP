@@ -79,20 +79,17 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   // Aadhaar card render as if it needed verifying from scratch — misleading
   // when it's already approved server-side and this is purely a PAN retry.
   bool _retryingPanOnly = false;
-  // Dedupe guard for _maybeShowAadhaarMismatchDialog: the reactive
-  // ref.listen in build() and the linear await-chain in _runVerifyAadhaar()
-  // can both observe the same awaitingNameMismatchConfirm transition (the
-  // normal case where nothing disposes the screen mid-flow) — this ensures
-  // only one of them actually opens the dialog. Keyed by verificationId, not
-  // a plain bool, so a genuine reverify (new verification_id) isn't blocked
-  // by an earlier attempt's entry.
-  final Set<String> _shownMismatchIds = {};
-  // Same dedupe role as _shownMismatchIds, for the terminal
-  // expired/rejected/failed toast (_maybeShowAadhaarFailureDialog) — keyed by
-  // verificationId+phase since a failure has no analogue to a KYC row id;
-  // falls back to message+phase for the rare failure with no verificationId
-  // at all (e.g. initiate() failing before one was ever assigned).
-  final Set<String> _shownFailureKeys = {};
+  // Dedupe guards for the mismatch dialog / failure dialog — now backed by
+  // AadhaarNotifier.handledMismatchIds/handledFailureKeys, SHARED with
+  // MainScreen's own fallback listener. A KycScreen-local (even if static)
+  // Set only stopped duplicate handling within this screen's own code
+  // paths; it couldn't stop MainScreen's independent ref.listen from ALSO
+  // pushing a new KycScreen route over an already-open dialog for the same
+  // event, which raced with the dialog's own Navigator.pop() (see
+  // AadhaarNotifier's doc comment on handledMismatchIds for the full story
+  // of how that left the dialog stuck on "Processing..." forever).
+  Set<String> get _shownMismatchIds => AadhaarNotifier.handledMismatchIds;
+  Set<String> get _shownFailureKeys => AadhaarNotifier.handledFailureKeys;
   // Re-entrancy guard for _onVerifyAadhaar(): true for the whole duration of
   // the call (initiate -> consent/SDK sub-screen -> poll), not just the
   // initiating/polling AadhaarState phases. Without this, awaitingSdk/
@@ -771,6 +768,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   Future<void> _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) async {
     if (!_shownMismatchIds.add(prompt.verificationId)) return;
     final resolved = await _showMismatchDialog(prompt);
+    SecureLogger.d('[KYC DEBUG] _maybeShowAadhaarMismatchDialog: _showMismatchDialog returned resolved=$resolved, mounted=$mounted');
     if (!mounted) return;
     if (resolved) await _checkAndHandleCompletion();
   }
@@ -785,9 +783,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// being stuck. Returns true only once the submit actually resolves it.
   Future<bool> _showMismatchDialog(NameMismatchPrompt prompt) async {
     SecureLogger.d('[KYC DEBUG] _showMismatchDialog entered, mounted=$mounted, document=${prompt.document}');
+    final dialogContext = context;
     final resolved = await showDialog<bool>(
-      context: context,
+      context: dialogContext,
       barrierDismissible: false,
+      useRootNavigator: true,
       builder: (_) => NameMismatchDialog(
         prompt: prompt,
         onSubmit: (name, dob) => prompt.document == 'PAN'
@@ -797,6 +797,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 ),
       ),
     );
+    SecureLogger.d('[KYC DEBUG] _showMismatchDialog: showDialog future resolved=$resolved');
     return resolved ?? false;
   }
 
@@ -1834,13 +1835,17 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
       _saving = true;
       _errorText = null;
     });
+    SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: calling onSubmit, document=${widget.prompt.document}');
     final (outcome, msg) = await widget.onSubmit(
       typedName,
       _selectedDob != null ? _formatKycDob(_selectedDob!) : '',
     );
+    SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: onSubmit returned outcome=$outcome, dialog mounted=$mounted');
     if (!mounted) return;
     if (outcome == NameMismatchOutcome.resolved) {
-      Navigator.pop(context, true);
+      SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: popping dialog(true), canPop=${Navigator.of(context, rootNavigator: true).canPop()}');
+      Navigator.of(context, rootNavigator: true).pop(true);
+      SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: pop() call returned');
       return;
     }
     setState(() {
