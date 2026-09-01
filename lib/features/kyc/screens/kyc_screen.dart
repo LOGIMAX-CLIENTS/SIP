@@ -785,8 +785,18 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// `_finalize_name_mismatch_confirmation`, `profile_updated: true` in
   /// that response). Asking the customer to "Save" a name that's already
   /// saved is pure redundancy, not a genuine confirmation of anything new.
-  bool _profileAlreadyMatches(String? verifiedName) {
+  Future<bool> _profileAlreadyMatches(String? verifiedName) async {
     if (verifiedName == null || verifiedName.trim().isEmpty) return false;
+    // ProfileNotifier starts with an EMPTY name and fetches the real one
+    // asynchronously in its constructor (see profile_controller.dart) — a
+    // synchronous ref.read() here can race that fetch and see '' instead
+    // of the customer's actual (already-matching) name whenever Profile
+    // hasn't been visited yet this session, which is exactly the Meon/
+    // MainScreen-fallback path: it never routes through Profile's own
+    // screen first. Awaiting a fresh fetch here guarantees a real
+    // comparison regardless of what's cached.
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    if (!mounted) return false;
     final currentName = ref.read(pc.profileProvider).user.name;
     return currentName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
   }
@@ -813,7 +823,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       return;
     }
 
-    if (!_profileAlreadyMatches(aadhaarName)) {
+    if (!await _profileAlreadyMatches(aadhaarName)) {
+      if (!mounted) return;
       await _showVerifiedDetailsDialog(
         source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob,
       );
@@ -823,7 +834,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       }
     }
 
-    if (!_profileAlreadyMatches(panName)) {
+    if (!await _profileAlreadyMatches(panName)) {
+      if (!mounted) return;
       await _showVerifiedDetailsDialog(
         source: 'PAN', verifiedName: panName, verifiedDob: panDob,
       );
