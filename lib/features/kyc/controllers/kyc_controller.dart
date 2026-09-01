@@ -1,4 +1,5 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:startgold/core/error/failures.dart';
 import 'package:startgold/core/providers/user_provider.dart';
 import 'package:startgold/core/security/secure_logger.dart';
@@ -228,6 +229,24 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
   static final Set<String> handledMismatchIds = {};
   static final Set<String> handledFailureKeys = {};
   static final Set<String> handledApprovedKeys = {};
+
+  /// Serializes KycScreen._checkAndHandleCompletion() app-wide. That method
+  /// has FOUR independent call sites (the linear _runVerifyAadhaar chain,
+  /// the on-load APPROVED recovery, the mismatch-dialog-resolved paths, and
+  /// the Meon SDK path) and, unlike the dialog/failure outcomes above, its
+  /// own internal decision (bothComplete && !wasAlreadyConfirmed) depends
+  /// on a FRESH network fetch each time — so handledApprovedKeys' one-shot
+  /// .add() claim doesn't help here: confirmed live via [KYC DEBUG] logs
+  /// that THREE separate calls, arriving milliseconds apart from different
+  /// KycScreen instances, each independently fetched, each independently
+  /// saw kyc_confirmed still false (a real backend read timing gap, not a
+  /// data problem — the mirror rows themselves were already correct), and
+  /// each independently decided to run the full success-dialogs sequence —
+  /// three success animations, three "Save" prompts, three
+  /// Navigator.pop(context, true) calls. Awaiting this (see
+  /// _checkAndHandleCompletion) makes every call after the first simply
+  /// wait for the in-flight one instead of starting its own redundant copy.
+  static Future<void>? completionInFlight;
 
   /// Blocks aadhaarProvider's .autoDispose teardown for the duration of the
   /// initiate -> consent/SDK sub-screen -> poll sequence. Without this, the

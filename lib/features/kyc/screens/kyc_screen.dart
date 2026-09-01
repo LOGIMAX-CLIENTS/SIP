@@ -277,6 +277,21 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final bothComplete =
         result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
     if (!bothComplete || result.kycConfirmed) return;
+    // Second, durable guard alongside result.kycConfirmed — kycConfirmed
+    // can read false on a fetch shortly after a genuine completion (a
+    // backend read-timing gap, confirmed live via [KYC DEBUG] logs: the
+    // mirror rows were already correctly APPROVED in the DB at the exact
+    // moment this returned false), which without this would re-show the
+    // WHOLE success-dialogs sequence on every subsequent reopen of this
+    // screen for the rest of the session, not just once — this function's
+    // own _completionCheckedOnLoad only guards ONE instance, and a fresh
+    // instance is exactly what Profile's "KYC Verification" tap-in creates
+    // every time. Falls back to a purely local key when there's no live
+    // verificationId (e.g. a customer recovering from an earlier app
+    // session, where aadhaarProvider has reset to its pristine state) so
+    // that case's original recovery behavior is unaffected.
+    final key = ref.read(aadhaarProvider).verificationId ?? 'recovery-${result.aadhaarMaskedNumber}';
+    if (!AadhaarNotifier.handledApprovedKeys.add(key)) return;
     _completionCheckedOnLoad = true;
 
     final panDoc = result.documents.isEmpty
@@ -657,7 +672,26 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// verification that JUST happened, never stale pre-edit data. Only forms
   /// call this, so it can never fire from merely viewing an already-verified
   /// screen (e.g. opened from Profile).
+  /// Thin serializing wrapper — see AadhaarNotifier.completionInFlight's doc
+  /// comment for why this can't just be a plain reentrancy-guard bool: the
+  /// duplicate calls come from DIFFERENT KycScreen instances, so the lock
+  /// has to be shared (static), not per-instance.
   Future<void> _checkAndHandleCompletion() async {
+    if (AadhaarNotifier.completionInFlight != null) {
+      SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: another check already in flight, awaiting it instead');
+      await AadhaarNotifier.completionInFlight;
+      return;
+    }
+    final future = _doCheckAndHandleCompletion();
+    AadhaarNotifier.completionInFlight = future;
+    try {
+      await future;
+    } finally {
+      AadhaarNotifier.completionInFlight = null;
+    }
+  }
+
+  Future<void> _doCheckAndHandleCompletion() async {
     SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: entered, mounted=$mounted');
     if (!mounted) return;
     // Captured BEFORE refreshing — see the kycConfirmed guard below for why
