@@ -220,9 +220,13 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// side, is what keeps that from also triggering a redundant navigation).
   void _maybeHandleAadhaarApproved(AadhaarState state) {
     final key = state.verificationId ?? 'approved-${state.maskedNumber}';
+    SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: scheduling fallback for $key');
     Future.delayed(_fallbackGracePeriod, () {
-      if (!mounted || AadhaarNotifier.handledApprovedKeys.contains(key)) return;
+      final alreadyClaimed = AadhaarNotifier.handledApprovedKeys.contains(key);
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: grace elapsed, mounted=$mounted, alreadyClaimedByKycScreen=$alreadyClaimed');
+      if (!mounted || alreadyClaimed) return;
       if (!_navigatedApprovedKeys.add(key)) return;
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: navigating');
       _navigateToKycAndLetItHandle();
     });
   }

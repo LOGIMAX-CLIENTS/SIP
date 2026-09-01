@@ -532,6 +532,21 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       }
 
       if (finalState.phase == AadhaarPhase.approved) {
+        // Claim the SAME shared key MainScreen's own approved-fallback
+        // checks (see AadhaarNotifier.handledApprovedKeys / MainScreen's
+        // _maybeHandleAadhaarApproved) — this branch only runs when THIS
+        // widget is still mounted and is about to handle the approval
+        // itself; without claiming here, nothing ever marks the outcome as
+        // handled (KycScreen never used to claim this key at all), so
+        // MainScreen's listener — reacting to the very same state
+        // transition — always finds it unclaimed after its grace period
+        // and pushes a REDUNDANT fresh KycScreen route on top of this one,
+        // which is why leaving the screen needed two back-presses and the
+        // customer landed on a second, differently-timed fetch of the KYC
+        // status instead of this instance's own freshly-refreshed one.
+        final claimed = AadhaarNotifier.handledApprovedKeys
+            .add(finalState.verificationId ?? 'approved-${finalState.maskedNumber}');
+        SecureLogger.d('[KYC DEBUG] linear chain approved branch: claimed=$claimed, calling _checkAndHandleCompletion');
         await _checkAndHandleCompletion();
         return;
       }
@@ -616,14 +631,21 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// call this, so it can never fire from merely viewing an already-verified
   /// screen (e.g. opened from Profile).
   Future<void> _checkAndHandleCompletion() async {
+    SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: entered, mounted=$mounted');
     if (!mounted) return;
+    // Captured BEFORE refreshing — see the kycConfirmed guard below for why
+    // the post-refresh value can no longer be used here.
+    final wasAlreadyConfirmed =
+        ref.read(kycDocumentsProvider(widget.requestFrom)).valueOrNull?.kycConfirmed ?? false;
     final KycDocumentsResult result;
     try {
       result = await ref.refresh(kycDocumentsProvider(widget.requestFrom).future);
-    } catch (_) {
+    } catch (e) {
+      SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: refresh threw $e');
       return; // Couldn't refresh — nothing reliable to show, don't block on it.
     }
     if (!mounted) return;
+    SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: wasAlreadyConfirmed=$wasAlreadyConfirmed aadhaarApproved=${result.aadhaarApproved} kycConfirmedNow=${result.kycConfirmed} allDocsUploaded=${result.documents.every((d) => d.alreadyUploaded)}');
 
     // Sync the Aadhaar card's own display (separate from this dialog) —
     // pollUntilTerminal's APPROVED case only flips the phase, it doesn't
@@ -642,7 +664,24 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     // Aadhaar (e.g. resolving a name mismatch) after KYC was already fully
     // confirmed re-triggers the ENTIRE mandatory sequence again, including
     // PAN's "verified details" dialog, even though PAN wasn't touched.
-    if (!bothComplete || result.kycConfirmed) return;
+    //
+    // Uses wasAlreadyConfirmed (the state BEFORE this refresh), not
+    // result.kycConfirmed (the state AFTER it) — the backend now flips
+    // kyc_confirmed the moment a verify call itself succeeds (mirror
+    // synced at verify time, not deferred to the Profile Name Save step
+    // anymore), so by the time this refresh returns, kyc_confirmed is
+    // ALREADY true even for the very first, genuinely-just-completed PAN
+    // or Aadhaar verification. Using the post-refresh value here made this
+    // guard swallow that first completion too: _runCompletionSequence()
+    // (and its trailing Navigator.pop(context, true)) never ran, so the
+    // screen never closed itself and the Profile screen — which only
+    // refreshes its own "Verified" badge when this route pops with
+    // `true` — kept showing stale, unverified status even though the
+    // backend had already approved everything.
+    if (!bothComplete || wasAlreadyConfirmed) {
+      SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: skipping sequence, bothComplete=$bothComplete wasAlreadyConfirmed=$wasAlreadyConfirmed');
+      return;
+    }
 
     final panDoc = result.documents.isEmpty
         ? null
@@ -651,6 +690,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             orElse: () => result.documents.first,
           );
 
+    SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: running completion sequence');
     await _runCompletionSequence(
       panName: panDoc?.verifiedName,
       panDob: panDoc?.verifiedDob,
@@ -673,19 +713,30 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     String? aadhaarName,
     String? aadhaarDob,
   }) async {
+    SecureLogger.d('[KYC DEBUG] _runCompletionSequence: entered');
     await _showSuccessAnimation();
-    if (!mounted) return;
+    if (!mounted) {
+      SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after success animation');
+      return;
+    }
 
     await _showVerifiedDetailsDialog(
       source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob,
     );
-    if (!mounted) return;
+    if (!mounted) {
+      SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after AADHAAR dialog');
+      return;
+    }
 
     await _showVerifiedDetailsDialog(
       source: 'PAN', verifiedName: panName, verifiedDob: panDob,
     );
-    if (!mounted) return;
+    if (!mounted) {
+      SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after PAN dialog');
+      return;
+    }
 
+    SecureLogger.d('[KYC DEBUG] _runCompletionSequence: popping(true)');
     Navigator.pop(context, true);
   }
 
