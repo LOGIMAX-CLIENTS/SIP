@@ -8,6 +8,7 @@ import 'package:startgold/core/security/app_lifecycle_observer.dart';
 import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
+import 'package:startgold/features/kyc/screens/manual_kyc_upload_screen.dart';
 import 'package:startgold/features/profile/profile_controller.dart' as pc;
 import 'package:startgold/routes/app_router.dart';
 import 'package:startgold/shared/theme/app_theme.dart';
@@ -355,7 +356,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   }
 
   /// PAN has no consent of its own — it's fetched from the SAME DigiLocker
-  /// session as Aadhaar (see `_buildPanAutoVerifyNotice`'s doc comment and
+  /// session as Aadhaar (see `_buildPanVerifyNotice`'s doc comment and
   /// `MODULE_BRAIN.md` §2). If the user unchecks "PAN Verification Record" on
   /// DigiLocker's document-selection screen, Aadhaar comes back APPROVED but
   /// PAN never does — the only way to retry PAN is a fresh DigiLocker consent.
@@ -1163,6 +1164,33 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 );
                 _reconcileAadhaarWithBackend(result.aadhaarApproved);
                 _checkCompletionRecoveryOnLoad(result);
+                // "Upload manually instead" is offered for a NOT-YET-verified
+                // document once ANY of:
+                //   (a) DigiLocker has genuinely been tried at least once
+                //       (result.digilockerAttempted — the original "not on
+                //       the very first visit" gate).
+                //   (b) the OTHER document is already verified (by any means
+                //       — DigiLocker or a prior manual-upload approval) — an
+                //       already-verified PAN/Aadhaar is itself proof the
+                //       customer has been through this screen's verification
+                //       flow before, so the remaining side shouldn't be
+                //       gated behind a SEPARATE DigiLocker attempt of its own.
+                //   (c) THIS document's own latest attempt was REJECTED —
+                //       most relevant for a manual upload that was refused
+                //       without DigiLocker ever having been tried, which (a)
+                //       alone would never unlock; the customer needs both
+                //       retry paths offered right when a rejection happens.
+                // A verified document's OWN card never reaches this — isDone
+                // always shows the Verified banner instead, on both cards,
+                // regardless of these flags.
+                final panDoc = result.documents.where((d) =>
+                    d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'));
+                final panApproved = panDoc.any((d) => d.alreadyUploaded);
+                final panRejected = panDoc.any((d) => d.status.toUpperCase() == 'REJECTED');
+                final panAllowManualUpload =
+                    result.digilockerAttempted || result.aadhaarApproved || panRejected;
+                final aadhaarAllowManualUpload =
+                    result.digilockerAttempted || panApproved || result.aadhaarRejected;
                 return SingleChildScrollView(
                   padding: EdgeInsets.all(24.w),
                   child: Column(
@@ -1183,12 +1211,15 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                       ...result.documents.map((doc) => _buildDocumentCard(
                             doc, isDark, aadhaarState,
                             backendAadhaarApproved: result.aadhaarApproved,
+                            allowManualUpload: panAllowManualUpload,
                           )),
                       _buildAadhaarCard(
                         isDark, aadhaarState,
                         backendApproved: result.aadhaarApproved,
                         backendMaskedNumber: result.aadhaarMaskedNumber,
                         backendVerifiedName: result.aadhaarName,
+                        backendUnderReview: result.aadhaarUnderReview,
+                        allowManualUpload: aadhaarAllowManualUpload,
                       ),
                     ],
                   ),
@@ -1241,12 +1272,13 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     bool isDark,
     AadhaarState aadhaarState, {
     required bool backendAadhaarApproved,
+    required bool allowManualUpload,
   }) {
     final isPan = doc.name.toUpperCase().contains('PAN') ||
         doc.code.toUpperCase().contains('PAN');
     final isDone = _completedDocIds.contains(doc.id);
     // PAN rides on the same DigiLocker session as Aadhaar (see
-    // _buildPanAutoVerifyNotice). If Aadhaar already came back APPROVED but
+    // _buildPanVerifyNotice). If Aadhaar already came back APPROVED but
     // PAN's card is still pending, the user skipped/unchecked PAN in
     // DigiLocker's document picker — show that explicitly instead of the
     // generic "complete Aadhaar below" notice, which would be actively wrong
@@ -1285,10 +1317,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               // Edit) to trigger a fresh DigiLocker consent + PAN re-check.
               onEdit: isPan ? null : () => _editDocument(doc),
             )
+          else if (doc.isUnderReview)
+            _buildUnderReviewNotice(isDark, label: doc.name)
           else if (panSkippedInConsent)
-            _buildPanSkippedNotice(isDark, isBusy: aadhaarRetryBusy)
+            _buildPanSkippedNotice(isDark, isBusy: aadhaarRetryBusy, showManualUpload: allowManualUpload)
           else if (isPan)
-            _buildPanAutoVerifyNotice(isDark)
+            _buildPanVerifyNotice(isDark, isBusy: aadhaarRetryBusy, showManualUpload: allowManualUpload)
           else ...[
             Form(
               key: _docFormKeys[doc.id],
@@ -1341,30 +1375,64 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
-  /// Shown in place of the (removed) manual PAN entry form while PAN is
-  /// still pending — PAN verification is entirely driven by the Aadhaar
-  /// DigiLocker consent below, not by anything entered on this card.
-  Widget _buildPanAutoVerifyNotice(bool isDark) {
+  /// Pushes manual_kyc_upload_screen.dart for [docType] ("1"=PAN,
+  /// "2"=AADHAAR) — the "Upload manually instead" alternative to DigiLocker.
+  /// A plain pushed route, not a named one via app_router.dart — this
+  /// screen only ever needs docType/requestFrom, both already in scope here.
+  /// On a successful submit (result == true) invalidates kycDocumentsProvider
+  /// so this screen's cards immediately reflect the new UNDER_REVIEW status.
+  Future<void> _openManualUpload(String docType) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ManualKycUploadScreen(
+          docType: docType, requestFrom: widget.requestFrom,
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      ref.invalidate(kycDocumentsProvider(widget.requestFrom));
+    }
+  }
+
+  /// Same size/shape/prominence as the "Verify via DigiLocker" CustomButton
+  /// it sits below — a light-green fill (not the green gradient) keeps it
+  /// visually secondary to that primary action while still reading as a
+  /// real, full-width button rather than a small text link.
+  Widget _buildManualUploadButton(bool isDark, {required String docType}) {
+    return CustomButton(
+      text: 'Upload Manually Instead',
+      svgIconPath: 'assets/buttons/folder-add.svg',
+      backgroundColor: const Color(0xFFE3F1E7),
+      textColor: const Color(0xFF0E5723),
+      onPressed: () => _openManualUpload(docType),
+    );
+  }
+
+  /// Shown once a manual upload has been submitted and is awaiting admin
+  /// review — backend reports this as status "UNDER_REVIEW" (see
+  /// KycDocumentType.isUnderReview / KycDocumentsResult.aadhaarUnderReview).
+  /// Same blue "info" palette as AppToast's ToastType.info — this is neither
+  /// a failure nor (yet) a success.
+  Widget _buildUnderReviewNotice(bool isDark, {required String label}) {
+    const infoColor = Color(0xFF2563EB);
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(20.r),
       decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withOpacity(0.03)
-              : Colors.black.withOpacity(0.02),
-          borderRadius: BorderRadius.circular(20.r)),
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(20.r),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline_rounded,
-              size: 18.sp, color: isDark ? Colors.white54 : Colors.black45),
+          Icon(Icons.hourglass_top_rounded, size: 18.sp, color: infoColor),
           SizedBox(width: 10.w),
           Expanded(
             child: Text(
-              'PAN is verified automatically via DigiLocker — complete '
-              'Aadhaar verification below and PAN will be checked at the '
-              'same time.',
-              style: AppTextStyles.fieldHelper(isDark),
+              "Your manually uploaded $label is under review. We'll notify you once it's verified.",
+              style: AppTextStyles.fieldHelper(isDark).copyWith(color: const Color(0xFF1E3A5F)),
             ),
           ),
         ],
@@ -1372,56 +1440,126 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
-  /// Shown instead of [_buildPanAutoVerifyNotice] once Aadhaar has already
+  /// PAN has no consent of its own — it rides on the SAME DigiLocker
+  /// session as Aadhaar (see `_onRetryPan`'s doc comment and
+  /// `MODULE_BRAIN.md` §2), so this button's onPressed is literally
+  /// [_onVerifyAadhaar] — the same handler the Aadhaar card's own "Verify
+  /// via DigiLocker" button uses. If the Aadhaar form (below, on the same
+  /// screen) isn't filled in yet, `_aadhaarFormKey`'s validation surfaces
+  /// its errors there rather than here, which is the correct place to fix
+  /// them — PAN has nothing of its own to validate.
+  Widget _buildPanVerifyNotice(bool isDark, {required bool isBusy, required bool showManualUpload}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(20.r),
+          decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withOpacity(0.03)
+                  : Colors.black.withOpacity(0.02),
+              borderRadius: BorderRadius.circular(20.r)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'PAN is verified automatically together with Aadhaar via DigiLocker.',
+                style: AppTextStyles.fieldHelper(isDark),
+              ),
+              SizedBox(height: 16.h),
+              CustomButton(
+                text: 'Verify via DigiLocker',
+                svgIconPath: 'assets/buttons/tick.svg',
+                isLoading: isBusy,
+                onPressed: isBusy ? null : _onVerifyAadhaar,
+                gradient: AppTheme.greenGradient,
+              ),
+            ],
+          ),
+        ),
+        // Offered once EITHER DigiLocker has genuinely been tried at least
+        // once (win, lose, or abandoned mid-consent), OR Aadhaar is already
+        // verified by any means — see build()'s panAllowManualUpload
+        // comment for the full reasoning. Never on the very first visit
+        // with nothing yet attempted or verified.
+        if (showManualUpload) ...[
+          SizedBox(height: 8.h),
+          _buildManualUploadButton(isDark, docType: '1'),
+        ],
+      ],
+    );
+  }
+
+  /// Shown instead of [_buildPanVerifyNotice] once Aadhaar has already
   /// come back APPROVED but this PAN card is still pending — i.e. the user
   /// completed DigiLocker consent without "PAN Verification Record" checked.
   /// Uses the app's existing amber "warning" palette (see `app_toast.dart`'s
   /// `ToastType.warning` style) so this reads as "needs your attention", not
   /// a hard failure, since re-running consent with PAN checked resolves it.
-  Widget _buildPanSkippedNotice(bool isDark, {required bool isBusy}) {
+  Widget _buildPanSkippedNotice(bool isDark, {required bool isBusy, required bool showManualUpload}) {
     const warningColor = Color(0xFFD97706);
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(20.r),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(20.r),
-        border: Border.all(color: const Color(0xFFFDE68A)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(20.r),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(20.r),
+            border: Border.all(color: const Color(0xFFFDE68A)),
+          ),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.warning_amber_rounded, size: 18.sp, color: warningColor),
-              SizedBox(width: 10.w),
-              Expanded(
-                child: Text(
-                  "Aadhaar is verified, but PAN wasn't shared during "
-                  "DigiLocker consent, so it couldn't be verified.",
-                  style: AppTextStyles.fieldHelper(isDark).copyWith(color: const Color(0xFF78350F)),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 18.sp, color: warningColor),
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Text(
+                      "Aadhaar is verified, but PAN wasn't shared during "
+                      "DigiLocker consent, so it couldn't be verified.",
+                      style: AppTextStyles.fieldHelper(isDark).copyWith(color: const Color(0xFF78350F)),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 12.h),
+              // Same label as _buildPanVerifyNotice's button for consistency
+              // — the handler is _onRetryPan (not _onVerifyAadhaar) because
+              // Aadhaar is already approved here, so the plain verify path
+              // would short-circuit as "already approved" without ever
+              // re-fetching PAN. _onRetryPan reopens the Aadhaar form with
+              // allow_reverify set, specifically to redo DigiLocker for PAN.
+              CustomButton(
+                text: 'Verify via DigiLocker',
+                svgIconPath: 'assets/buttons/tick.svg',
+                isLoading: isBusy,
+                onPressed: isBusy ? null : _onRetryPan,
+                gradient: AppTheme.greenGradient,
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                "On the next DigiLocker screen, select 'PAN Verification "
+                "Record' before tapping Allow.",
+                style: AppTextStyles.fieldHelper(isDark)
+                    .copyWith(color: const Color(0xFF78350F), fontStyle: FontStyle.italic),
               ),
             ],
           ),
-          SizedBox(height: 12.h),
-          CustomButton(
-            text: 'Retry PAN Verification',
-            svgIconPath: 'assets/buttons/tick.svg',
-            isLoading: isBusy,
-            onPressed: isBusy ? null : _onRetryPan,
-            gradient: AppTheme.greenGradient,
-          ),
+        ),
+        // Always true in practice here (this state only shows once Aadhaar
+        // is APPROVED, which itself proves DigiLocker was attempted) — the
+        // param is still threaded through rather than hardcoded so this
+        // stays correct if that invariant ever changes.
+        if (showManualUpload) ...[
           SizedBox(height: 8.h),
-          Text(
-            "On the next DigiLocker screen, select 'PAN Verification "
-            "Record' before tapping Allow.",
-            style: AppTextStyles.fieldHelper(isDark)
-                .copyWith(color: const Color(0xFF78350F), fontStyle: FontStyle.italic),
-          ),
+          _buildManualUploadButton(isDark, docType: '1'),
         ],
-      ),
+      ],
     );
   }
 
@@ -1431,6 +1569,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     required bool backendApproved,
     String? backendMaskedNumber,
     String? backendVerifiedName,
+    bool backendUnderReview = false,
+    bool allowManualUpload = false,
   }) {
     // Falls back to the backend's own aadhaar_status (from get_document_types
     // / kyc/document-types, always current) when the local provider hasn't
@@ -1510,6 +1650,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               verifiedName: state.verifiedName ?? backendVerifiedName,
               onEdit: _editAadhaar,
             )
+          else if (backendUnderReview && !_aadhaarEditing)
+            _buildUnderReviewNotice(isDark, label: 'Aadhaar')
           else ...[
             Container(
               width: double.infinity,
@@ -1609,6 +1751,10 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               onPressed: _onVerifyAadhaar,
               gradient: AppTheme.greenGradient,
             ),
+            if (!showAadhaarAlreadyVerifiedHint && allowManualUpload) ...[
+              SizedBox(height: 8.h),
+              _buildManualUploadButton(isDark, docType: '2'),
+            ],
           ],
         ],
       ),

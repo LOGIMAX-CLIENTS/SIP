@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/kyc_document.dart';
 import '../../../../core/security/encryption_service.dart';
@@ -21,14 +23,17 @@ class KycRepository {
     if (response.data['success'] == true) {
       final data = response.data['data'];
       final List documents = data['documents'];
-      final aadhaarStatus = (data['aadhaar_status'] ?? '').toString();
+      final aadhaarStatus = (data['aadhaar_status'] ?? '').toString().toUpperCase();
       return KycDocumentsResult(
         documents: documents.map((e) => KycDocumentType.fromJson(e)).toList(),
-        aadhaarApproved: aadhaarStatus.toUpperCase() == 'APPROVED',
+        aadhaarApproved: aadhaarStatus == 'APPROVED',
+        aadhaarUnderReview: aadhaarStatus == 'UNDER_REVIEW',
+        aadhaarRejected: aadhaarStatus == 'REJECTED',
         aadhaarMaskedNumber: data['aadhaar_masked_number']?.toString(),
         aadhaarName: data['aadhaar_name']?.toString(),
         aadhaarDob: data['aadhaar_dob']?.toString(),
         kycConfirmed: data['kyc_confirmed'] == true,
+        digilockerAttempted: data['digilocker_attempted'] == true,
       );
     } else {
       throw Exception(response.data['message'] ?? 'Failed to load documents');
@@ -90,6 +95,48 @@ class KycRepository {
         response.data['message'] ??
         'KYC verification failed. Please try again.';
 
+    throw Exception(serverMessage);
+  }
+
+  /// "Upload manually instead" — an alternative to DigiLocker for PAN
+  /// (docType "1") or Aadhaar (docType "2"). Puts the document UNDER_REVIEW
+  /// rather than verifying instantly; an admin approves it later from the
+  /// admin panel. See backend KYCService.submit_manual_kyc()'s docstring.
+  ///
+  /// [files] must be exactly 1 entry for PAN (key "file") or 2 for Aadhaar
+  /// (keys "front" and "back") — see kycFileFieldsFor(). Sent as
+  /// multipart/form-data, NOT JSON — ApiClient.post() detects FormData and
+  /// sets the correct content-type itself, and the encryption interceptor
+  /// (api_interceptor.dart) only touches Map payloads, so this rides past it
+  /// untouched (safe: the photo itself already carries the number in
+  /// cleartext, same trust boundary as any other file upload).
+  Future<void> submitManualKyc({
+    required String docType, // "1" (PAN) or "2" (AADHAAR)
+    required String documentNumber,
+    required String nameOnDocument,
+    required Map<String, XFile> files,
+  }) async {
+    final formData = FormData.fromMap({
+      'doc_type': docType,
+      'document_number': documentNumber,
+      'name_on_document': nameOnDocument,
+      for (final entry in files.entries)
+        entry.key: await MultipartFile.fromFile(
+          entry.value.path,
+          filename: entry.value.name,
+        ),
+    });
+
+    final response = await _apiClient.post('kyc/manual-upload', data: formData);
+
+    if (response.data['success'] == true) return;
+
+    final errorObj = response.data['error'];
+    final dataObj = response.data['data'];
+    final String serverMessage = (errorObj is Map ? errorObj['message'] : null) ??
+        (dataObj is Map ? dataObj['message'] : null) ??
+        response.data['message'] ??
+        'Manual KYC upload failed. Please try again.';
     throw Exception(serverMessage);
   }
 

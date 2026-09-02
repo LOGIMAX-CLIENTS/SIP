@@ -54,6 +54,12 @@
       images: KycImagesRequirement.fromJson(json['images'] ?? {}),
     );
   }
+
+  /// True when this document was submitted via "Upload manually instead"
+  /// (see manual_kyc_upload_screen.dart) and is awaiting admin review —
+  /// backend KYCService.get_document_types() reports this as `status`
+  /// ("UNDER_REVIEW") once a (PENDING + MANUAL) KYC row exists for it.
+  bool get isUnderReview => status.toUpperCase() == 'UNDER_REVIEW';
 }
 
 /// Wraps the `/kyc/document-types` response: the field-driven documents
@@ -80,6 +86,25 @@ class KycDocumentsResult {
   // completion-recovery check, which uses this to detect a customer who
   // auto-verified but never reached the confirmation dialog.
   final bool kycConfirmed;
+  // True when a manual Aadhaar upload (see manual_kyc_upload_screen.dart) is
+  // awaiting admin review — backend reports `aadhaar_status: "UNDER_REVIEW"`
+  // (KYCService.get_document_types(), the manual-review branch). PAN's own
+  // "under review" state lives on its own KycDocumentType.isUnderReview
+  // instead, since PAN is a `documents[]` entry, not a top-level field.
+  final bool aadhaarUnderReview;
+  // True once the customer has tried "Verify via DigiLocker" at least once
+  // for PAN/Aadhaar — win, lose, or abandoned mid-consent (backend:
+  // KYCService._digilocker_attempted). Gates when "Upload manually
+  // instead" first appears: never on the very first screen visit, always
+  // from the next visit onward once DigiLocker has genuinely been tried.
+  final bool digilockerAttempted;
+  // True when Aadhaar's latest attempt (of EITHER kind — DigiLocker or a
+  // manual upload) was refused (`aadhaar_status: "REJECTED"`). A manual
+  // upload that gets rejected without DigiLocker ever having been tried
+  // would otherwise leave digilockerAttempted false and "Upload manually
+  // instead" hidden right when the customer most needs to retry it — see
+  // kyc_screen.dart's allowManualUpload computation.
+  final bool aadhaarRejected;
 
   KycDocumentsResult({
     required this.documents,
@@ -88,6 +113,9 @@ class KycDocumentsResult {
     this.aadhaarName,
     this.aadhaarDob,
     this.kycConfirmed = false,
+    this.aadhaarUnderReview = false,
+    this.digilockerAttempted = false,
+    this.aadhaarRejected = false,
   });
 }
 
