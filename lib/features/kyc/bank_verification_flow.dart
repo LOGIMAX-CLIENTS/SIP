@@ -32,6 +32,15 @@ class BankVerificationFlow {
       if (accounts.isNotEmpty) return true;
 
       if (!context.mounted) return false;
+      // Let the pending rebuild from _loadAccounts' ref.invalidate() calls
+      // above actually settle before opening the modal — pushing a new
+      // route (Overlay.insert) in the same tick as a scheduled rebuild is
+      // the same "_dependents.isEmpty" InheritedElement race documented in
+      // add_bank_account_sheet.dart's own pop/invalidate/toast fix.
+      // Awaiting the provider Future alone isn't enough: it yields to the
+      // event loop, not necessarily past an actual frame boundary.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!context.mounted) return false;
       var added = false;
       await showAddBankAccountSheet(
         context,

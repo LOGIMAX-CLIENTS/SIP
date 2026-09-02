@@ -414,7 +414,17 @@ Future<void> showAddBankAccountSheet(
         );
       },
     ),
-  ).whenComplete(() => nameFocus.dispose());
+  ).whenComplete(() {
+    // Deferred a frame — whenComplete fires as soon as the sheet's route is
+    // popped, but its TextField (still holding this same FocusNode, a
+    // ChangeNotifier) is still mid dismiss-animation for that frame, and
+    // EditableText's internal focus/cursor listenable merge can still try
+    // to touch it. Disposing synchronously here raced that teardown and
+    // produced "_dependents.isEmpty"/"attached: is not true" widget-tree
+    // corruption crashes on close (and, transitively, on anything that
+    // reopens this sheet or the screen behind it right after).
+    WidgetsBinding.instance.addPostFrameCallback((_) => nameFocus.dispose());
+  });
 }
 
 Widget _field(

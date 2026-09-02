@@ -139,7 +139,20 @@ class _PaymentMethodSheetState extends ConsumerState<PaymentMethodSheet> {
               GestureDetector(
                 onTap: () {
                   Navigator.pop(context); // close sheet
-                  widget.onProceed(_selected);
+                  // Deferred to the next frame — onProceed (see callers,
+                  // e.g. instant_saving_screen.dart's _handleConfirmOrder)
+                  // synchronously calls setState()/opens further
+                  // modals/dialogs on the screen THIS sheet sits on top of.
+                  // Doing that in the same tick as Navigator.pop() is the
+                  // "_dependents.isEmpty"/"attached: is not true" widget-tree
+                  // corruption documented in add_bank_account_sheet.dart's
+                  // own pop/invalidate/toast fix — this is the actual
+                  // upstream trigger of that same crash reported when
+                  // BANK_VERIFICATION_REQUIRED opens the Add Bank Account
+                  // sheet right after this "Proceed to Pay" tap.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    widget.onProceed(_selected);
+                  });
                 },
                 child: Container(
                   width: double.infinity,
