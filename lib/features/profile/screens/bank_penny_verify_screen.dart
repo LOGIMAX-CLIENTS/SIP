@@ -219,10 +219,20 @@ class _BankPennyVerifyScreenState extends ConsumerState<BankPennyVerifyScreen> {
       if (!mounted) return;
 
       if (verified) {
-        ref.invalidate(bankAccountsProvider);
-        AppToast.show(context, 'Bank account verified successfully.',
-            type: ToastType.success);
         Navigator.pop(context, true);
+        // Defer the provider invalidation and toast to the next frame —
+        // stacking ref.invalidate() (rebuilds the underlying Bank Details
+        // screen), an AppToast (inserts its own root OverlayEntry), and
+        // Navigator.pop() all synchronously in the same tick is what causes
+        // "_dependents.isEmpty" InheritedElement crashes when navigating
+        // back through this flow (see add_bank_account_sheet.dart's
+        // identical fix/comment for the same bug).
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          ref.invalidate(bankAccountsProvider);
+          AppToast.show(context, 'Bank account verified successfully.',
+              type: ToastType.success);
+        });
       } else {
         AppToast.show(
           context,

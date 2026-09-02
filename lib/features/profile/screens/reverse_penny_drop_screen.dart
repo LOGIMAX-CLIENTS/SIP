@@ -106,8 +106,16 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       // already fully verified by a previous attempt (webhook/earlier check
       // never made it back to us) — nothing to pay, done immediately.
       if (result['already_verified'] == true || result['verified'] == true) {
-        AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
         Navigator.pop(context, true);
+        // Deferred to the next frame — see reverse_penny_drop_screen.dart's
+        // sibling case below and add_bank_account_sheet.dart's comment for
+        // why stacking an AppToast (root OverlayEntry insert) synchronously
+        // with Navigator.pop() causes "_dependents.isEmpty" crashes.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) {
+            AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
+          }
+        });
         return;
       }
 
@@ -158,8 +166,13 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       final status = result['status']?.toString() ?? '';
       if (result['verified'] == true) {
         _stopPolling();
-        AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
         Navigator.pop(context, true);
+        // Deferred to the next frame — see the sibling case above.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) {
+            AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
+          }
+        });
         return;
       }
 
