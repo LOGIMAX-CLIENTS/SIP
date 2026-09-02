@@ -1474,7 +1474,15 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         "Your Aadhaar is already verified — this step only redoes DigiLocker "
         "consent so PAN can be fetched. Select 'PAN Verification Record' "
         "this time before tapping Allow.";
-    final helperText = _retryingPanOnly
+    // Broader than just `_retryingPanOnly` (the dedicated "Retry PAN
+    // Verification" button) — ANY path that reopens this form while the
+    // backend already reports Aadhaar approved (e.g. re-verifying PAN from
+    // its plain "not yet uploaded" state, which reopens the SAME shared
+    // Aadhaar+PAN form via _aadhaarEditing without going through the
+    // retry-PAN button) should reassure the customer their Aadhaar isn't
+    // actually being un-verified, not just the one specific entry point.
+    final showAadhaarAlreadyVerifiedHint = backendApproved && _aadhaarEditing;
+    final helperText = showAadhaarAlreadyVerifiedHint
         ? panRetryHelperText
         : (isErrorPhase ? defaultHelperText : (state.message ?? defaultHelperText));
 
@@ -1483,7 +1491,15 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildStatusHeader('Aadhaar', isDark, isDone),
+          // Header icon reflects the BACKEND's verified status specifically
+          // (not `isDone`, which the !_aadhaarEditing guard above forces
+          // false while this card is reopened for a PAN-only DigiLocker
+          // retry) — otherwise a customer whose Aadhaar is genuinely already
+          // approved sees a "not verified" grey icon the instant PAN retry
+          // starts, which reads as Aadhaar having been un-verified. Which
+          // body renders below (banner vs form) still uses `isDone` as
+          // before; only this status icon is decoupled from it.
+          _buildStatusHeader('Aadhaar', isDark, isDone || backendApproved),
           SizedBox(height: 16.h),
           if (isDone)
             _buildVerifiedBanner(
@@ -1508,7 +1524,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_retryingPanOnly) ...[
+                    if (showAadhaarAlreadyVerifiedHint) ...[
                       Row(
                         children: [
                           Icon(Icons.check_circle, size: 16.sp, color: const Color(0xFF16A34A)),
