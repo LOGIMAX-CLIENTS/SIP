@@ -18,6 +18,7 @@ import '../../../core/security/secure_logger.dart';
 import '../../../core/error/failures.dart';
 import '../../../routes/app_router.dart';
 import '../../kyc/kyc_flow.dart';
+import '../../kyc/bank_verification_flow.dart';
 import '../../profile/profile_controller.dart' as pc;
 import '../controller/sip_controller.dart';
 import '../models/sip_models.dart';
@@ -2095,6 +2096,20 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
         }
+      } else if (response.errorCode == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as KYC_REQUIRED above, routed through
+        // BankVerificationFlow instead — see its doc comment.
+        if (!mounted) return;
+        final verified = await BankVerificationFlow.start(context, ref);
+        if (!mounted) return;
+        if (verified) {
+          await _createCustomSipPlan(
+            bankAccountId: bankAccountId,
+            paymentMethod: paymentMethod,
+          );
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
       } else {
         if (mounted) {
           AppToast.show(
@@ -2114,6 +2129,21 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         ref,
         requestFrom: 'sip',
       );
+      if (!mounted) return;
+      if (verified) {
+        await _createCustomSipPlan(
+          bankAccountId: bankAccountId,
+          paymentMethod: paymentMethod,
+        );
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
+      }
+    } on BankVerificationRequiredFailure catch (e) {
+      // Same shape as the KycRequiredFailure catch above, routed through
+      // BankVerificationFlow instead — see its doc comment.
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await BankVerificationFlow.start(context, ref);
       if (!mounted) return;
       if (verified) {
         await _createCustomSipPlan(
@@ -2274,6 +2304,20 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
         }
+      } else if (response.errorCode == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as KYC_REQUIRED above, routed through
+        // BankVerificationFlow instead — see its doc comment.
+        if (!mounted) return;
+        final verified = await BankVerificationFlow.start(context, ref);
+        if (!mounted) return;
+        if (verified) {
+          await _createSipPlan(
+            paymentMethod: paymentMethod,
+            bankAccountId: bankAccountId,
+          );
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
       } else {
         if (mounted) {
           AppToast.show(
@@ -2299,6 +2343,21 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         ref,
         requestFrom: 'sip',
       );
+      if (!mounted) return;
+      if (verified) {
+        await _createSipPlan(
+          paymentMethod: paymentMethod,
+          bankAccountId: bankAccountId,
+        );
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
+      }
+    } on BankVerificationRequiredFailure catch (e) {
+      // Same shape as the KycRequiredFailure catch above, routed through
+      // BankVerificationFlow instead — see its doc comment.
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await BankVerificationFlow.start(context, ref);
       if (!mounted) return;
       if (verified) {
         await _createSipPlan(

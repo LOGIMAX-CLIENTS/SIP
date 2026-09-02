@@ -29,6 +29,7 @@ import '../../shared/widgets/secure_clipboard.dart';
 import 'payment_handler.dart';
 import 'widgets/payment_method_sheet.dart';
 import '../kyc/kyc_flow.dart';
+import '../kyc/bank_verification_flow.dart';
 import '../../core/providers/countdown_offer_provider.dart';
 
 class InstantSavingScreen extends ConsumerStatefulWidget {
@@ -1633,6 +1634,30 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           SecureLogger.d(
               'ORDER FLOW: KYC completed → continuing to PaymentHandler');
           // KYC done — continue to Cashfree payment directly from here.
+          final handler = PaymentHandler(ref: ref, context: context);
+          await handler.startPayment(
+            amount: totalPayable,
+            metalId: metalId,
+            rate: rate,
+            buyType: _isAmountMode ? 1 : 2,
+            weight: grams,
+            paymentMethod: paymentMethod,
+            onLoadingStart: () => setState(() => _isProcessing = true),
+            onLoadingEnd: () {
+              if (mounted) setState(() => _isProcessing = false);
+            },
+          );
+        }
+      } else if (eligibility.nextStep == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as the KYC_REQUIRED branch above, routed through
+        // BankVerificationFlow instead — see its doc comment for why this
+        // is a genuinely separate gate from KYC (identity vs. destination
+        // account verification).
+        final bankDone = await BankVerificationFlow.start(context, ref);
+
+        if (bankDone && mounted) {
+          SecureLogger.d(
+              'ORDER FLOW: Bank verification completed → continuing to PaymentHandler');
           final handler = PaymentHandler(ref: ref, context: context);
           await handler.startPayment(
             amount: totalPayable,

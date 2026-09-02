@@ -21,7 +21,13 @@ import 'secure_clipboard.dart';
 /// authoritative gate — this is a pre-flight UX check only.
 final _ifscRegex = RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$');
 
-void showAddBankAccountSheet(
+/// Returns the Future from the underlying showModalBottomSheet() call —
+/// resolves once the sheet closes, however it closes (successful add via
+/// onAdded, or the customer dismissing it) — so a caller that needs to know
+/// when the WHOLE flow is done (not just the success case onAdded already
+/// covers) can await it. Existing fire-and-forget callers are unaffected:
+/// not awaiting a returned Future is always valid Dart.
+Future<void> showAddBankAccountSheet(
   BuildContext context,
   WidgetRef ref, {
   required bool isDark,
@@ -92,7 +98,7 @@ void showAddBankAccountSheet(
     if (!nameFocus.hasFocus) checkName();
   });
 
-  showModalBottomSheet(
+  return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

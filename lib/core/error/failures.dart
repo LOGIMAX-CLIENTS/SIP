@@ -49,6 +49,22 @@ class KycRequiredFailure extends Failure {
       : super(message ?? 'KYC verification is required to proceed.');
 }
 
+/// Thrown when the server signals that bank account verification (BAV —
+/// see VerificationGatewayRouting's mandatory flag / bank_payability() on
+/// the backend) must be completed before the requested action can proceed.
+/// A separate gate from KYC — an identity-verified customer can still have
+/// an unverified destination/settlement bank account. Backend sends this as
+/// `error.code == 'BANK_VERIFICATION_REQUIRED'` on SIP create, custom SIP
+/// create, and Invest purchase-initiation (all HTTP 403). Callers should
+/// catch this specifically and route the user through
+/// `BankVerificationFlow.start()` (see
+/// lib/features/kyc/bank_verification_flow.dart), then retry the original
+/// action once verification completes.
+class BankVerificationRequiredFailure extends Failure {
+  BankVerificationRequiredFailure([String? message])
+      : super(message ?? 'Bank account verification is required to proceed.');
+}
+
 class ApiFailureMapper {
   static Failure map(DioException err) {
     switch (err.type) {
@@ -95,6 +111,9 @@ class ApiFailureMapper {
 
         if (errorCode == 'KYC_REQUIRED') {
           return KycRequiredFailure(serverMessage);
+        }
+        if (errorCode == 'BANK_VERIFICATION_REQUIRED') {
+          return BankVerificationRequiredFailure(serverMessage);
         }
 
         if (status == 401 || status == 403) {

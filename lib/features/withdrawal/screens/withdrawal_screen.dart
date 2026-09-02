@@ -20,6 +20,7 @@ import '../../../routes/app_router.dart';
 import '../../profile/models/bank_account.dart';
 import '../../sip/screens/bank_account_picker_screen.dart';
 import '../../kyc/kyc_flow.dart';
+import '../../kyc/bank_verification_flow.dart';
 import '../../market/models/market_rates.dart';
 import '../../../shared/widgets/loaders.dart';
 import '../../../shared/widgets/app_toast.dart';
@@ -1128,6 +1129,20 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
           ref,
           requestFrom: 'withdraw',
         );
+        if (!mounted) return;
+        if (verified) {
+          await _selectBankAndProceed();
+        }
+      } else if (nextStep == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as KYC_REQUIRED above, routed through
+        // BankVerificationFlow instead — see its doc comment. The actual
+        // withdrawal-initiation gate (backend: bank_payability(settle_bank))
+        // still checks whichever account the customer ultimately selects
+        // in _selectBankAndProceed(), so this pre-check is a heuristic
+        // (checked against the primary account) same as KYC_REQUIRED is —
+        // not the final word, just avoids sending someone with clearly no
+        // verified account into bank selection first.
+        final verified = await BankVerificationFlow.start(context, ref);
         if (!mounted) return;
         if (verified) {
           await _selectBankAndProceed();
