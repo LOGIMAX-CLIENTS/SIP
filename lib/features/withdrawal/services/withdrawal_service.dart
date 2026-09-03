@@ -141,6 +141,25 @@ class WithdrawalService {
     }
   }
 
+  /// POST account/verify-bank/contact-admin — "Contact Admin" after a BAV
+  /// failure. Records what the customer typed as a case awaiting an admin;
+  /// verifies nothing on its own (see backend BankAccountService.
+  /// request_manual_review's docstring — no CustomerBank row is created and
+  /// no verification status changes). Same raw-map return as
+  /// verifyAndAddBank — caller reads result['success'].
+  Future<Map<String, dynamic>> requestManualBavReview({
+    required String accNo,
+    required String ifsc,
+    required String holderName,
+  }) async {
+    final response = await _apiClient.post('account/verify-bank/contact-admin', data: {
+      'account_no': accNo,
+      'ifsc_code': ifsc,
+      'account_holder': holderName,
+    });
+    return response.data ?? {};
+  }
+
   /// Verify and add a bank account via SurePass "pennyless" BAV — instant,
   /// no ₹1 transferred. Alternative to [verifyAndAddBank] (Cashfree penny
   /// drop); only succeeds when SurePass is the active KYC verification
