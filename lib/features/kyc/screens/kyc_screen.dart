@@ -299,7 +299,24 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     if (_completionCheckedOnLoad) return;
     final bothComplete =
         result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
-    if (!bothComplete || result.kycConfirmed) return;
+    if (!bothComplete) return;
+    if (result.kycConfirmed) {
+      // Both documents are verified AND already confirmed in a past
+      // session — there is nothing left to show or ask, but this screen
+      // has no "Continue" button of its own; the only way forward is the
+      // Navigator.pop(context, true) that _runCompletionSequence() does
+      // at the end of the dialog sequence. Skipping straight past that
+      // sequence (correct — there's nothing to (re)confirm) previously
+      // skipped the pop too, so a caller awaiting KycVerificationFlow's
+      // result (e.g. Withdraw's KYC_REQUIRED gate) never got its `true`
+      // and the customer was stuck looking at two "Verified" cards with
+      // no way to proceed.
+      _completionCheckedOnLoad = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.pop(context, true);
+      });
+      return;
+    }
     // Second, durable guard alongside result.kycConfirmed — kycConfirmed
     // can read false on a fetch shortly after a genuine completion (a
     // backend read-timing gap, confirmed live via [KYC DEBUG] logs: the
