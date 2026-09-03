@@ -869,22 +869,35 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
     if (!await _profileAlreadyMatches(aadhaarName)) {
       if (!mounted) return;
-      await _showVerifiedDetailsDialog(
+      final savedAadhaar = await _showVerifiedDetailsDialog(
         source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob,
       );
       if (!mounted) {
         SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after AADHAAR dialog');
         return;
       }
+      if (!savedAadhaar) {
+        // Deferred, not saved — do NOT fall through to the completion pop
+        // below. Falling through here would tell the caller (e.g.
+        // Withdraw's KYC_REQUIRED gate) that KYC is confirmed when it
+        // isn't. Returning normally still lets the outer finally reset
+        // _completingKyc, so the screen itself isn't left frozen either.
+        SecureLogger.d('[KYC DEBUG] _runCompletionSequence: AADHAAR confirmation deferred');
+        return;
+      }
     }
 
     if (!await _profileAlreadyMatches(panName)) {
       if (!mounted) return;
-      await _showVerifiedDetailsDialog(
+      final savedPan = await _showVerifiedDetailsDialog(
         source: 'PAN', verifiedName: panName, verifiedDob: panDob,
       );
       if (!mounted) {
         SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after PAN dialog');
+        return;
+      }
+      if (!savedPan) {
+        SecureLogger.d('[KYC DEBUG] _runCompletionSequence: PAN confirmation deferred');
         return;
       }
     }
@@ -957,14 +970,21 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// Aadhaar completion — first-time verification AND every re-verification
   /// via Edit — with no exceptions. Not dismissible via the barrier or the
   /// back button (PopScope canPop:false inside _VerifiedDetailsDialog) —
-  /// the user must tap Save. Resolves only after the save actually
-  /// succeeds (see _VerifiedDetailsDialogState._save).
-  Future<void> _showVerifiedDetailsDialog({
+  /// the user must either Save or explicitly defer. Returns true only once
+  /// the save actually succeeds (see _VerifiedDetailsDialogState._save);
+  /// false if the user taps "Do this later" instead. Previously this had
+  /// no deferral option at all — if the backend kept rejecting Save (e.g. a
+  /// false-positive PROFILE_NAME_MISMATCH), the dialog had no way to close
+  /// short of force-killing the app, since nothing else in the tree could
+  /// pop it. The caller (_runCompletionSequence) must stop, not proceed,
+  /// on a false result — this is a UI escape hatch, not a compliance
+  /// bypass; the confirmation is still required before KYC counts as done.
+  Future<bool> _showVerifiedDetailsDialog({
     required String source,
     String? verifiedName,
     String? verifiedDob,
-  }) {
-    return showDialog<void>(
+  }) async {
+    final saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (_) => _VerifiedDetailsDialog(
@@ -974,6 +994,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         repository: ref.read(kycRepositoryProvider),
       ),
     );
+    return saved ?? false;
   }
 
   /// Aadhaar-mismatch entry point shared by the reactive ref.listen in
@@ -2161,7 +2182,7 @@ class _VerifiedDetailsDialogState extends State<_VerifiedDetailsDialog> {
           );
         } catch (_) {}
       }
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       String msg = e.toString();
@@ -2259,6 +2280,25 @@ class _VerifiedDetailsDialogState extends State<_VerifiedDetailsDialog> {
                 onPressed: _saving ? null : _save,
                 gradient: AppTheme.greenGradient,
               ),
+              // Deliberate escape hatch: confirming this name is still
+              // mandatory before KYC counts as complete (see
+              // _runCompletionSequence, which stops rather than proceeding
+              // when this dialog is deferred) — but Save has no way to
+              // succeed if the backend keeps rejecting it (e.g. a
+              // false-positive name-mismatch), and until now nothing else
+              // in this dialog could close it, trapping the customer until
+              // they force-killed the app. This lets them back out and
+              // retry later instead.
+              if (!_saving) ...[
+                SizedBox(height: 8.h),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(
+                    'Do this later',
+                    style: AppTextStyles.fieldLabel(isDark),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
