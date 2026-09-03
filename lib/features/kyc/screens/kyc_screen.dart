@@ -1145,7 +1145,16 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           type: ToastType.info,
         );
       },
-      child: Scaffold(
+      // Opaque background on this screen itself (same fix as
+      // withdrawal_screen.dart/bank_account_picker_screen.dart) — a
+      // transparent Scaffold here let Home (kept alive underneath by
+      // MainScreen's IndexedStack) bleed through during the pop transition
+      // back to this screen.
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
+        ),
+        child: Scaffold(
         backgroundColor: Colors.transparent,
         body: Stack(
           children: [
@@ -1234,6 +1243,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             if (_completingKyc) _buildCompletingOverlay(isDark),
           ],
         ),
+      ),
       ),
     );
   }

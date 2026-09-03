@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/add_bank_account_sheet.dart';
+import '../../../shared/theme/app_theme.dart';
 import '../../../routes/app_router.dart';
 import '../../profile/models/bank_account.dart';
 import '../../profile/services/bank_details_service.dart';
@@ -30,7 +31,16 @@ class BankAccountPickerScreen extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accountsAsync = ref.watch(bankAccountsProvider);
 
-    return Scaffold(
+    // Same fix as withdrawal_screen.dart: an opaque background on this
+    // screen itself, so the pop transition back to it (e.g. from the
+    // reverse-penny-drop screen at _verifyPendingAccount below) can't let
+    // whatever persists underneath (Home, kept alive by MainScreen's
+    // IndexedStack) bleed through a transparent gap mid-animation.
+    return Container(
+      decoration: BoxDecoration(
+        gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
+      ),
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
@@ -92,6 +102,7 @@ class BankAccountPickerScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -29,6 +29,7 @@ import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/utils/no_leading_zeros_formatter.dart';
 import '../../../shared/theme/app_text_styles.dart';
+import '../../../shared/theme/app_theme.dart';
 
 class WithdrawalScreen extends ConsumerStatefulWidget {
   const WithdrawalScreen({super.key});
@@ -216,7 +217,19 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       return AppLoaders.fullScreenLoader(context);
     }
 
-    return Scaffold(
+    // Opaque background on this screen itself, not just a transparent
+    // Scaffold relying on MaterialApp's global gradient Container showing
+    // through — that gap let the previous route (Home, kept alive
+    // underneath by MainScreen's IndexedStack) paint through during the
+    // in-flight pop transition back to this screen, producing the
+    // overlapping-layout bug on back navigation. Same fix pattern already
+    // used by sip_overview_screen.dart etc.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
+      ),
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
@@ -285,6 +298,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               withdrawalState, market, selectedCommodity,
               isCurrentMarketClosed, balanceAsync),
         ],
+      ),
       ),
     );
   }
