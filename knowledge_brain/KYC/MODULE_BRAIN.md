@@ -101,6 +101,18 @@ not as the current behavior.
 6. Once both are APPROVED, the hub re-fetches document-types, shows a success animation, then a **mandatory,
    non-dismissible** "choose your profile name" dialog (`_showProfileNameSelectionDialog`,
    `screens/kyc_screen.dart:392-453`), then pops `true`.
+7. **PAN–Aadhaar link status (added 2026-09-03)**: every terminal Aadhaar poll response (`already approved`
+   and `APPROVED`, both branches of `pollUntilTerminal()`, plus `initiate()`'s already-approved short-circuit)
+   carries a sibling `aadhaar_pan_linked` field (nullable bool — see backend `KYCService._check_aadhaar_kyc`,
+   sourced from the SAME PAN-comprehensive/export-data call PAN verification already makes, not a separate
+   provider call or stage). Parsed into `AadhaarState.aadhaarPanLinked` (`controllers/kyc_controller.dart`)
+   and rendered as a "Linked to your Aadhaar" / "Not linked to your Aadhaar" chip on the PAN card's
+   `_buildVerifiedBanner` (`screens/kyc_screen.dart`, `linkedToAadhaar` param) — only when non-null.
+   **Live-session only**: `kyc/document-types` does not return or persist this field, so it reads unset again
+   after an app restart or leaving/reopening the screen — same limitation `verifiedDob`/`verifiedName` already
+   had before this change, not a new one. Closing this gap durably (i.e. showing it after a fresh app launch)
+   needs a backend change to persist `aadhaar_linked` somewhere `document-types` reads from — out of scope
+   for this pass.
 7. The original caller (SIP/Withdrawal/InstantSaving) resumes/retries the action it was blocked on.
 
 ## 5. Document Upload — NOT implemented as image upload

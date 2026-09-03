@@ -1316,6 +1316,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               // PAN has no manual re-entry path — redo Aadhaar (its own
               // Edit) to trigger a fresh DigiLocker consent + PAN re-check.
               onEdit: isPan ? null : () => _editDocument(doc),
+              // Live-session only (see AadhaarState.aadhaarPanLinked) — shows
+              // on the PAN card right after a verification completes this
+              // session; reads as unset again on a fresh screen load, same
+              // as every other field the backend doesn't persist for replay.
+              linkedToAadhaar: isPan ? aadhaarState.aadhaarPanLinked : null,
             )
           else if (doc.isUnderReview)
             _buildUnderReviewNotice(isDark, label: doc.name)
@@ -1792,6 +1797,10 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     String? nameLabel,
     String? verifiedName,
     VoidCallback? onEdit,
+    // PAN–Aadhaar link result for this session (see AadhaarState.aadhaarPanLinked's
+    // doc comment) — null (not shown) whenever it isn't known yet, true/false
+    // once the backend's PAN check has resolved it.
+    bool? linkedToAadhaar,
   }) {
     final labelColor = const Color(0xFF0E5723).withOpacity(0.65);
     return Container(
@@ -1865,6 +1874,27 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             Text(verifiedName,
                 style: GoogleFonts.playfairDisplay(
                     fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+          ],
+          if (linkedToAadhaar != null) ...[
+            SizedBox(height: 10.h),
+            Row(
+              children: [
+                Icon(
+                  linkedToAadhaar ? Icons.link_rounded : Icons.link_off_rounded,
+                  size: 14.sp,
+                  color: linkedToAadhaar ? const Color(0xFF0E5723) : Colors.orange[800],
+                ),
+                SizedBox(width: 6.w),
+                Text(
+                  linkedToAadhaar ? 'Linked to your Aadhaar' : 'Not linked to your Aadhaar',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w700,
+                    color: linkedToAadhaar ? const Color(0xFF0E5723) : Colors.orange[800],
+                  ),
+                ),
+              ],
+            ),
           ],
         ],
       ),

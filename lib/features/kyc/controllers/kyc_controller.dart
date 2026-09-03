@@ -154,6 +154,18 @@ class AadhaarState {
   // PAN mismatches are resolved through entirely separate requests (see
   // NameMismatchPrompt's doc comment) and can occur together or alone.
   final NameMismatchPrompt? panMismatchPrompt;
+  // PAN–Aadhaar link result — backend field `aadhaar_pan_linked` (nullable
+  // bool: true/false once the provider's PAN check resolved it, null if not
+  // yet known/unavailable). Sourced from the SAME pan-comprehensive /
+  // pan/export-data call PAN verification already makes during the
+  // DigiLocker flow — there is no separate provider call or screen for this;
+  // see KYCService._check_aadhaar_kyc's `aadhaar_pan_linked` field (present
+  // on every already-approved/APPROVED terminal response). Only ever
+  // populated live in this session — `kyc/document-types` (the endpoint that
+  // seeds this screen on load/reopen) does not persist or return it, so
+  // unlike verifiedName/maskedNumber this has no `backend...` fallback and
+  // reads null again after an app restart or navigating away and back.
+  final bool? aadhaarPanLinked;
 
   const AadhaarState({
     this.phase = AadhaarPhase.idle,
@@ -169,6 +181,7 @@ class AadhaarState {
     this.verifiedDob,
     this.aadhaarMismatchPrompt,
     this.panMismatchPrompt,
+    this.aadhaarPanLinked,
   });
 
   AadhaarState copyWith({
@@ -185,6 +198,7 @@ class AadhaarState {
     String? verifiedDob,
     NameMismatchPrompt? aadhaarMismatchPrompt,
     NameMismatchPrompt? panMismatchPrompt,
+    bool? aadhaarPanLinked,
   }) {
     return AadhaarState(
       phase: phase ?? this.phase,
@@ -200,6 +214,7 @@ class AadhaarState {
       maskedNumber: maskedNumber ?? this.maskedNumber,
       verifiedName: verifiedName ?? this.verifiedName,
       verifiedDob: verifiedDob ?? this.verifiedDob,
+      aadhaarPanLinked: aadhaarPanLinked ?? this.aadhaarPanLinked,
     );
   }
 }
@@ -364,7 +379,10 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
       final status = (data['status'] ?? '').toString();
 
       if (data['is_already_approved'] == true || status == 'already approved') {
-        state = state.copyWith(phase: AadhaarPhase.approved);
+        state = state.copyWith(
+          phase: AadhaarPhase.approved,
+          aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
+        );
         return;
       }
 
@@ -460,13 +478,21 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         final panMismatchPrompt = _extractPanMismatchPrompt(data);
 
         if (data['is_already_approved'] == true || status == 'already approved') {
-          state = state.copyWith(phase: AadhaarPhase.approved, panMismatchPrompt: panMismatchPrompt);
+          state = state.copyWith(
+            phase: AadhaarPhase.approved,
+            panMismatchPrompt: panMismatchPrompt,
+            aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
+          );
           return;
         }
 
         switch (status) {
           case 'APPROVED':
-            state = state.copyWith(phase: AadhaarPhase.approved, panMismatchPrompt: panMismatchPrompt);
+            state = state.copyWith(
+              phase: AadhaarPhase.approved,
+              panMismatchPrompt: panMismatchPrompt,
+              aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
+            );
             return;
           case 'EXPIRED':
             state = state.copyWith(

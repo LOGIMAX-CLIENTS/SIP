@@ -41,12 +41,6 @@ android {
         versionName = flutter.versionName
     }
 
-    packaging {
-        jniLibs {
-            keepDebugSymbols += "**/*.so"
-        }
-    }
-
     signingConfigs {
         create("release") {
             storeFile = rootProject.file(keyProperties["storeFile"] as String)
