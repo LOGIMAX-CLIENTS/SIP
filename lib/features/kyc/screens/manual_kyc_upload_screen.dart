@@ -7,6 +7,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../repositories/kyc_repository.dart';
+import '../../../routes/app_router.dart';
+import '../../../core/security/secure_storage_service.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/theme/app_text_styles.dart';
 import '../../../shared/utils/aadhaar_input_formatter.dart';
@@ -176,6 +178,8 @@ class _ManualKycUploadScreenState extends ConsumerState<ManualKycUploadScreen> {
         "Submitted for manual review — you'll be notified once it's verified.",
         type: ToastType.success,
       );
+      await _promptNotifySupport();
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -185,6 +189,84 @@ class _ManualKycUploadScreenState extends ConsumerState<ManualKycUploadScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  String get _docLabel => _isPan ? 'PAN' : 'Aadhaar';
+
+  /// Optional detour after a successful submit — the admin's manual-review
+  /// queue only surfaces a customer-submitted document once it ages past a
+  /// configured "stuck" threshold (default 24h; see
+  /// ManualKYCService.identity_queue's docstring on the backend), so this
+  /// gives the customer a way to flag it to support sooner if they want.
+  /// Purely optional: skipping just continues straight back to the KYC
+  /// screen, same as before this existed.
+  ///
+  /// Shown only once EVER per device (SecureStorageService.getManualKycSupportPromptSeen)
+  /// — the customer's first manual upload, whichever document it's for. A
+  /// second manual upload (the other document, or a resubmit after
+  /// rejection) goes straight back without asking again; they already know
+  /// this option exists.
+  Future<void> _promptNotifySupport() async {
+    // Storage read guarded — a transient keystore/EncryptedSharedPreferences
+    // failure (seen on some OEM Android builds right after a fresh install)
+    // must default to "not seen yet" so the prompt still offers itself,
+    // rather than silently vanishing forever.
+    bool alreadySeen = false;
+    try {
+      alreadySeen = await SecureStorageService.getManualKycSupportPromptSeen();
+    } catch (_) {
+      // fall through with alreadySeen = false
+    }
+    if (alreadySeen || !mounted) return;
+
+    final notify = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Let support know?'),
+        content: Text(
+          "You can optionally notify our support team that you've submitted "
+          "your $_docLabel for manual review, so they can prioritise it. "
+          "This is not required — you'll be verified either way.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Skip'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Notify Support'),
+          ),
+        ],
+      ),
+    );
+
+    // Marked as seen only AFTER the dialog has actually been shown and
+    // resolved — never before — so a failure to display it (widget
+    // unmounted mid-await, a storage write that throws, etc.) never burns
+    // the one-time flag; the very next manual upload would offer it again
+    // instead of silently never offering it again.
+    try {
+      await SecureStorageService.setManualKycSupportPromptSeen(true);
+    } catch (_) {
+      // Best-effort — worst case the prompt shows once more than intended,
+      // which is harmless, unlike never showing it at all.
+    }
+
+    if (notify != true || !mounted) return;
+
+    await Navigator.pushNamed(
+      context,
+      AppRouter.enquiryForm,
+      arguments: {
+        'initial_type': 'Support',
+        'initial_subject': 'Manual $_docLabel upload submitted for review',
+        'initial_message':
+            "I've uploaded my $_docLabel for manual KYC review. Please verify it "
+            "at your earliest convenience.",
+      },
+    );
   }
 
   InputDecoration _decoration(bool isDark, String hint) {

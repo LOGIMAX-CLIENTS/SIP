@@ -13,7 +13,20 @@ class EnquiryFormScreen extends ConsumerStatefulWidget {
   /// E.g. 'Auto Savings' when coming from ManageSavingsScreen.
   final String? initialType;
 
-  const EnquiryFormScreen({super.key, this.initialType});
+  /// Optional: pre-fill Subject/Message when navigating from a specific
+  /// screen that already knows what the ticket is about — e.g. a manual
+  /// KYC upload confirming it was submitted (see
+  /// manual_kyc_upload_screen.dart). The customer can still edit either
+  /// field before submitting.
+  final String? initialSubject;
+  final String? initialMessage;
+
+  const EnquiryFormScreen({
+    super.key,
+    this.initialType,
+    this.initialSubject,
+    this.initialMessage,
+  });
 
   @override
   ConsumerState<EnquiryFormScreen> createState() => _EnquiryFormScreenState();
@@ -52,6 +65,12 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
     if (widget.initialType != null &&
         kTicketTypes.containsKey(widget.initialType)) {
       _selectedType = widget.initialType!;
+    }
+    if (widget.initialSubject != null) {
+      _subjectController.text = widget.initialSubject!;
+    }
+    if (widget.initialMessage != null) {
+      _contentController.text = widget.initialMessage!;
     }
     _fadeCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 500));

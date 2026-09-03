@@ -310,6 +310,8 @@ class AppRouter {
               {};
           return EnquiryFormScreen(
             initialType: args['initial_type'] as String?,
+            initialSubject: args['initial_subject'] as String?,
+            initialMessage: args['initial_message'] as String?,
           );
         },
         enquiryList: (context) => const EnquiryListScreen(),

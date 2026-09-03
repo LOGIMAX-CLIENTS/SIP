@@ -53,6 +53,22 @@ class SecureStorageService {
         key: AppConfig.keyHasSeenOnboarding, value: seen.toString());
   }
 
+  /// Whether the "Let support know?" prompt (see
+  /// manual_kyc_upload_screen.dart's _promptNotifySupport) has already been
+  /// shown once — it's offered only on the customer's FIRST-EVER manual KYC
+  /// upload, not on every subsequent one (a second document, or a resubmit
+  /// after rejection).
+  static Future<bool> getManualKycSupportPromptSeen() async {
+    final value =
+        await _storage.read(key: AppConfig.keyHasSeenManualKycSupportPrompt);
+    return value == 'true';
+  }
+
+  static Future<void> setManualKycSupportPromptSeen(bool seen) async {
+    await _storage.write(
+        key: AppConfig.keyHasSeenManualKycSupportPrompt, value: seen.toString());
+  }
+
   static Future<void> saveCustomerId(String id) async {
     await _storage.write(key: AppConfig.keyCustomerId, value: id);
   }

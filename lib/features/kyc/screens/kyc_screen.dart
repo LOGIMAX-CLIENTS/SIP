@@ -1406,7 +1406,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// real, full-width button rather than a small text link.
   Widget _buildManualUploadButton(bool isDark, {required String docType}) {
     return CustomButton(
-      text: 'Upload Manually Instead',
+      text: 'Upload Manually',
       svgIconPath: 'assets/buttons/folder-add.svg',
       backgroundColor: const Color(0xFFE3F1E7),
       textColor: const Color(0xFF0E5723),

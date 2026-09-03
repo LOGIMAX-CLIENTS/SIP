@@ -22,6 +22,7 @@ class AppConfig {
   static const String keyIsMpinEnabled = 'is_mpin_enabled';
   static const String keyIsBiometricEnabled = 'is_biometric_enabled';
   static const String keyCustomerId = 'customer_id';
+  static const String keyHasSeenManualKycSupportPrompt = 'has_seen_manual_kyc_support_prompt';
   static const String keyCustomerName = 'customer_name';
   static const String keyCustomerPhoto = 'customer_photo';
   static const String keyServerPublicKey =
