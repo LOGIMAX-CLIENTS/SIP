@@ -174,7 +174,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _buildSettingTile(
                     icon: Icons.notifications_none_rounded,
                     title: 'Push Notifications',
-                    subtitle: 'Alerts For Investments & Rewards',
+                    subtitle: 'Alerts For Savings & Rewards',
                     trailing: Icon(Icons.chevron_right_rounded,
                         color: Colors.grey.shade400),
                     isDark: isDark,

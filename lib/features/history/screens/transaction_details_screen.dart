@@ -144,7 +144,7 @@ class _TransactionDetailsScreenState
       Color mutedTextColor,
       bool isDark) {
     final typeLabel = isSip
-        ? 'SIP Autopay'
+        ? 'AutoGold Autopay'
         : isSaving
             ? 'Instant Saving'
             : isReferral
@@ -616,7 +616,7 @@ class _TransactionDetailsScreenState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'SIP Plan Details',
+                'AutoGold Plan Details',
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 14.sp,
                   fontWeight: FontWeight.bold,
@@ -648,7 +648,7 @@ class _TransactionDetailsScreenState
               'Frequency', scheme.frequency, textColor, mutedTextColor,
               isNumericValue: false),
           _buildDetailRow(
-              'SIP Amount', '₹${scheme.amount}', textColor, mutedTextColor),
+              'AutoGold Amount', '₹${scheme.amount}', textColor, mutedTextColor),
           _buildDetailRow(
               'Total Saved', '₹${scheme.totalSaved}', textColor, mutedTextColor),
           _buildDetailRow(
@@ -671,7 +671,7 @@ class _TransactionDetailsScreenState
       bool isDark) {
     // Section title
     final String sectionTitle = isSip
-        ? 'SIP Order Details'
+        ? 'AutoGold Order Details'
         : isSaving
             ? 'Order Details'
             : isReferral

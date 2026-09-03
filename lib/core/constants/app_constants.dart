@@ -5,7 +5,7 @@ class AppConstants {
   // Login Screen Content
   static const String loginTitle = 'Welcome Back';
   static const String loginSubtitle =
-      'Login to start saving in 24K Digital Gold';
+      'Login to start saving in 24K Pure Gold';
 
   // OTP Screen Content
   static const String otpTitle = 'Verify to Secure\nYour Assets';
@@ -32,13 +32,13 @@ class AppConstants {
   static const String homeWelcomeSubtitle = 'Ready to grow your wealth today?';
   static const String welcome = 'Welcome';
   static const String portfolioTitle = 'Total Portfolio';
-  static const String portfolioInvested = 'Total Invested';
+  static const String portfolioInvested = 'Total Saved';
   static const String portfolioValue = 'Current Value';
   static const String portfolioReturns = 'Total Returns';
   static const String joinBannerTitle = 'Start Building Wealth';
   static const String joinBannerSubtitle =
-      'Join thousands of smart investors saving in Digital Gold every day.';
-  static const String joinBannerCTA = 'Create Your First SIP';
+      'Join thousands of smart savers saving in Pure Gold every day.';
+  static const String joinBannerCTA = 'Create Your First AutoGold';
   static const String sectionHeaderArtisanal = 'Artisanal Curations';
   static const String exploreAll = 'Explore All';
   static const String lastUpdated = 'Last updated';

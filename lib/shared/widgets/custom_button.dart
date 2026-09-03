@@ -37,8 +37,8 @@ class CustomButton extends StatelessWidget {
   });
 
   /// Acronym-aware Title Case: "confirm order" → "Confirm Order"
-  /// Preserves known acronyms like OTP, PIN, MPIN, UPI, KYC, GST, SIP, ID.
-  static const _acronyms = {'OTP', 'PIN', 'MPIN', 'UPI', 'KYC', 'GST', 'SIP', 'ID'};
+  /// Preserves known acronyms like OTP, PIN, MPIN, UPI, KYC, GST, ID.
+  static const _acronyms = {'OTP', 'PIN', 'MPIN', 'UPI', 'KYC', 'GST', 'ID'};
 
   static String _toTitleCase(String input) {
     if (input.isEmpty) return input;

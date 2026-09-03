@@ -560,7 +560,7 @@ class _TransactionHistoryScreenState
     final mutedColor = isDark ? Colors.white54 : const Color(0xFF64748B);
 
     final typeLabel = isSip
-        ? 'SIP Autopay'
+        ? 'AutoGold Autopay'
         : isSaving
             ? 'Instant Saving'
             : isReferral

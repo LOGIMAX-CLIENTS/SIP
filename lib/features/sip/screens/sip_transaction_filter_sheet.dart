@@ -226,7 +226,7 @@ class _SipTransactionFilterSheetState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Filter SIP Transactions',
+                  'Filter AutoGold Transactions',
                   style: GoogleFonts.playfairDisplay(
                     fontSize: 20.sp,
                     fontWeight: FontWeight.w800,

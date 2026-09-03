@@ -64,7 +64,7 @@ class _SipCancelScreenState extends ConsumerState<SipCancelScreen> {
           'Please try again later.';
     }
     final formatted = DateFormat('d MMM yyyy, h:mm a').format(eligible);
-    return 'You cannot cancel this SIP before $formatted.';
+    return 'You cannot cancel this AutoGold before $formatted.';
   }
 
   @override

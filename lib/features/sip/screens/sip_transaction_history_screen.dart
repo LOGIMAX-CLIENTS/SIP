@@ -106,7 +106,7 @@ class _SipTransactionHistoryScreenState
         body: Column(
           children: [
             GradientHeader(
-              title: 'SIP Transactions',
+              title: 'AutoGold Transactions',
               onBack: () => Navigator.pop(context),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -720,7 +720,7 @@ class _SipHistoryTabViewState extends ConsumerState<_SipHistoryTabView>
                   ),
                   SizedBox(height: 3.h),
                   Text(
-                    'SIP Autopay',
+                    'AutoGold Autopay',
                     style: GoogleFonts.playfairDisplay(
                       fontSize: 12.sp,
                       fontWeight: FontWeight.w500,
@@ -812,7 +812,7 @@ class _SipHistoryTabViewState extends ConsumerState<_SipHistoryTabView>
           ),
           SizedBox(height: 20.h),
           Text(
-            'No SIP Transactions Yet',
+            'No AutoGold Transactions Yet',
             style: GoogleFonts.playfairDisplay(
               fontSize: 17.sp,
               fontWeight: FontWeight.w700,

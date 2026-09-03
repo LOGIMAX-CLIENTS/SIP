@@ -200,7 +200,7 @@ class _OfferWebViewScreenState extends State<OfferWebViewScreen> {
             SizedBox(height: 10.h),
             // ── CTA Button ──
             CustomButton(
-              text: 'Start Investing',
+              text: 'Start Saving',
               svgIconPath: 'assets/buttons/tick.svg',
               onPressed: () {
                 Navigator.pop(context);

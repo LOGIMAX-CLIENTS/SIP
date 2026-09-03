@@ -189,7 +189,7 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
                     Expanded(
                       child: _buildQuickAction(
                         icon: Icons.history_rounded,
-                        label: 'SIP Transactions',
+                        label: 'AutoGold Transactions',
                         onTap: () => Navigator.pushNamed(
                             context, AppRouter.sipTransactions),
                       ),

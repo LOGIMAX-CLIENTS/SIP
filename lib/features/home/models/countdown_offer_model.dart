@@ -117,8 +117,8 @@ class NewCustomerOffer {
       benchmarkPercentage:
           (json['benchmark_percentage'] as num?)?.toInt() ?? 100,
       benchmarkEnabled: json['benchmark_enabled'] == true,
-      ctaText: json['cta_text'] as String? ?? 'Start Investing',
-      descriptionTitle: json['description_title'] as String? ?? 'Invest in Gold,',
+      ctaText: json['cta_text'] as String? ?? 'Start Saving',
+      descriptionTitle: json['description_title'] as String? ?? 'Save in Gold,',
       descriptionBody: json['description_body'] as String? ?? 'Get Free Silver Rewards',
       webviewUrl: json['webview_url'] as String?,
     );
@@ -157,7 +157,7 @@ class ExistingCustomerOffer {
       currentRewardPercentage:
           (json['current_reward_percentage'] as num?)?.toInt() ?? 0,
       offerEndDate: json['offer_end_date'] as String? ?? '',
-      ctaText: json['cta_text'] as String? ?? 'Start Investing',
+      ctaText: json['cta_text'] as String? ?? 'Start Saving',
       webviewUrl: json['webview_url'] as String?,
     );
   }

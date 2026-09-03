@@ -36,7 +36,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
     final reward =
         rewardAmount.startsWith('₹') ? rewardAmount : '₹$rewardAmount';
     final text =
-        '🌟 Join me on StartGold and earn $reward in free Digital Gold!\n\n'
+        '🌟 Join me on StartGold and earn $reward in free Pure Gold!\n\n'
         'Use my referral code: $code\n\n'
         'Download now 👇\nhttps://startgold.com/download';
     await Share.share(text, subject: 'Invite to StartGold');

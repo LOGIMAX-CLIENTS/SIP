@@ -81,7 +81,7 @@ String defaultTypeLabel(String raw) {
     case 'referral':
       return 'Referral Reward';
     case 'sip':
-      return 'SIP Autopay';
+      return 'AutoGold Autopay';
     case 'offer':
       return 'Offer Reward';
     default:

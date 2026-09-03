@@ -58,7 +58,7 @@ class _SipTransactionDetailsScreenState
         backgroundColor: Colors.transparent,
         body: Column(
           children: [
-            GradientHeader(title: 'SIP Transaction Details'),
+            GradientHeader(title: 'AutoGold Transaction Details'),
             Expanded(
               child: detailsState.when(
                 data: (response) {
@@ -177,7 +177,7 @@ class _SipTransactionDetailsScreenState
                 ),
                 SizedBox(height: 4.h),
                 Text(
-                  'SIP Autopay',
+                  'AutoGold Autopay',
                   style: GoogleFonts.playfairDisplay(
                     fontSize: 13.sp,
                     fontWeight: FontWeight.w500,
@@ -468,7 +468,7 @@ class _SipTransactionDetailsScreenState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'SIP Plan Details',
+                'AutoGold Plan Details',
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 14.sp,
                   fontWeight: FontWeight.bold,
@@ -500,7 +500,7 @@ class _SipTransactionDetailsScreenState
               'Frequency', scheme.frequency, textColor, mutedTextColor,
               isNumeric: false),
           _buildDetailRow(
-              'SIP Amount', '₹${scheme.amount}', textColor, mutedTextColor),
+              'AutoGold Amount', '₹${scheme.amount}', textColor, mutedTextColor),
           _buildDetailRow('Total Saved', '₹${scheme.totalSaved}', textColor,
               mutedTextColor),
           _buildDetailRow('Cycles Done', '${scheme.cyclesDone}', textColor,
@@ -547,7 +547,7 @@ class _SipTransactionDetailsScreenState
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'SIP Order Details',
+                    'AutoGold Order Details',
                     style: GoogleFonts.playfairDisplay(
                         fontSize: 14.sp,
                         fontWeight: FontWeight.bold,
