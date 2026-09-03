@@ -55,6 +55,16 @@ Future<void> showAddBankAccountSheet(
   // worth the customer actually reading, not just glancing past. Cleared
   // whenever a new submit attempt starts.
   String? submitError;
+  // Whether the backend offered a manual-review route for the failure above
+  // (data.manual_review_available) — set alongside submitError, so it only
+  // ever shows next to a failure it actually explains, never stale.
+  bool manualReviewAvailable = false;
+  // True once the customer has sent this account for manual review — either
+  // just now, or already, on a prior failed attempt for the same account
+  // (data.manual_review_requested) — so the button becomes a fact instead of
+  // an action, and can't be tapped twice.
+  bool manualReviewRequested = false;
+  bool isRequestingReview = false;
 
   // StatefulBuilder hands back the SAME StateSetter across rebuilds (it's
   // bound to the underlying State), so capturing it here and registering
@@ -363,15 +373,20 @@ Future<void> showAddBankAccountSheet(
                                   }
                                 });
                               } else {
+                                final failData =
+                                    result['data'] as Map<String, dynamic>?;
                                 final errMsg = result['message'] ??
                                     (result['error']
                                             as Map<String, dynamic>?)?['message'] ??
-                                    (result['data']
-                                            as Map<String, dynamic>?)?['message'] ??
+                                    failData?['message'] ??
                                     'Verification failed';
                                 setModalState(() {
                                   isVerifying = false;
                                   submitError = errMsg.toString();
+                                  manualReviewAvailable =
+                                      failData?['manual_review_available'] == true;
+                                  manualReviewRequested =
+                                      failData?['manual_review_requested'] == true;
                                 });
                                 AppToast.show(sheetCtx, errMsg,
                                     type: ToastType.error);
@@ -406,6 +421,98 @@ Future<void> showAddBankAccountSheet(
                           ]
                         : [],
                   ),
+                  // Only next to a failure that actually offers it — "Verify
+                  // & Add" above already serves as Retry (it re-submits with
+                  // whatever the customer has typed, and is re-enabled as
+                  // soon as the fields are valid again), so this is the one
+                  // new action: hand the same details to an admin instead.
+                  if (submitError != null && manualReviewAvailable) ...[
+                    SizedBox(height: 10.h),
+                    if (manualReviewRequested)
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.symmetric(vertical: 12.h),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: accentGreen.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(50.r),
+                        ),
+                        child: Text(
+                          'Sent to admin for review',
+                          style: AppTextStyles.button(isDark)
+                              .copyWith(color: accentGreen),
+                        ),
+                      )
+                    else
+                      OutlinedButton(
+                        onPressed: (isVerifying || isRequestingReview)
+                            ? null
+                            : () async {
+                                setModalState(() => isRequestingReview = true);
+                                try {
+                                  final result = await ref
+                                      .read(withdrawalServiceProvider)
+                                      .requestManualBavReview(
+                                        accNo: accCtrl.text.trim(),
+                                        ifsc: ifscCtrl.text.trim(),
+                                        holderName: nameCtrl.text.trim(),
+                                      );
+                                  if (!sheetCtx.mounted) return;
+                                  if (result['success'] == true) {
+                                    setModalState(() {
+                                      isRequestingReview = false;
+                                      manualReviewRequested = true;
+                                    });
+                                    AppToast.show(
+                                      sheetCtx,
+                                      result['message'] ??
+                                          'Sent for manual review. Please contact admin for approval.',
+                                      type: ToastType.success,
+                                    );
+                                  } else {
+                                    final errMsg = result['message'] ??
+                                        (result['error'] as Map<String,
+                                                dynamic>?)?['message'] ??
+                                        'Could not send this for review.';
+                                    setModalState(
+                                        () => isRequestingReview = false);
+                                    AppToast.show(sheetCtx, errMsg,
+                                        type: ToastType.error);
+                                  }
+                                } catch (e) {
+                                  if (sheetCtx.mounted) {
+                                    setModalState(
+                                        () => isRequestingReview = false);
+                                    AppToast.show(
+                                      sheetCtx,
+                                      e is Failure
+                                          ? e.message
+                                          : 'Could not send this for review.',
+                                      type: ToastType.error,
+                                    );
+                                  }
+                                }
+                              },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: accentGreen,
+                          side: BorderSide(color: accentGreen.withOpacity(0.4)),
+                          minimumSize: Size(double.infinity, 50.h),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(50.r),
+                          ),
+                        ),
+                        child: isRequestingReview
+                            ? SizedBox(
+                                width: 18.w,
+                                height: 18.w,
+                                child: const CircularProgressIndicator(
+                                    strokeWidth: 2, color: accentGreen),
+                              )
+                            : Text('Contact Admin',
+                                style: AppTextStyles.button(isDark)
+                                    .copyWith(color: accentGreen)),
+                      ),
+                  ],
                   SizedBox(height: 8.h),
                 ],
               ),
