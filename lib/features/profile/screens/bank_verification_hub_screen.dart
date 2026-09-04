@@ -7,6 +7,7 @@ import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import '../models/bank_verification_history.dart';
 import '../services/bank_verification_history_service.dart';
+import '../services/bank_details_service.dart';
 import '../../../routes/app_router.dart';
 
 /// Profile > "Bank Account Verification" — one card per verification
@@ -205,6 +206,13 @@ class BankVerificationHubScreen extends ConsumerWidget {
                     ref.invalidate(bavHistoryProvider);
                     ref.invalidate(pennyVerifyHistoryProvider);
                     ref.invalidate(rpdHistoryProvider);
+                    // These history providers only refresh this Hub
+                    // screen's own cards — Bank Details and the Bank
+                    // Account Picker read bankAccountsProvider instead, so
+                    // an RPD done from here previously left both of those
+                    // showing stale status until something unrelated
+                    // refreshed that separate provider.
+                    ref.invalidate(bankAccountsProvider);
                   }
                 },
                 icon: Icon(Icons.verified_user_outlined, size: 16.sp, color: _accentGreen),

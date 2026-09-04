@@ -46,7 +46,14 @@ class BankVerificationFlow {
         context,
         ref,
         isDark: Theme.of(context).brightness == Brightness.dark,
-        onAdded: () => added = true,
+        onAdded: () {
+          added = true;
+          // Previously only set the local flag — Bank Details/Picker (both
+          // reading the same bankAccountsProvider) stayed on pre-add data
+          // until something unrelated refreshed it, same class of gap as
+          // the RPD-chain fix in add_bank_account_sheet.dart.
+          ref.invalidate(bankAccountsProvider);
+        },
       );
       // Adding a bank account already runs penny-drop verification as part
       // of the same sheet (see add_bank_account_sheet.dart's docstring), so

@@ -324,7 +324,7 @@ Future<void> showAddBankAccountSheet(
                                 // "_dependents.isEmpty" InheritedElement
                                 // crashes when navigating back through Bank
                                 // Details.
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) async {
                                   onAdded();
                                   if (context.mounted) {
                                     AppToast.show(
@@ -356,11 +356,21 @@ Future<void> showAddBankAccountSheet(
                                       cbankId.isNotEmpty &&
                                       context.mounted) {
                                     if (methodInfo.secondStepMethod == 'rpd') {
-                                      Navigator.pushNamed(
+                                      // Previously fired without awaiting —
+                                      // RPD's own `true` result (full
+                                      // verification, not just BAV) was
+                                      // discarded, so onAdded() never ran a
+                                      // second time and bankAccountsProvider
+                                      // stayed on the BAV-only snapshot from
+                                      // above. Bank Details/Picker showed
+                                      // stale status until something
+                                      // unrelated refreshed the provider.
+                                      final rpdVerified = await Navigator.pushNamed(
                                         context,
                                         AppRouter.reversePennyDrop,
                                         arguments: {'cbankId': cbankId},
                                       );
+                                      if (rpdVerified == true) onAdded();
                                     } else {
                                       Navigator.push(
                                         context,
