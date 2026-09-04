@@ -1649,20 +1649,25 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     // idempotency short-circuit rejects it as a no-op (`allow_reverify`
     // wasn't set, since this wasn't reached through the Edit/Retry-PAN
     // flow that sets it), which reads as "my first tap did nothing."
-    // Restricted to phase == idle specifically — never overrides a
-    // genuinely in-progress or failed local phase with a stale backend flag
-    // from before a fresh reverify attempt started. Also suppressed while
-    // _aadhaarEditing is true: that flag means the user deliberately
-    // triggered Edit or Retry PAN Verification, which ALSO resets the local
-    // phase to idle (see _editAadhaar) specifically to reopen the input
-    // form — without this guard, the stale backendApproved flag (from
-    // before this reverify attempt) would immediately re-collapse that
-    // freshly-reopened form back into the Verified banner.
-    final isDone = state.phase == AadhaarPhase.approved ||
-        (backendApproved && state.phase == AadhaarPhase.idle && !_aadhaarEditing);
+    // Was restricted to phase == idle specifically, to avoid two things:
+    // overriding a genuinely in-progress/current reverify attempt, and
+    // collapsing the freshly-reopened Edit/Retry-PAN form. Both are still
+    // guarded below (isBusy, !_aadhaarEditing) — but idle-only additionally
+    // meant a TERMINAL phase (failed/expired/rejected) left over from an
+    // earlier, already-abandoned retry attempt kept suppressing the
+    // Verified banner forever afterward, on every future visit to this
+    // screen, even once nothing is in-flight and the user isn't editing —
+    // because aadhaarProvider persists across navigations (kept alive
+    // app-wide by MainScreen's listener) while a fresh KycScreen's
+    // _aadhaarEditing resets to false. A customer whose Aadhaar the
+    // backend genuinely approved would see the entry form again on every
+    // later visit, exactly the PAN card's already-fixed problem (see
+    // panSkippedInConsent above) but for Aadhaar's own card this time.
     final isBusy = _verifyingAadhaar ||
         state.phase == AadhaarPhase.initiating ||
         state.phase == AadhaarPhase.polling;
+    final isDone = state.phase == AadhaarPhase.approved ||
+        (backendApproved && !_aadhaarEditing && !isBusy);
     // Error/failure text is surfaced only via AppToast (see
     // _onVerifyAadhaar) — never rendered inline on the card, so no backend
     // exception, provider error, or technical message can ever appear here.
