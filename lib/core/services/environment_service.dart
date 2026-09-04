@@ -8,12 +8,17 @@ class EnvironmentService {
   // Constants for environments
   static const String envStaging = 'staging';
   static const String envProduction = 'production';
+  static const String envVapt = 'vapt';
 
   static const String stagingBaseUrl = 'https://startgoldapi.logimaxindia.com/api/api/v1/';
   static const String stagingWsUrl = 'wss://startgoldapp.logimaxindia.com/ws/';
 
   static const String productionBaseUrl = 'https://api.startgold.com/api/api/v1/';
   static const String productionWsUrl = 'wss://sgbackoffice.startgold.com/ws/';
+
+  static const String vaptBaseUrl = 'https://vaptapi.startgold.com/api/api/v1/';
+  // No dedicated VAPT rates socket — reuses the staging WebSocket endpoint.
+  static const String vaptWsUrl = stagingWsUrl;
 
   static String _currentEnv = envStaging;
   static String _baseUrl = stagingBaseUrl;
@@ -51,6 +56,10 @@ class EnvironmentService {
       _currentEnv = envProduction;
       _baseUrl = productionBaseUrl;
       _wsUrl = productionWsUrl;
+    } else if (env == envVapt) {
+      _currentEnv = envVapt;
+      _baseUrl = vaptBaseUrl;
+      _wsUrl = vaptWsUrl;
     } else {
       _currentEnv = envStaging;
       _baseUrl = stagingBaseUrl;

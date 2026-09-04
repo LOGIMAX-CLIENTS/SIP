@@ -707,6 +707,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     }
                   },
                 ),
+                SizedBox(height: 12.h),
+
+                // VAPT Button
+                _buildEnvOption(
+                  label: 'VAPT',
+                  envValue: EnvironmentService.envVapt,
+                  isActive: currentEnv == EnvironmentService.envVapt,
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await EnvironmentService.setEnvironment(EnvironmentService.envVapt);
+                    ref.read(environmentProvider.notifier).state = EnvironmentService.envVapt;
+                    if (context.mounted) {
+                      AppToast.show(
+                        context,
+                        'Switched to VAPT environment',
+                        type: ToastType.success,
+                      );
+                    }
+                  },
+                ),
                 SizedBox(height: 16.h),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
