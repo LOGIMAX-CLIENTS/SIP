@@ -222,7 +222,11 @@ class _ManageCustomSavingsScreenState
                   Navigator.pushNamed(
                     context,
                     AppRouter.enquiryForm,
-                    arguments: {'initial_type': 'Custom SIP'},
+                    // 'Custom SIP' matched no key in kTicketTypes (enquiry_
+                    // service.dart), so this never actually preselected a
+                    // type — 'Auto Savings' is both the renamed term and a
+                    // real key, fixing that dead argument as a side effect.
+                    arguments: {'initial_type': 'Auto Savings'},
                   );
                 },
               ),
