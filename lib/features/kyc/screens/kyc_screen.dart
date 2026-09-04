@@ -1434,6 +1434,10 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// screen only ever needs docType/requestFrom, both already in scope here.
   /// On a successful submit (result == true) invalidates kycDocumentsProvider
   /// so this screen's cards immediately reflect the new UNDER_REVIEW status.
+  /// Also refreshes profileProvider — previously only _runCompletionSequence
+  /// did that, which never runs for a manual upload (it goes to UNDER_REVIEW,
+  /// not an immediate approval), so any profile-facing screen stayed on
+  /// stale customer data until something else happened to refresh it.
   Future<void> _openManualUpload(String docType) async {
     final result = await Navigator.push<bool>(
       context,
@@ -1445,6 +1449,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
     if (result == true && mounted) {
       ref.invalidate(kycDocumentsProvider(widget.requestFrom));
+      ref.read(pc.profileProvider.notifier).fetchProfileDetails();
     }
   }
 
