@@ -43,16 +43,10 @@ class EnvironmentService {
     if (savedEnv != null) {
       await setEnvironment(savedEnv, saveToPrefs: false);
     } else {
-      // Determine default based on existing AppConfig settings
-      if (AppConfig.baseUrl.contains('api.startgold.com')) {
-        _currentEnv = envProduction;
-        _baseUrl = productionBaseUrl;
-        _wsUrl = productionWsUrl;
-      } else {
-        _currentEnv = envStaging;
-        _baseUrl = stagingBaseUrl;
-        _wsUrl = stagingWsUrl;
-      }
+      // No saved preference — trust the compile-time default already set
+      // above (_currentEnv/_baseUrl/_wsUrl), instead of re-deriving it from
+      // AppConfig.baseUrl (which used to silently override this on every
+      // launch regardless of what was hardcoded here).
       AppConfig.environment = _currentEnv;
       AppConfig.baseUrl = _baseUrl;
     }

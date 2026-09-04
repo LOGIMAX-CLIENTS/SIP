@@ -11,15 +11,15 @@ void main() {
       SharedPreferences.setMockInitialValues({});
     });
 
-    test('Initializes environment to default Staging if nothing is saved', () async {
+    test('Initializes environment to the compile-time default if nothing is saved', () async {
       await EnvironmentService.initialize();
 
-      expect(EnvironmentService.currentEnv, EnvironmentService.envStaging);
-      expect(EnvironmentService.baseUrl, EnvironmentService.stagingBaseUrl);
-      expect(EnvironmentService.wsUrl, EnvironmentService.stagingWsUrl);
+      expect(EnvironmentService.currentEnv, EnvironmentService.envProduction);
+      expect(EnvironmentService.baseUrl, EnvironmentService.productionBaseUrl);
+      expect(EnvironmentService.wsUrl, EnvironmentService.productionWsUrl);
 
-      expect(AppConfig.environment, EnvironmentService.envStaging);
-      expect(AppConfig.baseUrl, EnvironmentService.stagingBaseUrl);
+      expect(AppConfig.environment, EnvironmentService.envProduction);
+      expect(AppConfig.baseUrl, EnvironmentService.productionBaseUrl);
     });
 
     test('Switches environment to Production and persists it', () async {
