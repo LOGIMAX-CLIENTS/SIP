@@ -356,7 +356,7 @@ class CustomSipScheme {
     final List rawDates = json['custom_dates'] ?? [];
     return CustomSipScheme(
       schemeId: int.tryParse(json['scheme_id']?.toString() ?? '0') ?? 0,
-      label: json['label']?.toString() ?? 'Flexy AutoGold',
+      label: json['label']?.toString() ?? 'Flexi AutoGold',
       amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0,
       customDates: rawDates.map((d) => int.tryParse(d.toString()) ?? 0).toList(),
       commodityId: int.tryParse(json['commodity_id']?.toString() ?? ''),
@@ -402,7 +402,7 @@ class CustomSipSchemeDetail {
     final List rawDates = json['custom_dates'] ?? [];
     return CustomSipSchemeDetail(
       schemeId: int.tryParse(json['scheme_id']?.toString() ?? '0') ?? 0,
-      label: json['label']?.toString() ?? 'Flexy AutoGold',
+      label: json['label']?.toString() ?? 'Flexi AutoGold',
       subscriptionId: json['subscription_id']?.toString() ?? '',
       startDate: json['start_date']?.toString(),
       amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0,

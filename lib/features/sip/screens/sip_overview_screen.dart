@@ -217,7 +217,7 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
 
   // Display-only relabel — the "Custom" frequency value still drives tab
   // selection and backend matching (p.frequency), only its shown text changes.
-  String _frequencyLabel(String freq) => freq == 'Custom' ? 'Flexy' : freq;
+  String _frequencyLabel(String freq) => freq == 'Custom' ? 'Flexi' : freq;
 
   // ─── Frequency Pill Tabs ──────────────────────────────────────────────
   Widget _buildFrequencyTabs(List<String> frequencies) {
@@ -498,7 +498,7 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
                   SizedBox(width: 12.w),
                   Expanded(
                     child: NumericStyledText(
-                      'You\'ve already subscribed to a\nFlexy ${plan.commodityName} Auto-Savings plan',
+                      'You\'ve already subscribed to a\nFlexi ${plan.commodityName} Auto-Savings plan',
                       fontSize: 13.sp,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF1A1A2E),
