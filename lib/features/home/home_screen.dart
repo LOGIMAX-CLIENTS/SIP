@@ -445,7 +445,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               // ── 1. Invest Smart, Earn Big ──
               ...() {
                 final invest = dashboard.investSection ??
-                    InvestSection(title: 'Invest Smart, Earn Big', blocks: []);
+                    InvestSection(title: 'Save Smart, Earn Big', blocks: []);
                 return [
                   Padding(
                     padding: EdgeInsets.fromLTRB(20.w, 24.h, 20.w, 0),
@@ -1213,7 +1213,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         elevation: 0,
                       ),
                       child: Text(
-                        'Invest Now',
+                        'Save Now',
                         style: GoogleFonts.playfairDisplay(
                           fontWeight: FontWeight.bold,
                           fontSize: 13.sp,
@@ -1452,7 +1452,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           elevation: 0,
                         ),
                         child: Text(
-                          'Invest More',
+                          'Save More',
                           style: GoogleFonts.playfairDisplay(
                             fontWeight: FontWeight.bold,
                             fontSize: 12.sp,
@@ -1781,7 +1781,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               elevation: 0,
                             ),
                             child: Text(
-                              'Invest Now',
+                              'Save Now',
                               style: GoogleFonts.playfairDisplay(
                                 fontSize: 13.sp,
                                 fontWeight: FontWeight.bold,

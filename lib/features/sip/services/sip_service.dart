@@ -239,14 +239,14 @@ class SipService {
       if (response.data['success'] == false) {
         final errorMsg = response.data['error']?['message'] ??
             response.data['error']?['internal_message'] ??
-            'Failed to load SIP transactions';
+            'Failed to load AutoGold transactions';
         throw Exception(errorMsg);
       }
       if (response.data['data'] != null) {
         return HistoryResponse.fromJson(response.data['data']);
       }
     }
-    throw Exception('Failed to load SIP transactions');
+    throw Exception('Failed to load AutoGold transactions');
   }
 
   // ─── SIP Transaction Filter Options ───────────────────────────────────
@@ -283,11 +283,11 @@ class SipService {
       if (response.data['success'] == false) {
         final errorMsg = response.data['error']?['message'] ??
             response.data['error']?['internal_message'] ??
-            'Failed to load SIP transaction details';
+            'Failed to load AutoGold transaction details';
         throw Exception(errorMsg);
       }
       return response.data;
     }
-    throw Exception('Failed to load SIP transaction details');
+    throw Exception('Failed to load AutoGold transaction details');
   }
 }

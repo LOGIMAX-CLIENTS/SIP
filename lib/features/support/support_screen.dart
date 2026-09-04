@@ -55,7 +55,7 @@ class SupportScreen extends StatelessWidget {
                 style: AppTextStyles.titleMedium(isDark)
                     .copyWith(color: isDark ? Colors.white : Colors.black87)),
             SizedBox(height: 16.h),
-            _buildFaqItem('How to buy digital gold?',
+            _buildFaqItem('How to buy Pure Gold?',
                 'Navigate to the Market tab and select Buy Gold.', isDark),
             _buildFaqItem('What are the storage charges?',
                 'Zero storage charges for the first 5 years.', isDark),

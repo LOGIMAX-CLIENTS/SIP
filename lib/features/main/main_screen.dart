@@ -373,7 +373,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildNavItem(ref, 'Home',      selectedIndex == 0, isDark, 0, 'assets/footer/home'),
-                _buildNavItem(ref, 'Invest',    selectedIndex == 1, isDark, 1, 'assets/footer/invest'),
+                _buildNavItem(ref, 'Savings',   selectedIndex == 1, isDark, 1, 'assets/footer/invest'),
                 _buildNavItem(ref, 'History',   selectedIndex == 2, isDark, 2, 'assets/footer/history'),
                 _buildNavItem(ref, 'Profile',   selectedIndex == 3, isDark, 3, 'assets/footer/profile'),
                 _buildNavItem(ref, 'Jewellery', selectedIndex == 4, isDark, 4, 'assets/footer/jewelley'),

@@ -2116,7 +2116,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             context,
             response.message.isNotEmpty
                 ? response.message
-                : 'Failed to create Custom SIP plan',
+                : 'Failed to create Custom AutoGold plan',
             type: ToastType.error,
           );
         }
@@ -2324,7 +2324,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             context,
             response.message.isNotEmpty
                 ? response.message
-                : 'Failed to create SIP plan',
+                : 'Failed to create AutoGold plan',
             type: ToastType.error,
           );
         }
