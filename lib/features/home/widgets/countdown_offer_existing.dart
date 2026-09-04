@@ -194,7 +194,7 @@ class CountdownOfferExisting extends StatelessWidget {
             children: [
               Expanded(
                 child: _buildStatColumn(
-                  'Invested Day',
+                  'Saved Day',
                   'Day ${offer.investDays}',
                 ),
               ),

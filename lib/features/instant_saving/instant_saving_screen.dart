@@ -788,10 +788,10 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       }
       if (comparable < config.minAmount) {
         errorMsg =
-            'Minimum investment amount is ₹${config.minAmount.toStringAsFixed(0)}';
+            'Minimum savings amount is ₹${config.minAmount.toStringAsFixed(0)}';
       } else if (comparable > config.maxAmount) {
         errorMsg =
-            'Maximum investment amount is ₹${config.maxAmount.toStringAsFixed(0)}';
+            'Maximum savings amount is ₹${config.maxAmount.toStringAsFixed(0)}';
       }
     }
     final bool hasError = errorMsg != null;
@@ -807,8 +807,8 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Select invest type ──
-            Text('Select Invest Type',
+            // ── Select savings type ──
+            Text('Select Savings Type',
                 style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,

@@ -135,7 +135,7 @@ class _SipOverviewScreenState extends ConsumerState<SipOverviewScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Select Invest Type',
+                  'Select Savings Type',
                   style: GoogleFonts.playfairDisplay(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.w600,

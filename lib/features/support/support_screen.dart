@@ -60,7 +60,7 @@ class SupportScreen extends StatelessWidget {
             _buildFaqItem('What are the storage charges?',
                 'Zero storage charges for the first 5 years.', isDark),
             _buildFaqItem(
-                'Is my investment insured?',
+                'Are my savings insured?',
                 'Every gram is backed by 24K physical gold in Brink\'s vaults.',
                 isDark),
             _buildFaqItem('How long for bank withdrawals?',
