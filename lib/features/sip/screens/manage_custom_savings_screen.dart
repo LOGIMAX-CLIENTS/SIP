@@ -142,7 +142,7 @@ class _ManageCustomSavingsScreenState
                   _buildDetailRow(
                     icon: Icons.repeat_rounded,
                     label: 'Frequency',
-                    value: 'Custom',
+                    value: 'Flexy',
                     isNumeric: false,
                   ),
                   _divider(),
@@ -179,7 +179,7 @@ class _ManageCustomSavingsScreenState
                 _buildActionButton(
                   icon: Icons.pause_circle_rounded,
                   label: 'Pause Savings',
-                  subtitle: 'Temporarily stop this Custom AutoGold',
+                  subtitle: 'Temporarily stop this Flexy AutoGold',
                   color: const Color(0xFFD97706),
                   onTap: () => _confirmPause(),
                 ),
@@ -187,7 +187,7 @@ class _ManageCustomSavingsScreenState
                 _buildActionButton(
                   icon: Icons.play_circle_rounded,
                   label: 'Resume Savings',
-                  subtitle: 'Continue this Custom AutoGold',
+                  subtitle: 'Continue this Flexy AutoGold',
                   color: const Color(0xFF16A34A),
                   onTap: () => _confirmResume(),
                 ),
@@ -434,7 +434,7 @@ class _ManageCustomSavingsScreenState
           style: GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.w700),
         ),
         content: Text(
-          'This Custom AutoGold will be temporarily paused. You can resume anytime.',
+          'This Flexy AutoGold will be temporarily paused. You can resume anytime.',
           style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: Colors.black54),
         ),
         actions: [
@@ -494,7 +494,7 @@ class _ManageCustomSavingsScreenState
           style: GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.w700),
         ),
         content: Text(
-          'This Custom AutoGold will resume on its original dates.',
+          'This Flexy AutoGold will resume on its original dates.',
           style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: Colors.black54),
         ),
         actions: [

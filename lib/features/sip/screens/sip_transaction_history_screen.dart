@@ -197,6 +197,10 @@ class _SipTransactionHistoryScreenState
     );
   }
 
+  // Display-only relabel — the "Custom" frequency value still drives tab
+  // selection and the sipHistoryProvider fetch key, only its shown text changes.
+  String _frequencyLabel(String freq) => freq == 'Custom' ? 'Flexy' : freq;
+
   // ── Frequency Tabs (pill style — matches SipOverviewScreen) ─────────
   Widget _buildFrequencyTabs(bool isDark) {
     return Padding(
@@ -234,7 +238,7 @@ class _SipTransactionHistoryScreenState
                   ),
                   child: Center(
                     child: Text(
-                      freq,
+                      _frequencyLabel(freq),
                       style: GoogleFonts.playfairDisplay(
                         fontSize: 13.sp,
                         fontWeight:

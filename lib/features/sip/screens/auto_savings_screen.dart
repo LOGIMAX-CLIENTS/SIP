@@ -669,7 +669,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                     ),
                     child: Center(
                       child: Text(
-                        'Custom',
+                        'Flexy',
                         style: GoogleFonts.playfairDisplay(
                           fontSize: 13.sp,
                           fontWeight: _isCustomFrequency
@@ -2116,7 +2116,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             context,
             response.message.isNotEmpty
                 ? response.message
-                : 'Failed to create Custom AutoGold plan',
+                : 'Failed to create Flexy AutoGold plan',
             type: ToastType.error,
           );
         }
