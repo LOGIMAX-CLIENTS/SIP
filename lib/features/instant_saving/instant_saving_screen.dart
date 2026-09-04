@@ -23,6 +23,7 @@ import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/loaders.dart';
 import '../../core/security/secure_logger.dart';
+import '../../core/security/app_lifecycle_observer.dart';
 import '../../core/error/failures.dart';
 import '../../shared/utils/no_leading_zeros_formatter.dart';
 import '../../shared/widgets/secure_clipboard.dart';
@@ -41,7 +42,7 @@ class InstantSavingScreen extends ConsumerStatefulWidget {
 }
 
 class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _amountController = TextEditingController();
   late AnimationController _pulseController;
   String _selectedAmount = '';
@@ -49,9 +50,16 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
   bool _isProcessing = false;
 
+  // True only while we're waiting on a payment-gateway SDK callback
+  // (Cashfree/HDFC/Razorpay) — as opposed to `_isProcessing` alone, which is
+  // also briefly true for the local check-eligibility call. Used to scope
+  // the didChangeAppLifecycleState fallback below to the gateway leg only.
+  bool _awaitingPaymentCallback = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -95,9 +103,46 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pulseController.dispose();
     _amountController.dispose();
     super.dispose();
+  }
+
+  /// Fallback: if the app resumes (e.g. the user returns from the Cashfree/
+  /// HDFC/Razorpay checkout) while we're still waiting on that gateway's SDK
+  /// callback, the callback may simply never arrive — the checkout activity
+  /// can be dismissed by a back-swipe, the process can be killed by the OS
+  /// while backgrounded for a UPI app switch, etc. Without this, `_isProcessing`
+  /// stays stuck `true` forever (this screen lives inside an IndexedStack, so
+  /// re-visiting the tab keeps showing the same stuck "Processing Payment..."
+  /// overlay). A short delay gives the real callback a chance to land first.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed ||
+        !_isProcessing ||
+        !_awaitingPaymentCallback) {
+      return;
+    }
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted || !_isProcessing || !_awaitingPaymentCallback) return;
+      SecureLogger.d(
+          'INSTANT SAVING: Resumed without a gateway callback — clearing stuck loading state');
+      // The callback that would normally clear this never fired, so make
+      // sure app-lock suppression (set before launching the gateway) doesn't
+      // stay stuck on too.
+      AppLifecycleObserver.suppressAppLock = false;
+      setState(() {
+        _isProcessing = false;
+        _awaitingPaymentCallback = false;
+      });
+      AppToast.show(
+        context,
+        'We could not confirm your payment status. Please check Order History before retrying.',
+        type: ToastType.warning,
+        position: ToastPosition.center,
+      );
+    });
   }
 
   @override
@@ -1642,9 +1687,17 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
             buyType: _isAmountMode ? 1 : 2,
             weight: grams,
             paymentMethod: paymentMethod,
-            onLoadingStart: () => setState(() => _isProcessing = true),
+            onLoadingStart: () => setState(() {
+              _isProcessing = true;
+              _awaitingPaymentCallback = true;
+            }),
             onLoadingEnd: () {
-              if (mounted) setState(() => _isProcessing = false);
+              if (mounted) {
+                setState(() {
+                  _isProcessing = false;
+                  _awaitingPaymentCallback = false;
+                });
+              }
             },
           );
         }
@@ -1666,9 +1719,17 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
             buyType: _isAmountMode ? 1 : 2,
             weight: grams,
             paymentMethod: paymentMethod,
-            onLoadingStart: () => setState(() => _isProcessing = true),
+            onLoadingStart: () => setState(() {
+              _isProcessing = true;
+              _awaitingPaymentCallback = true;
+            }),
             onLoadingEnd: () {
-              if (mounted) setState(() => _isProcessing = false);
+              if (mounted) {
+                setState(() {
+                  _isProcessing = false;
+                  _awaitingPaymentCallback = false;
+                });
+              }
             },
           );
         }
@@ -1687,9 +1748,17 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
           paymentMethod: paymentMethod,
-          onLoadingStart: () => setState(() => _isProcessing = true),
+          onLoadingStart: () => setState(() {
+            _isProcessing = true;
+            _awaitingPaymentCallback = true;
+          }),
           onLoadingEnd: () {
-            if (mounted) setState(() => _isProcessing = false);
+            if (mounted) {
+              setState(() {
+                _isProcessing = false;
+                _awaitingPaymentCallback = false;
+              });
+            }
           },
         );
       } else if (eligibility.nextStep == 'UPI_LIST') {
@@ -1716,9 +1785,17 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
           paymentMethod: paymentMethod,
-          onLoadingStart: () => setState(() => _isProcessing = true),
+          onLoadingStart: () => setState(() {
+            _isProcessing = true;
+            _awaitingPaymentCallback = true;
+          }),
           onLoadingEnd: () {
-            if (mounted) setState(() => _isProcessing = false);
+            if (mounted) {
+              setState(() {
+                _isProcessing = false;
+                _awaitingPaymentCallback = false;
+              });
+            }
           },
         );
       }
