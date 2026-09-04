@@ -1107,6 +1107,15 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         ],
       ),
     );
+    if (!mounted) return;
+    // Silent, in-place refresh — no navigation. A rejection/expiry is a
+    // real state change on the backend (kyc_status flips, which is what
+    // aadhaarRejected below reads), but this path previously never
+    // re-fetched document-types at all: the customer stayed on this exact
+    // screen looking at data from before the failed attempt, so
+    // "Upload manually instead" (gated on aadhaarRejected) wouldn't appear
+    // until something unrelated happened to refresh the provider.
+    ref.invalidate(kycDocumentsProvider(widget.requestFrom));
   }
 
   @override
