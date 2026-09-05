@@ -252,11 +252,39 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
     KycDocumentType? panDocValue,
   ) {
     if (panDone) {
-      return KycVerifiedBanner(
-        numberLabel: 'PAN Number',
-        maskedValue: panDocValue?.maskedValue,
-        nameLabel: 'Name as on PAN',
-        verifiedName: panDocValue?.verifiedName,
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          KycVerifiedBanner(
+            numberLabel: 'PAN Number',
+            maskedValue: panDocValue?.maskedValue,
+            nameLabel: 'Name as on PAN',
+            verifiedName: panDocValue?.verifiedName,
+          ),
+          SizedBox(height: 8.h),
+          // Refreshes the PAN-Aadhaar Link result (checklist Step 3) —
+          // there's no narrower provider call for just the link, so this
+          // reuses the same allow_reverify DigiLocker resume retryPan()
+          // already runs for a skipped-PAN retry, which re-fetches PAN "on
+          // its own merits" (see KYCService's allow_reverify docstring) and
+          // refreshes aadhaar_linked as a side effect, regardless of PAN's
+          // current approval state. A plain text button, not the page's
+          // main CTA — PAN is already verified, this is an optional extra
+          // check, not the primary action on this page.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: verifyingAadhaar ? null : () => retryPan(widget.requestFrom),
+              child: Text(
+                'Refresh PAN-Aadhaar Link Status',
+                style: AppTextStyles.fieldHelper(isDark).copyWith(
+                  color: AppTheme.primaryGreen,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
       );
     }
     if (panUnderReview) {
