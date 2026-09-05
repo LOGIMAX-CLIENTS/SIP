@@ -104,6 +104,18 @@ class AppToast {
       _safeRemoveEntry(entry);
     }
   }
+
+  /// Dismiss whatever toast is currently showing, if any — before its own
+  /// auto-dismiss [duration] elapses. Needed because a toast lives on the
+  /// ROOT overlay (see [show]'s `rootOverlay: true`), independent of route
+  /// navigation: a warning shown just before an authoritative result
+  /// arrives (e.g. a "payment status unclear" fallback that fires while a
+  /// slower confirm call is still in flight) would otherwise keep floating
+  /// on top of whatever screen is navigated to next for the rest of its
+  /// ~2.8s lifetime, even after that screen shows the real, contradicting
+  /// outcome. Call this right before navigating away once the authoritative
+  /// result is known, so a since-superseded toast can't outlive it.
+  static void dismiss() => _dismiss();
 }
 
 class _ToastWidget extends StatefulWidget {

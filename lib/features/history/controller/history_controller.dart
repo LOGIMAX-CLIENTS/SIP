@@ -169,10 +169,25 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
 /// Not autoDispose — state (and therefore loaded pages + effective scroll
 /// position) survives navigating away from and back to the history screen
 /// within the same app session.
+///
+/// Watches (not reads) userProvider's id specifically — not the whole
+/// UserProfile — via `.select`. On app cold-start, AuthNotifier.
+/// rehydrateFromStorage() populates the session ASYNCHRONOUSLY (SecureStorage
+/// reads), so userProvider can still be null for a brief window right after
+/// launch. If this provider is first created during that window with a bare
+/// `ref.read`, the customer id it captures is permanently baked into
+/// HistoryNotifier's `final` field — since this provider is deliberately not
+/// autoDispose, it would never re-run once created, leaving the screen stuck
+/// on "User not logged in" for the rest of the session even after the real
+/// session data arrives moments later. `ref.watch(...select...)` makes this
+/// provider (and its HistoryNotifier) get recreated once the id actually
+/// changes from null to the real one — while `.select` keeps it from
+/// rebuilding (and discarding loaded pages/scroll position) on unrelated
+/// profile changes (name, photo, KYC flag, etc.) that don't affect the id.
 final historyProvider =
     StateNotifierProvider<HistoryNotifier, HistoryPageState>((ref) {
-  final user = ref.read(userProvider);
-  return HistoryNotifier(ref.read(historyServiceProvider), user?.id);
+  final customerId = ref.watch(userProvider.select((u) => u?.id));
+  return HistoryNotifier(ref.read(historyServiceProvider), customerId);
 });
 
 /// Dynamic filter option set (commodities, transaction types, statuses)
@@ -180,20 +195,20 @@ final historyProvider =
 /// "fetch config on screen load" pattern.
 final historyFilterOptionsProvider =
     FutureProvider.autoDispose<HistoryFilterOptions>((ref) async {
-  final user = ref.read(userProvider);
-  if (user == null) throw Exception('User not logged in');
+  final userId = ref.watch(userProvider.select((u) => u?.id));
+  if (userId == null) throw Exception('User not logged in');
 
   return ref.read(historyServiceProvider).getFilterOptions(
-        customerId: user.id,
+        customerId: userId,
       );
 });
 
 final transactionDetailsProvider = FutureProvider.family<TransactionDetailResponse, String>((ref, transactionId) async {
-  final user = ref.read(userProvider);
-  if (user == null) throw Exception('User not logged in');
+  final userId = ref.watch(userProvider.select((u) => u?.id));
+  if (userId == null) throw Exception('User not logged in');
 
   return ref.read(historyServiceProvider).getTransactionDetails(
-    customerId: user.id,
+    customerId: userId,
     transactionId: transactionId,
   );
 });

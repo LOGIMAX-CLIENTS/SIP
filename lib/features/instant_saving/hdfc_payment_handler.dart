@@ -352,6 +352,20 @@ class HdfcPaymentHandler {
 
     _onLoadingEnd?.call();
 
+    // The authoritative result just arrived. If the app was backgrounded
+    // during checkout and this confirm-payment round trip took longer than
+    // InstantSavingScreen's 2-second "resumed but still waiting" fallback,
+    // that fallback may have already fired a "could not confirm your
+    // payment status" toast — a guess made before this real answer was
+    // known. That toast lives on the root overlay (see AppToast.show), so
+    // it survives the navigation below for the rest of its own lifetime
+    // unless explicitly cleared here, producing a contradictory success-
+    // screen-with-failure-warning. Now that we know the real outcome, drop
+    // the stale guess before showing it. Mirrors razorpay_payment_handler's
+    // identical fix — see its comment here for the full race-condition
+    // writeup.
+    AppToast.dismiss();
+
     if (!context.mounted) return;
 
     final bool isSuccess = response?['success'] == true;
