@@ -12,6 +12,14 @@ class BavHistoryItem {
   // last-4 digits — null otherwise. Used to offer the optional Reverse
   // Penny Drop extra check (see reverse_penny_drop_screen.dart).
   final String? cbankId;
+  // Whether THIS attempt is both historically approved AND still backed by
+  // a live, still-BAV-verified CustomerBank row (server cross-check against
+  // cbank_by_last4) — distinct from `status`, which is a pure historical
+  // label that stays "Approved" even after the account is later removed/
+  // reset. Use `isApproved` (this field), never `status`, to decide whether
+  // bank verification is CURRENTLY satisfied (e.g. the KYC checklist step);
+  // use `status` only for a past-tense record of what happened.
+  final bool isApproved;
 
   BavHistoryItem({
     required this.kycId,
@@ -22,9 +30,8 @@ class BavHistoryItem {
     this.attemptedOn,
     this.provider,
     this.cbankId,
+    required this.isApproved,
   });
-
-  bool get isApproved => status.toLowerCase() == 'approved';
 
   factory BavHistoryItem.fromJson(Map<String, dynamic> json) {
     return BavHistoryItem(
@@ -38,6 +45,7 @@ class BavHistoryItem {
           : null,
       provider: json['provider']?.toString(),
       cbankId: json['cbank_id']?.toString(),
+      isApproved: json['is_approved'] as bool? ?? false,
     );
   }
 }
