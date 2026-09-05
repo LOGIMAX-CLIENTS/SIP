@@ -139,17 +139,18 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// itself on whatever tab the user happens to be on (Profile, Home,
   /// wherever the SDK bounce landed them — confusing, since that's not
   /// where they were verifying), this navigates back to the KYC
-  /// Verification screen and lets IT show the result. KycScreen's own
-  /// initState (_checkAadhaarOutcomeRecoveryOnLoad) reads aadhaarProvider's
-  /// current state on mount and shows whichever dialog applies — the state
-  /// itself is still there because aadhaarProvider is kept alive across
-  /// this whole span (AadhaarNotifier.pauseAutoDispose/resumeAutoDispose).
+  /// Verification checklist and lets IT show the result. The checklist's
+  /// own initState (checkAadhaarOutcomeRecoveryOnLoad, in
+  /// KycVerificationFlowMixin) reads aadhaarProvider's current state on
+  /// mount and shows whichever dialog applies — the state itself is still
+  /// there because aadhaarProvider is kept alive across this whole span
+  /// (AadhaarNotifier.pauseAutoDispose/resumeAutoDispose).
   /// A plain push (not pushNamedAndRemoveUntil) — if the user is already
   /// mid-navigation elsewhere, this just adds KYC on top, same as if they'd
   /// tapped into it from Profile themselves.
   void _navigateToKycAndLetItHandle() {
     if (!mounted) return;
-    Navigator.of(context).pushNamed(AppRouter.kyc, arguments: {'request_from': 'profile'});
+    Navigator.of(context).pushNamed(AppRouter.kycVerification, arguments: {'request_from': 'profile'});
   }
 
   /// Grace period before MainScreen's own fallback claims a given outcome.

@@ -180,7 +180,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               // PAN/Aadhaar details and use Edit to redo
                               // verification (see kyc/screens/kyc_screen.dart).
                               final result = await Navigator.pushNamed(
-                                  context, AppRouter.kyc,
+                                  context, AppRouter.kycVerification,
                                   arguments: {'request_from': 'profile'});
                               // Refresh profile to update the verified badge
                               if (result == true && mounted) {

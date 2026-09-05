@@ -6,17 +6,18 @@ import 'package:startgold/routes/app_router.dart';
 /// Single entry point for "the backend returned KYC_REQUIRED" across SIP,
 /// Withdrawal, and Investment.
 ///
-/// Pushes the unified KYC hub (`kyc_screen.dart` — PAN form + Aadhaar
-/// DigiLocker, gated on both being APPROVED) and awaits its result. Every
+/// Pushes the KYC checklist (`kyc_verification_screen.dart` — PAN +
+/// Aadhaar verification, plus bank-verification steps this gate doesn't
+/// care about) with `popWhenIdVerified: true`, so it pops itself with
+/// `true` the instant PAN and Aadhaar are both APPROVED rather than
+/// leaving the user on the checklist to walk the remaining steps. Every
 /// caller uses the same `await ... ; if (result) retryTheOriginalAction()`
 /// shape, mirroring the pattern instant_saving_screen.dart already used for
 /// PAN-only KYC — this just centralizes it so SIP/Withdrawal/Investment
 /// stay consistent instead of each re-implementing the push/await.
 class KycVerificationFlow {
   /// Returns true once the user has completed BOTH PAN and Aadhaar
-  /// verification (the hub only pops `true` when its "Finish" button —
-  /// enabled only once both are approved — is pressed). Returns false if
-  /// the user backs out before finishing.
+  /// verification. Returns false if the user backs out before finishing.
   static Future<bool> start(
     BuildContext context,
     WidgetRef ref, {
@@ -25,9 +26,10 @@ class KycVerificationFlow {
   }) async {
     final result = await Navigator.pushNamed(
       context,
-      AppRouter.kyc,
+      AppRouter.kycVerification,
       arguments: {
         'request_from': requestFrom,
+        'pop_when_id_verified': true,
         ...?extraData,
       },
     );

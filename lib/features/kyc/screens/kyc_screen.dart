@@ -5,6 +5,7 @@ import 'package:startgold/core/security/secure_logger.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/core/security/app_lifecycle_observer.dart';
+import 'package:startgold/core/utils/kyc_validator.dart';
 import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
@@ -14,22 +15,31 @@ import 'package:startgold/routes/app_router.dart';
 import 'package:startgold/shared/theme/app_theme.dart';
 import 'package:startgold/shared/theme/app_text_styles.dart';
 import 'package:startgold/shared/utils/aadhaar_input_formatter.dart';
+import 'package:startgold/shared/utils/pan_input_formatter.dart';
 import 'package:startgold/shared/utils/upper_case_words_formatter.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/custom_button.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
 import 'package:startgold/shared/widgets/secure_clipboard.dart';
 
-/// Unified KYC hub — shows PAN and Aadhaar verification together.
+/// Unified KYC hub — shows PAN and Aadhaar verification together, on one
+/// page: PAN Name/Number fields (`_buildPanInputFields`), then Aadhaar
+/// Name/Number fields, then a single combined "Verify via DigiLocker"
+/// button (see `_buildAadhaarCard`) — PAN has no consent or submit of its
+/// own, both sets of typed fields are sent together in the SAME DigiLocker
+/// initiate call (`_runVerifyAadhaar`).
 ///
 /// KYC is complete only when BOTH PAN and Aadhaar are approved (mirrors the
 /// backend's `KYCService.is_kyc_complete`, which every gated action — SIP
-/// create, withdrawal, savings — already checks). PAN is a simple field
-/// form (`/kyc/document-types` + `/kyc/upload`, id_document="1"). Aadhaar is
-/// a DigiLocker consent + poll flow (`/kyc/upload`, id_document="2") that
-/// does not come back from `/kyc/document-types` today, so it is rendered
-/// as a second, client-side card driven by [aadhaarProvider] rather than by
-/// the documents list.
+/// create, withdrawal, savings — already checks). PAN's document-types
+/// entry (`/kyc/document-types`, id_document="1") only ever drives its
+/// status/verified-banner display now — the OTHER document types still use
+/// the generic field-form + `_submitDoc`/`kycSubmitProvider` path directly
+/// (see `_buildDocumentCard`'s final `else` branch). Aadhaar is a DigiLocker
+/// consent + poll flow (`/kyc/upload`, id_document="2") that does not come
+/// back from `/kyc/document-types` today, so it is rendered as a second,
+/// client-side card driven by [aadhaarProvider] rather than by the
+/// documents list.
 ///
 /// The "Finish" footer only completes once both are approved, at which
 /// point this screen pops `true` — every caller (SIP/Withdrawal/Investment/
@@ -109,6 +119,15 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   final _aadhaarNumberController = TextEditingController();
   final _aadhaarNameController = TextEditingController();
   final _aadhaarFormKey = GlobalKey<FormState>();
+
+  // PAN Name/Number — typed alongside Aadhaar's fields on this same screen
+  // and sent as part of the SAME DigiLocker initiate call (see
+  // _runVerifyAadhaar), rather than PAN having its own separate consent/
+  // button. Validated via their own Form key since these fields live in
+  // _buildDocumentCard's widget tree, a separate Form from Aadhaar's.
+  final _panNameController = TextEditingController();
+  final _panNumberController = TextEditingController();
+  final _panFormKey = GlobalKey<FormState>();
 
   @override
   void initState() {
@@ -197,6 +216,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     }
     _aadhaarNumberController.dispose();
     _aadhaarNameController.dispose();
+    _panNameController.dispose();
+    _panNumberController.dispose();
     super.dispose();
   }
 
@@ -219,6 +240,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   String? _validateAadhaarName(String? value) {
     if (value == null || value.trim().length < 2) return 'Enter a valid name';
     return null;
+  }
+
+  String? _validatePanName(String? value) {
+    if (value == null || value.trim().length < 2) return 'Enter a valid name';
+    return null;
+  }
+
+  /// Format check only (`KycValidator.validatePAN` — AAAAA9999A) — actual
+  /// identity verification still happens via the same DigiLocker consent as
+  /// Aadhaar, never this typed number alone. Unformats first since the
+  /// field displays the grouped "AAAAA 9999 A" form (PanInputFormatter),
+  /// mirroring _validateAadhaarNumber's identical unformat-then-validate step.
+  String? _validatePanNumber(String? value) {
+    return KycValidator.validatePAN(PanInputFormatter.unformat(value ?? ''));
   }
 
   void _initControllers(List<KycDocumentType> docs) {
@@ -373,7 +408,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   }
 
   /// PAN has no consent of its own — it's fetched from the SAME DigiLocker
-  /// session as Aadhaar (see `_buildPanVerifyNotice`'s doc comment and
+  /// session as Aadhaar (see `_buildPanInputFields`'s doc comment and
   /// `MODULE_BRAIN.md` §2). If the user unchecks "PAN Verification Record" on
   /// DigiLocker's document-selection screen, Aadhaar comes back APPROVED but
   /// PAN never does — the only way to retry PAN is a fresh DigiLocker consent.
@@ -383,21 +418,22 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// already done.
   Future<void> _onRetryPan() async {
     _editAadhaar(panOnly: true);
-    // The Aadhaar card was showing the verified banner (no Form in the tree)
-    // — wait one frame so `_aadhaarFormKey` is attached to the now-visible
-    // input form before validating it.
+    // The PAN/Aadhaar cards were showing their verified banners (no Form in
+    // the tree) — wait one frame so `_panFormKey`/`_aadhaarFormKey` are
+    // attached to the now-visible input forms before validating them.
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
-    if (_aadhaarFormKey.currentState?.validate() != true) {
+    if (_panFormKey.currentState?.validate() != true ||
+        _aadhaarFormKey.currentState?.validate() != true) {
       // Aadhaar was approved in an earlier session, so these fields were
       // never filled in this one — nothing to resubmit yet. Point the user
-      // at the now-reopened Aadhaar form below instead of doing nothing.
+      // at the now-reopened PAN/Aadhaar forms below instead of doing nothing.
       AppToast.show(
         context,
-        "Re-enter your Aadhaar details below, then verify again — make sure "
-        "'PAN Verification Record' is selected on the DigiLocker consent "
-        "screen this time.",
+        "Re-enter your PAN and Aadhaar details below, then verify again — "
+        "make sure 'PAN Verification Record' is selected on the DigiLocker "
+        "consent screen this time.",
         type: ToastType.info,
       );
       return;
@@ -486,6 +522,11 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// `AadhaarNotifier.initiate`).
   Future<void> _onVerifyAadhaar() async {
     if (_verifyingAadhaar) return;
+    // Validate BOTH forms — a `null` currentState (form not currently
+    // mounted, e.g. PAN already showing its Verified banner) reads as
+    // `null`, not `false`, so it never blocks this — only a form that IS
+    // mounted and genuinely invalid does.
+    if (_panFormKey.currentState?.validate() == false) return;
     if (_aadhaarFormKey.currentState?.validate() == false) return;
 
     setState(() => _verifyingAadhaar = true);
@@ -532,12 +573,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         '[KYC DEBUG] initiate() call: _aadhaarEditing=$_aadhaarEditing '
         '_retryingPanOnly=$_retryingPanOnly '
         'aadhaarNumberEmpty=${_aadhaarNumberController.text.isEmpty} '
-        'nameEmpty=${_aadhaarNameController.text.isEmpty}',
+        'nameEmpty=${_aadhaarNameController.text.isEmpty} '
+        'panNumberEmpty=${_panNumberController.text.isEmpty} '
+        'panNameEmpty=${_panNameController.text.isEmpty}',
       );
       await notifier.initiate(
         widget.requestFrom,
         aadhaarNumber: AadhaarInputFormatter.unformat(_aadhaarNumberController.text),
         fullName: _aadhaarNameController.text.trim(),
+        // Sent alongside Aadhaar's fields on the SAME initiate call — PAN
+        // still has no consent of its own (see _buildPanInputFields), this
+        // is just the typed value the backend will eventually cross-check
+        // against what DigiLocker's own PAN fetch returns.
+        panName: _panNameController.text.trim(),
+        panNumber: PanInputFormatter.unformat(_panNumberController.text),
         allowReverify: _aadhaarEditing,
       );
       if (!mounted) return;
@@ -1335,7 +1384,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         doc.code.toUpperCase().contains('PAN');
     final isDone = _completedDocIds.contains(doc.id);
     // PAN rides on the same DigiLocker session as Aadhaar (see
-    // _buildPanVerifyNotice). If Aadhaar already came back APPROVED but
+    // _buildPanInputFields). If Aadhaar already came back APPROVED but
     // PAN's card is still pending, the user skipped/unchecked PAN in
     // DigiLocker's document picker — show that explicitly instead of the
     // generic "complete Aadhaar below" notice, which would be actively wrong
@@ -1384,7 +1433,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           else if (panSkippedInConsent)
             _buildPanSkippedNotice(isDark, isBusy: aadhaarRetryBusy, showManualUpload: allowManualUpload)
           else if (isPan)
-            _buildPanVerifyNotice(isDark, isBusy: aadhaarRetryBusy, showManualUpload: allowManualUpload)
+            _buildPanInputFields(isDark, showManualUpload: allowManualUpload)
           else ...[
             Form(
               key: _docFormKeys[doc.id],
@@ -1509,40 +1558,96 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
   /// PAN has no consent of its own — it rides on the SAME DigiLocker
   /// session as Aadhaar (see `_onRetryPan`'s doc comment and
-  /// `MODULE_BRAIN.md` §2), so this button's onPressed is literally
-  /// [_onVerifyAadhaar] — the same handler the Aadhaar card's own "Verify
-  /// via DigiLocker" button uses. If the Aadhaar form (below, on the same
-  /// screen) isn't filled in yet, `_aadhaarFormKey`'s validation surfaces
-  /// its errors there rather than here, which is the correct place to fix
-  /// them — PAN has nothing of its own to validate.
-  Widget _buildPanVerifyNotice(bool isDark, {required bool isBusy, required bool showManualUpload}) {
+  /// `MODULE_BRAIN.md` §2). The typed Name/Number here are sent alongside
+  /// the Aadhaar fields in that SAME initiate call (see _runVerifyAadhaar)
+  /// — there's deliberately no button in this card; the single combined
+  /// "Verify via DigiLocker" button lives on the Aadhaar card below, which
+  /// validates THIS form (`_panFormKey`) before firing.
+  Widget _buildPanInputFields(bool isDark, {required bool showManualUpload}) {
+    const cardBg = Color(0xFFEAF3FB);
+    const cardBorder = Color(0xFFBFDDF5);
+    const textColor = Color(0xFF0B3D91);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: double.infinity,
-          padding: EdgeInsets.all(20.r),
+          padding: EdgeInsets.all(16.r),
           decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withOpacity(0.03)
-                  : Colors.black.withOpacity(0.02),
-              borderRadius: BorderRadius.circular(20.r)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'PAN is verified automatically together with Aadhaar via DigiLocker.',
-                style: AppTextStyles.fieldHelper(isDark),
-              ),
-              SizedBox(height: 16.h),
-              CustomButton(
-                text: 'Verify via DigiLocker',
-                svgIconPath: 'assets/buttons/tick.svg',
-                isLoading: isBusy,
-                onPressed: isBusy ? null : _onVerifyAadhaar,
-                gradient: AppTheme.greenGradient,
-              ),
-            ],
+            color: isDark ? const Color(0xFF1A1F26) : cardBg,
+            border: Border.all(color: isDark ? Colors.white24 : cardBorder),
+            borderRadius: BorderRadius.circular(16.r),
+          ),
+          child: Form(
+            key: _panFormKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildGovIdCardHeader(
+                  hindiTitle: 'आयकर विभाग',
+                  englishTitle: 'INCOME TAX DEPARTMENT',
+                  icon: Icons.verified_outlined,
+                  color: isDark ? Colors.white : textColor,
+                  rightHindiTitle: 'भारत सरकार',
+                  rightEnglishTitle: 'GOVT. OF INDIA',
+                ),
+                SizedBox(height: 16.h),
+                Text('NAME AS ON PAN',
+                    style: AppTextStyles.fieldLabel(isDark)),
+                SizedBox(height: 8.h),
+                TextFormField(
+                  controller: _panNameController,
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+                    _UpperCaseNameFormatter(),
+                    LengthLimitingTextInputFormatter(60),
+                  ],
+                  contextMenuBuilder: SecureClipboard.none,
+                  style: AppTextStyles.kycFieldInput(isDark),
+                  decoration: InputDecoration(
+                    hintText: 'RAHUL SHARMA',
+                    hintStyle: AppTextStyles.kycFieldHint(isDark),
+                    errorStyle: AppTextStyles.fieldError(isDark),
+                    filled: true,
+                    fillColor:
+                        isDark ? Colors.white.withOpacity(0.03) : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide.none),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+                  ),
+                  validator: _validatePanName,
+                ),
+                SizedBox(height: 16.h),
+                Text('PERMANENT ACCOUNT NUMBER',
+                    style: AppTextStyles.fieldLabel(isDark)),
+                SizedBox(height: 8.h),
+                TextFormField(
+                  controller: _panNumberController,
+                  textCapitalization: TextCapitalization.characters,
+                  keyboardType: TextInputType.text,
+                  inputFormatters: [PanInputFormatter()],
+                  contextMenuBuilder: SecureClipboard.none,
+                  style: AppTextStyles.kycFieldInput(isDark),
+                  decoration: InputDecoration(
+                    hintText: 'ABCDE 1234 F',
+                    hintStyle: AppTextStyles.kycFieldHint(isDark),
+                    errorStyle: AppTextStyles.fieldError(isDark),
+                    filled: true,
+                    fillColor:
+                        isDark ? Colors.white.withOpacity(0.03) : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide.none),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+                  ),
+                  validator: _validatePanNumber,
+                ),
+              ],
+            ),
           ),
         ),
         // Offered once EITHER DigiLocker has genuinely been tried at least
@@ -1558,7 +1663,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
-  /// Shown instead of [_buildPanVerifyNotice] once Aadhaar has already
+  /// Shown instead of [_buildPanInputFields] once Aadhaar has already
   /// come back APPROVED but this PAN card is still pending — i.e. the user
   /// completed DigiLocker consent without "PAN Verification Record" checked.
   /// Uses the app's existing amber "warning" palette (see `app_toast.dart`'s
@@ -1595,7 +1700,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 ],
               ),
               SizedBox(height: 12.h),
-              // Same label as _buildPanVerifyNotice's button for consistency
+              // Same label as the Aadhaar card's combined button for consistency
               // — the handler is _onRetryPan (not _onVerifyAadhaar) because
               // Aadhaar is already approved here, so the plain verify path
               // would short-circuit as "already approved" without ever
@@ -1727,17 +1832,24 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           else ...[
             Container(
               width: double.infinity,
-              padding: EdgeInsets.all(20.r),
+              padding: EdgeInsets.all(16.r),
               decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.03)
-                      : Colors.black.withOpacity(0.02),
-                  borderRadius: BorderRadius.circular(20.r)),
+                color: isDark ? const Color(0xFF1A1F26) : const Color(0xFFFCF3E3),
+                border: Border.all(color: isDark ? Colors.white24 : const Color(0xFFEEDDBB)),
+                borderRadius: BorderRadius.circular(16.r),
+              ),
               child: Form(
                 key: _aadhaarFormKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _buildGovIdCardHeader(
+                      hindiTitle: 'भारत सरकार',
+                      englishTitle: 'GOVERNMENT OF INDIA',
+                      icon: Icons.qr_code_scanner_outlined,
+                      color: isDark ? Colors.white : const Color(0xFF5A3E1B),
+                    ),
+                    SizedBox(height: 16.h),
                     if (showAadhaarAlreadyVerifiedHint) ...[
                       Row(
                         children: [
@@ -1756,7 +1868,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                       style: AppTextStyles.fieldHelper(isDark),
                     ),
                     SizedBox(height: 16.h),
-                    Text('Full Name (as per Aadhaar)',
+                    Text('NAME AS ON AADHAAR',
                         style: AppTextStyles.fieldLabel(isDark)),
                     SizedBox(height: 8.h),
                     TextFormField(
@@ -1770,7 +1882,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                       contextMenuBuilder: SecureClipboard.none,
                       style: AppTextStyles.kycFieldInput(isDark),
                       decoration: InputDecoration(
-                        hintText: 'Full name',
+                        hintText: 'RAHUL SHARMA',
                         hintStyle: AppTextStyles.kycFieldHint(isDark),
                         errorStyle: AppTextStyles.fieldError(isDark),
                         filled: true,
@@ -1786,7 +1898,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                       validator: _validateAadhaarName,
                     ),
                     SizedBox(height: 16.h),
-                    Text('Aadhaar Number',
+                    Text('AADHAAR NUMBER',
                         style: AppTextStyles.fieldLabel(isDark)),
                     SizedBox(height: 8.h),
                     TextFormField(
@@ -1830,6 +1942,84 @@ class _KycScreenState extends ConsumerState<KycScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  /// Header row for the PAN/Aadhaar input cards — plain bilingual
+  /// department-name text (Hindi + English, e.g. "आयकर विभाग / INCOME TAX
+  /// DEPARTMENT") plus a generic Material icon, all in one flat color on
+  /// the card's own tinted background (see `_buildPanInputFields`/
+  /// `_buildAadhaarCard`'s `cardBg`). Deliberately just text + a stock
+  /// icon — NOT a reproduction of the State Emblem of India, the UIDAI
+  /// Aadhaar logo, or any official card artwork/texture, which this app
+  /// has no business copying.
+  Widget _buildGovIdCardHeader({
+    required String hindiTitle,
+    required String englishTitle,
+    required IconData icon,
+    required Color color,
+    String? rightHindiTitle,
+    String? rightEnglishTitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                hindiTitle,
+                style: GoogleFonts.lora(
+                  color: color,
+                  fontSize: 10.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 2.h),
+              Text(
+                englishTitle,
+                style: GoogleFonts.playfairDisplay(
+                  color: color,
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(width: 8.w),
+        Icon(icon, color: color, size: 18.sp),
+        if (rightHindiTitle != null && rightEnglishTitle != null) ...[
+          SizedBox(width: 10.w),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                rightHindiTitle,
+                style: GoogleFonts.lora(
+                  color: color,
+                  fontSize: 10.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 2.h),
+              Text(
+                rightEnglishTitle,
+                style: GoogleFonts.playfairDisplay(
+                  color: color,
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 

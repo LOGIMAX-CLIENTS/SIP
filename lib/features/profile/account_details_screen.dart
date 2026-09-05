@@ -402,18 +402,21 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   }
 
   /// Mirrors RegistrationScreen's E-Mail label row — a "Verify" link when
-  /// unverified, a green "Verified" badge when verified. Hidden entirely
-  /// while the field holds an unsaved edit (differs from the on-file
-  /// [user.email]) — verifying a not-yet-saved address would be confusing
-  /// and doesn't match what the backend would actually check against.
+  /// unverified, a green "Verified" badge when verified. `_verifyEmail()`
+  /// already sends the OTP to whatever is currently typed (not necessarily
+  /// [user.email]), so the "Verify" link stays available while editing —
+  /// letting the customer verify a freshly-typed NEW address inline instead
+  /// of only being able to re-verify the address already on file. The
+  /// "Verified" badge itself is still gated on matching the on-file
+  /// [user.email] — a newly-typed address is never already verified.
   Widget _buildEmailVerifyBadge(UserProfile user, bool isDark) {
     final currentInput = _emailController.text.trim().toLowerCase();
-    final onFileEmail = user.email.trim().toLowerCase();
-    if (currentInput.isEmpty || currentInput != onFileEmail) {
+    if (currentInput.isEmpty || Validators.validateEmail(currentInput) != null) {
       return const SizedBox.shrink();
     }
+    final onFileEmail = user.email.trim().toLowerCase();
 
-    if (user.isEmailVerified) {
+    if (currentInput == onFileEmail && user.isEmailVerified) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [

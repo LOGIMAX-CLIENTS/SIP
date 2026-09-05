@@ -169,17 +169,38 @@ class KycRepository {
   /// already-verified Aadhaar card to redo verification — tells the backend
   /// to bypass its already-approved idempotency short-circuit (see
   /// `KYCService._initiate_aadhaar_kyc`'s `allow_reverify` param).
+  ///
+  /// [panName]/[panNumber] — typed alongside Aadhaar's fields on the same
+  /// KYC screen (see kyc_screen.dart's `_buildPanInputFields`), sent under
+  /// distinct `pan_name`/`pan_number` keys (`name` above is already Aadhaar's
+  /// own full name). `pan_number` is a registered sensitive field (see
+  /// `AppConfig.sensitiveFields`) so `_uploadAadhaar`'s existing encryption
+  /// pass covers it automatically. NOTE: as of this change the backend does
+  /// not yet cross-check these against DigiLocker's own fetched PAN — that
+  /// is separate, not-yet-built backend work; these are sent through now so
+  /// the wiring is in place ahead of it.
   Future<Map<String, dynamic>> initiateAadhaar({
     required String requestFrom,
     required String aadhaarNumber,
     required String fullName,
+    String? panName,
+    String? panNumber,
     bool allowReverify = false,
   }) {
     return _uploadAadhaar(
       requestFrom: requestFrom,
       fields: {
-        'aadhaar_number': aadhaarNumber,
-        'name': fullName,
+        // Omitted (not sent as '') when blank — a PAN-only reverify for a
+        // customer already Aadhaar-APPROVED can call this with no Aadhaar
+        // number/name at all; the backend resolves them from the existing
+        // approved record when allow_reverify is set (see
+        // KYCService._initiate_aadhaar_kyc). Sending '' instead of omitting
+        // would also needlessly RSA-encrypt an empty string via
+        // EncryptionService.encryptJson, which only skips null values.
+        if (aadhaarNumber.isNotEmpty) 'aadhaar_number': aadhaarNumber,
+        if (fullName.isNotEmpty) 'name': fullName,
+        if (panName != null && panName.isNotEmpty) 'pan_name': panName,
+        if (panNumber != null && panNumber.isNotEmpty) 'pan_number': panNumber,
         if (allowReverify) 'allow_reverify': true,
       },
     );

@@ -362,6 +362,11 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
     String requestFrom, {
     required String aadhaarNumber,
     required String fullName,
+    // Typed alongside Aadhaar's fields on the same KYC screen (see
+    // kyc_screen.dart's _buildPanInputFields) — sent through to the SAME
+    // DigiLocker initiate call rather than PAN having a separate consent.
+    String? panName,
+    String? panNumber,
     bool allowReverify = false,
   }) async {
     state = state.copyWith(phase: AadhaarPhase.initiating, message: null);
@@ -370,6 +375,8 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         requestFrom: requestFrom,
         aadhaarNumber: aadhaarNumber,
         fullName: fullName,
+        panName: panName,
+        panNumber: panNumber,
         allowReverify: allowReverify,
       );
       // See the identical guard in pollUntilTerminal — this notifier can be

@@ -312,15 +312,40 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
             colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
           ).createShader(bounds),
           blendMode: BlendMode.srcIn,
-          child: Text(
-            widget.offer.offerName.toUpperCase(),
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 17.sp,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: 0.8,
-            ),
-          ),
+          child: Builder(builder: (_) {
+            // Playfair Display's digit glyphs sit at a different optical
+            // size/weight than its uppercase letters at the same fontSize
+            // (e.g. "100" looks bigger/bolder than "DAY GRAND LAUNCH
+            // OFFER") — same fix already used for the date-range text
+            // above: numbers in Lora, letters in Playfair Display, both at
+            // the same fontSize/weight so they read as one balanced line.
+            final nameParts = _splitTextAndNumbers(
+              widget.offer.offerName.toUpperCase(),
+            );
+            return RichText(
+              text: TextSpan(
+                children: nameParts.map((part) {
+                  final isNum = RegExp(r'^\d+$').hasMatch(part);
+                  return TextSpan(
+                    text: part,
+                    style: isNum
+                        ? GoogleFonts.lora(
+                            fontSize: 17.sp,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.8,
+                          )
+                        : GoogleFonts.playfairDisplay(
+                            fontSize: 17.sp,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.8,
+                          ),
+                  );
+                }).toList(),
+              ),
+            );
+          }),
         ),
       ],
     );

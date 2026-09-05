@@ -28,6 +28,8 @@ import '../features/withdrawal/screens/withdrawal_confirmation_screen.dart';
 import '../features/withdrawal/screens/upi_selection_screen.dart';
 import '../features/withdrawal/screens/withdrawal_success_screen.dart';
 import '../features/kyc/screens/kyc_screen.dart' as dynamic_kyc;
+import '../features/kyc/screens/kyc_verification_screen.dart';
+import '../features/kyc/screens/kyc_id_verification_screen.dart';
 import '../features/kyc/widgets/aadhaar_digilocker_webview.dart';
 import '../features/kyc/widgets/digilocker_sdk_screen.dart';
 import '../features/kyc/widgets/meon_digilocker_sdk_screen.dart';
@@ -69,7 +71,8 @@ class AppRouter {
   static const String login = '/login';
   static const String otp = '/otp';
   static const String mpin = '/mpin';
-  static const String kyc = '/kyc';
+  static const String kycVerification = '/kyc-verification';
+  static const String kycIdVerification = '/kyc-id-verification';
   static const String panVerification = '/pan-verification';
   static const String aadhaarVerification = '/aadhaar-verification';
   static const String digilockerSdk = '/digilocker-sdk';
@@ -147,13 +150,22 @@ class AppRouter {
         },
         mpin: (context) => const MpinScreen(),
         changeMpin: (context) => const ChangeMpinScreen(),
-        kyc: (context) {
+        kycVerification: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??
               {};
-          return dynamic_kyc.KycScreen(
+          return KycVerificationScreen(
             requestFrom: args['request_from'] ?? 'instant',
             extraData: args,
+            popWhenIdVerified: args['pop_when_id_verified'] == true,
+          );
+        },
+        kycIdVerification: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>? ??
+              {};
+          return KycIdVerificationScreen(
+            requestFrom: args['request_from'] ?? 'instant',
           );
         },
         panVerification: (context) => const PanVerificationScreen(),

@@ -210,7 +210,7 @@ Future<void> showAddBankAccountSheet(
                         Navigator.pop(sheetCtx);
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (context.mounted) {
-                            Navigator.pushNamed(context, AppRouter.kyc);
+                            Navigator.pushNamed(context, AppRouter.kycVerification);
                           }
                         });
                       },
