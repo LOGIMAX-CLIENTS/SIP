@@ -388,6 +388,36 @@ class KycRepository {
   /// "resolve without a typed value" fallback path can't work until that's
   /// fixed. Callers must treat this as best-effort (catch and ignore) so it
   /// stays dormant rather than blocking the dialog's save action.
+  /// GET kyc/verification-status — the persisted (not live-session) status
+  /// for every KYC/bank capability, keyed off CustomerVerificationStatus:
+  /// digilocker_aadhaar, digilocker_pan, bank_account, reverse_penny_drop,
+  /// aadhaar_pan_link, pan_bank_link, profile_name_pan_name_match,
+  /// profile_dob_pan_dob_match. Each entry is
+  /// `{status, is_mandatory?, match_score?, verified_on?, gateway?}`, status
+  /// one of NOT_STARTED | PENDING | VERIFIED | FAILED | LINKED | NOT_LINKED
+  /// | MATCHED | NOT_MATCHED. Used by the KYC checklist screen's PAN-Aadhaar
+  /// Link and PAN-Bank Link steps so they still show the real result after
+  /// navigating away/reopening the app, not just within the live session
+  /// that just ran the check. Read-only — never calls a gateway, so this
+  /// can't fail due to a provider being down; a missing row just means
+  /// NOT_STARTED.
+  ///
+  /// NOTE: aadhaar_pan_link/pan_bank_link only get written at all when their
+  /// VerificationGatewayRouting row has vgr_is_mandatory=1 — otherwise the
+  /// check still runs live (aadhaar_pan_link) or is skipped by the provider
+  /// call itself (pan_bank_link), but the result is deliberately never
+  /// persisted here (see kyc.py/bank_verification_surepass.py). Both entries
+  /// stay `{status: "NOT_STARTED"}` until that's configured.
+  Future<Map<String, dynamic>> getVerificationStatus() async {
+    final response = await _apiClient.get('kyc/verification-status');
+    if (response.data['success'] == true) {
+      final data = response.data['data'];
+      final verifications = data is Map ? data['verifications'] : null;
+      return verifications is Map<String, dynamic> ? verifications : <String, dynamic>{};
+    }
+    throw Exception(response.data['message'] ?? 'Could not load verification status.');
+  }
+
   Future<void> updateProfileDob({required String source, String? dob}) async {
     final response = await _apiClient.post('kyc/update-profile-dob', data: {
       'source': source,

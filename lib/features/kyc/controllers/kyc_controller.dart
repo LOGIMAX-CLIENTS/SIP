@@ -16,6 +16,20 @@ final kycDocumentsProvider = FutureProvider.autoDispose.family<KycDocumentsResul
   );
 });
 
+/// Persisted (not live-session) KYC/bank verification status — see
+/// KycRepository.getVerificationStatus's docstring for the full key list
+/// and NOT_STARTED-by-default caveat for aadhaar_pan_link/pan_bank_link.
+/// autoDispose + not `.family` (no per-request-from variant needed, it's
+/// the same customer-wide status regardless of which flow opened the
+/// checklist) — callers `ref.invalidate` this after an action that could
+/// change it (a PAN-Aadhaar retry, a PAN-Bank Link check).
+final verificationStatusProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  final userId = ref.watch(userProvider.select((u) => u?.id));
+  if (userId == null) throw Exception('User not logged in');
+  return ref.read(kycRepositoryProvider).getVerificationStatus();
+});
+
 final kycSubmitProvider = StateNotifierProvider<KycSubmitController, AsyncValue<bool>>((ref) {
   return KycSubmitController(ref.read(kycRepositoryProvider), ref);
 });

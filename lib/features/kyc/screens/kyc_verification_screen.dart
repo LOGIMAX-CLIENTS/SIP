@@ -61,6 +61,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
   bool _defaultExpansionSet = false;
   int? _lastActiveIndex;
   bool _poppedForIdVerified = false;
+  bool _checkingPanBankLink = false;
 
   @override
   void initState() {
@@ -76,6 +77,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     final bankAccountsAsync = ref.watch(bankAccountsProvider);
     final bavHistoryAsync = ref.watch(bavHistoryProvider);
     final rpdHistoryAsync = ref.watch(rpdHistoryProvider);
+    final verificationStatusAsync = ref.watch(verificationStatusProvider);
     final profileName = ref.watch(pc.profileProvider).user.name;
 
     return PopScope(
@@ -100,6 +102,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                 bankAccounts: bankAccountsAsync.valueOrNull,
                 bavHistory: bavHistoryAsync.valueOrNull,
                 rpdHistory: rpdHistoryAsync.valueOrNull,
+                verificationStatus: verificationStatusAsync.valueOrNull,
                 bankDataLoading: bankAccountsAsync.isLoading || bavHistoryAsync.isLoading,
                 profileName: profileName,
               );
@@ -117,6 +120,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     required List<BankAccount>? bankAccounts,
     required List<BavHistoryItem>? bavHistory,
     required List<RpdHistoryItem>? rpdHistory,
+    required Map<String, dynamic>? verificationStatus,
     required bool bankDataLoading,
     required String profileName,
   }) {
@@ -185,8 +189,14 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       step2Pill = 'Pending';
     }
 
-    // Step 3: PAN-Aadhaar Link (derived, live-session only)
+    // Step 3: PAN-Aadhaar Link — the live-session field (freshest, from the
+    // verify call that just ran) takes priority; falls back to the
+    // persisted CustomerVerificationStatus mirror so the real result still
+    // shows after navigating away or reopening the app, not just within
+    // the session that ran the check. See verificationStatusProvider's
+    // docstring for the vgr_is_mandatory=1 prerequisite that mirror needs.
     final bothIdVerified = panDone && aadhaarDone;
+    final persistedPanAadhaarLink = (verificationStatus?['aadhaar_pan_link'] as Map?)?['status'] as String?;
     KycStepStatus step3Status;
     String step3Pill;
     String step3Subtitle;
@@ -194,14 +204,14 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       step3Status = KycStepStatus.locked;
       step3Pill = 'Locked';
       step3Subtitle = 'Unlocks once PAN and Aadhaar are verified';
-    } else if (aadhaarState.aadhaarPanLinked == true) {
+    } else if (aadhaarState.aadhaarPanLinked == true || persistedPanAadhaarLink == 'LINKED') {
       step3Status = KycStepStatus.verified;
       step3Pill = 'Verified';
       step3Subtitle = 'Linked as per Income Tax records';
-    } else if (aadhaarState.aadhaarPanLinked == false) {
+    } else if (aadhaarState.aadhaarPanLinked == false || persistedPanAadhaarLink == 'NOT_LINKED') {
       step3Status = KycStepStatus.failed;
       step3Pill = 'Not Linked';
-      step3Subtitle = 'Not linked as per Income Tax records';
+      step3Subtitle = 'Not linked as per Income Tax records. You can retry to refresh this.';
     } else {
       step3Status = KycStepStatus.underReview;
       step3Pill = 'Pending';
@@ -251,7 +261,23 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       step5Subtitle = 'Penny-less — no debit from your account';
     }
 
-    // Step 6: PAN-Bank Link (derived — server-side inside BAV, no separate call)
+    // Resolved early — Step 6's retry action needs it too, not just Step 7.
+    final primaryAccounts = (bankAccounts ?? const <BankAccount>[]).where((a) => a.isPrimary);
+    final fallbackCbankId = primaryAccounts.isEmpty ? null : primaryAccounts.first.idBank;
+    final cbankId = latestBav?.cbankId ?? fallbackCbankId;
+
+    // Step 6: PAN-Bank Link — a REAL, separate provider check
+    // (BankVerificationSurePassService.verify_pan_account_linkage), not
+    // Bank Account Verification's own beneficiary-name match (that's step
+    // 5's own concern) — previously this step incorrectly reused
+    // latestBav.nameMatched under a different label. Read from the
+    // persisted CustomerVerificationStatus mirror; see
+    // verificationStatusProvider's docstring for the vgr_is_mandatory=1
+    // prerequisite this needs to ever leave NOT_STARTED. Runs
+    // automatically right after a successful BAV (see
+    // BankAccountService.check_pan_account_linkage), but the customer can
+    // also retry it directly here — see _buildStep6Detail.
+    final persistedPanBankLink = (verificationStatus?['pan_bank_link'] as Map?)?['status'] as String?;
     KycStepStatus step6Status;
     String step6Pill;
     String step6Subtitle;
@@ -259,24 +285,21 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       step6Status = KycStepStatus.locked;
       step6Pill = 'Locked';
       step6Subtitle = 'Runs automatically once bank verification clears';
-    } else if (latestBav?.nameMatched == true) {
+    } else if (persistedPanBankLink == 'LINKED') {
       step6Status = KycStepStatus.verified;
       step6Pill = 'Verified';
-      step6Subtitle = 'Bank beneficiary name matches your profile';
-    } else if (latestBav?.nameMatched == false) {
+      step6Subtitle = 'Your PAN is linked to this bank account';
+    } else if (persistedPanBankLink == 'NOT_LINKED') {
       step6Status = KycStepStatus.failed;
-      step6Pill = 'Mismatch';
-      step6Subtitle = 'Bank beneficiary name did not match your profile';
+      step6Pill = 'Not Linked';
+      step6Subtitle = 'Your PAN does not appear to be linked to this bank account';
     } else {
-      step6Status = KycStepStatus.underReview;
-      step6Pill = 'Pending';
-      step6Subtitle = 'Waiting for the bank name-match result';
+      step6Status = KycStepStatus.actionable;
+      step6Pill = persistedPanBankLink == 'PENDING' ? 'Retry' : 'Check Now';
+      step6Subtitle = 'Check whether your PAN is linked to this bank account';
     }
 
     // Step 7: Reverse Penny Drop (RPD)
-    final primaryAccounts = (bankAccounts ?? const <BankAccount>[]).where((a) => a.isPrimary);
-    final fallbackCbankId = primaryAccounts.isEmpty ? null : primaryAccounts.first.idBank;
-    final cbankId = latestBav?.cbankId ?? fallbackCbankId;
     final sortedRpd = (rpdHistory ?? const <RpdHistoryItem>[]).where((r) => cbankId != null && r.cbankId == cbankId).toList()
       ..sort((a, b) => (b.createdOn ?? DateTime(0)).compareTo(a.createdOn ?? DateTime(0)));
     final latestRpd = sortedRpd.isEmpty ? null : sortedRpd.first;
@@ -388,7 +411,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                       expanded: _expanded.contains(3),
                       onToggle: () => setState(() => _toggle(3)),
                       lockedHint: step3Status == KycStepStatus.locked ? step3Subtitle : null,
-                      detail: _buildDerivedDetail(isDark, step3Status, step3Subtitle),
+                      detail: _buildStep3Detail(isDark, step3Status, step3Subtitle),
                     ),
                     KycStepRow(
                       index: 4,
@@ -421,7 +444,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                       expanded: _expanded.contains(6),
                       onToggle: () => setState(() => _toggle(6)),
                       lockedHint: step6Status == KycStepStatus.locked ? step6Subtitle : null,
-                      detail: _buildDerivedDetail(isDark, step6Status, step6Subtitle),
+                      detail: _buildStep6Detail(isDark, step6Status, step6Subtitle, cbankId),
                     ),
                     KycStepRow(
                       index: 7,
@@ -544,6 +567,72 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     );
   }
 
+  /// Same info-banner look as [_buildDerivedDetail] (this step still has no
+  /// action of its OWN — see class doc comment), plus a Retry button when
+  /// the link check came back negative. Retrying means redoing the
+  /// DigiLocker PAN fetch (there is no narrower provider call left — see
+  /// KYCService kyc.py's comment on why the old dedicated pan-to-aadhaar
+  /// endpoint was removed), so this navigates to [KycIdVerificationScreen]
+  /// the same way Steps 1/2 already do, where a "Refresh Link Status"
+  /// action is available on the PAN card once PAN shows Verified.
+  Widget _buildStep3Detail(bool isDark, KycStepStatus status, String message) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildDerivedDetail(isDark, status, message),
+        if (status == KycStepStatus.failed) ...[
+          SizedBox(height: 12.h),
+          CustomButton(
+            text: 'Retry PAN-Aadhaar Link',
+            svgIconPath: 'assets/buttons/tick.svg',
+            onPressed: () => _openIdVerificationScreen(),
+            gradient: AppTheme.greenGradient,
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Unlike step 3, this has a real, independently-callable backend check
+  /// (PanBankLinkView) — the button here directly retries it in place,
+  /// no navigation needed.
+  Widget _buildStep6Detail(bool isDark, KycStepStatus status, String message, String? cbankId) {
+    if (status == KycStepStatus.verified) {
+      return const KycVerifiedBanner();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildDerivedDetail(isDark, status, message),
+        SizedBox(height: 12.h),
+        CustomButton(
+          text: status == KycStepStatus.failed ? 'Retry PAN-Bank Link' : 'Check PAN-Bank Link',
+          svgIconPath: 'assets/buttons/tick.svg',
+          isLoading: _checkingPanBankLink,
+          onPressed: cbankId == null ? null : () => _checkPanBankLink(cbankId),
+          gradient: AppTheme.greenGradient,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _checkPanBankLink(String cbankId) async {
+    setState(() => _checkingPanBankLink = true);
+    try {
+      await ref.read(bankVerificationHistoryServiceProvider).checkPanBankLink(cbankId: cbankId);
+      ref.invalidate(verificationStatusProvider);
+      if (mounted) {
+        AppToast.show(context, 'PAN-Bank account linkage checked.', type: ToastType.success);
+      }
+    } catch (e) {
+      if (mounted) {
+        AppToast.show(context, e.toString().replaceFirst('Exception: ', ''), type: ToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _checkingPanBankLink = false);
+    }
+  }
+
   Widget _buildStep7Detail(bool isDark, KycStepStatus status, String? cbankId) {
     if (status == KycStepStatus.verified) {
       return const KycVerifiedBanner();
@@ -595,9 +684,16 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       AppRouter.kycIdVerification,
       arguments: {'request_from': widget.requestFrom},
     );
-    if (result == true && mounted) {
+    if (!mounted) return;
+    if (result == true) {
       ref.invalidate(kycDocumentsProvider(widget.requestFrom));
     }
+    // Always refreshed, not just on result == true: a "Refresh Link Status"
+    // PAN-only re-verify (see kyc_id_verification_screen.dart's PAN card)
+    // doesn't necessarily pop with true the way a first-time step
+    // completion does, but it can still change the persisted
+    // aadhaar_pan_link status this screen's Step 3 reads.
+    ref.invalidate(verificationStatusProvider);
   }
 
   Widget _buildFooterCta(int? activeIndex, bool panSkippedInConsent, String? cbankId) {

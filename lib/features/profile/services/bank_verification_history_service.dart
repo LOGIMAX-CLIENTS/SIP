@@ -39,6 +39,32 @@ class BankVerificationHistoryService {
     }
     return [];
   }
+
+  /// POST account/verify-bank/pan-link — check (or retry) whether the
+  /// customer's own already-verified PAN is linked to [cbankId], an
+  /// already-BAV-verified bank account. Uses the PAN on file server-side;
+  /// the client never sends a PAN value (see PanBankLinkView's docstring).
+  /// Returns `data` — `{linked, full_name, account_type, account_nature,
+  /// account_holder}` — on success; throws with the server's specific
+  /// reason on failure (e.g. "not currently required", "must pass BAV
+  /// verification first", "Complete your PAN verification...").
+  Future<Map<String, dynamic>> checkPanBankLink({required String cbankId}) async {
+    final response = await _apiClient.post('account/verify-bank/pan-link', data: {
+      'cbank_id': cbankId,
+    });
+
+    final data = response.data['data'];
+    if (response.data['success'] == true) {
+      return data is Map<String, dynamic> ? data : <String, dynamic>{};
+    }
+
+    final errorObj = response.data['error'];
+    final String serverMessage = (errorObj is Map ? errorObj['message'] : null) ??
+        (data is Map ? data['message'] : null) ??
+        response.data['message'] ??
+        'Could not check PAN-Bank account linkage.';
+    throw Exception(serverMessage);
+  }
 }
 
 final bankVerificationHistoryServiceProvider =
