@@ -38,14 +38,42 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   bool _isPincodeChecking = false;
   bool _isVerifyingEmail = false;
   String? _emailError;
-  bool _isPincodeValid = true;
 
-  // Returns true only when all mandatory fields have content
+  // Verified baselines.
+  // A pincode / e-mail counts as verified only while it EXACTLY matches the
+  // value that was confirmed - either the value already on file (loaded from
+  // the profile, so it was validated when it was saved) or one the customer
+  // confirmed in this session via 'Check' / 'Verify'. Editing the field away
+  // from that value invalidates it and Save disables again.
+  // Empty string = nothing confirmed yet.
+  String _verifiedPincode = '';
+  String _verifiedEmail = '';
+
+  /// True only when the pincode in the box is 6 digits AND confirmed.
+  bool get _isPincodeConfirmed {
+    final pincode = _pincodeController.text.trim();
+    return pincode.length == 6 && pincode == _verifiedPincode;
+  }
+
+  /// True only when the e-mail in the box is well-formed AND confirmed.
+  bool get _isEmailConfirmed {
+    final email = _emailController.text.trim().toLowerCase();
+    if (email.isEmpty || Validators.validateEmail(email) != null) return false;
+    return email == _verifiedEmail;
+  }
+
+  /// Adopts whatever the server currently reports as confirmed for this
+  /// customer, so an untouched profile does not force a needless re-check.
+  void _syncVerifiedBaseline(UserProfile user) {
+    _verifiedPincode = user.pincode.trim();
+    _verifiedEmail = user.isEmailVerified ? user.email.trim().toLowerCase() : '';
+  }
+
+  // Save needs every mandatory field filled AND both the pincode and the
+  // e-mail confirmed.
   bool get _canSave {
     final firstName = _firstNameController.text.trim();
-    final email = _emailController.text.trim();
-    final pincode = _pincodeController.text.trim();
-    return firstName.isNotEmpty && email.isNotEmpty && pincode.length == 6 && _isPincodeValid;
+    return firstName.isNotEmpty && _isEmailConfirmed && _isPincodeConfirmed;
   }
 
   @override
@@ -60,6 +88,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     _stateController = TextEditingController(text: user.state);
     _cityController = TextEditingController(text: user.city);
     _addressController = TextEditingController(text: user.address);
+    _syncVerifiedBaseline(user);
 
     // Rebuild whenever mandatory fields change so Save button reacts live
     _firstNameController.addListener(() => setState(() {}));
@@ -83,6 +112,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         _stateController.text = updated.state;
         _cityController.text = updated.city;
         _addressController.text = updated.address;
+        setState(() => _syncVerifiedBaseline(updated));
       });
     });
   }
@@ -112,7 +142,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     setState(() => _isPincodeChecking = false);
     if (result['success'] == true) {
       final data = result['data'] as Map<String, dynamic>;
-      setState(() => _isPincodeValid = true);
+      setState(() => _verifiedPincode = _pincodeController.text.trim());
       _stateController.text = data['state'] ?? '';
       _cityController.text = data['city'] ?? '';
       ref.read(profileProvider.notifier).updateLocationInfo(
@@ -124,7 +154,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
           );
     } else {
       setState(() {
-        _isPincodeValid = false;
+        _verifiedPincode = '';
         _stateController.text = '';
         _cityController.text = '';
       });
@@ -170,6 +200,9 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     );
 
     if (verified == true && mounted) {
+      // Record it locally first: the customer may have just verified a NEW
+      // address, so do not make Save wait on what the refetch reports.
+      setState(() => _verifiedEmail = email.toLowerCase());
       await ref.read(profileProvider.notifier).fetchProfileDetails();
       if (mounted) {
         AppToast.show(context, 'E-mail verified successfully', type: ToastType.success);
@@ -198,6 +231,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       return;
     }
     setState(() => _emailError = null);
+    if (!_isEmailConfirmed) {
+      AppToast.show(context, 'Please verify your e-mail before saving', type: ToastType.error);
+      return;
+    }
 
     // â”€â”€ Validate Pincode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final pincode = _pincodeController.text.trim();
@@ -207,6 +244,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     }
     if (pincode.length != 6) {
       AppToast.show(context, 'Please enter a valid 6-digit pincode', type: ToastType.error);
+      return;
+    }
+    if (!_isPincodeConfirmed) {
+      AppToast.show(context, 'Please tap Check to verify your pincode', type: ToastType.error);
       return;
     }
 
@@ -255,6 +296,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         _stateController.text = next.user.state;
         _cityController.text = next.user.city;
         _addressController.text = next.user.address;
+        _syncVerifiedBaseline(next.user);
       }
     });
 
@@ -335,7 +377,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                         _buildInputField(label: 'Phone Number *', hint: MaskingUtils.maskMobile(user.phone), isEditable: false, isDark: isDark, isNumeric: true),
                         _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, labelAction: _buildEmailVerifyBadge(user, isDark)),
                         _buildInputField(label: 'DOB *', hint: user.dob, isEditable: false, isDark: isDark, isNumeric: true),
-                        _buildInputField(label: 'Pincode *', controller: _pincodeController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)], actionLabel: 'Check', onAction: _handlePincodeCheck, isActionLoading: _isPincodeChecking, onChanged: (_) { if (!_isPincodeValid) setState(() => _isPincodeValid = true); }, isNumeric: true),
+                        _buildInputField(label: 'Pincode *', controller: _pincodeController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)], actionLabel: 'Check', onAction: _handlePincodeCheck, isActionLoading: _isPincodeChecking, isNumeric: true),
                         if (_stateController.text.isNotEmpty)
                           _buildInputField(label: 'State', controller: _stateController, isEditable: false, isDark: isDark),
                         if (_cityController.text.isNotEmpty)
@@ -414,9 +456,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     if (currentInput.isEmpty || Validators.validateEmail(currentInput) != null) {
       return const SizedBox.shrink();
     }
-    final onFileEmail = user.email.trim().toLowerCase();
-
-    if (currentInput == onFileEmail && user.isEmailVerified) {
+    // Same predicate the Save gate uses, so the badge can never say 'Verify'
+    // while Save is enabled (or the reverse) - it covers both the already
+    // verified on-file address and one verified in this session.
+    if (_isEmailConfirmed) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [

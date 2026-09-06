@@ -53,7 +53,20 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
   bool _isSaving = false;
   bool _isInitialized = false;
   bool _isPincodeChecking = false;
-  bool _isPincodeValid = true;
+
+  // The pincode value confirmed by 'Check' - or the one already on file for
+  // an existing nominee, which was validated when it was saved. Typing away
+  // from it invalidates the confirmation. Empty = nothing confirmed.
+  String _verifiedPincode = '';
+
+  /// Pincode is OPTIONAL on this form: leaving it blank is fine. But once the
+  /// customer types one it must be 6 digits AND confirmed via 'Check' before
+  /// the nominee can be saved.
+  bool get _isPincodeConfirmed {
+    final pincode = _pincodeCtrl.text.trim();
+    if (pincode.isEmpty) return true;
+    return pincode.length == 6 && pincode == _verifiedPincode;
+  }
 
   // Location IDs from pincode check or existing data
   int? _idCity;
@@ -103,6 +116,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _cityCtrl.text = nominee.city ?? '';
     _stateCtrl.text = nominee.state ?? '';
     _pincodeCtrl.text = nominee.pincode ?? '';
+    _verifiedPincode = (nominee.pincode ?? '').trim();
     _selectedRelationship =
         nominee.relationship.isNotEmpty ? nominee.relationship : null;
     _selectedRelationshipId = nominee.relationshipId;
@@ -130,6 +144,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _cityCtrl.clear();
     _stateCtrl.clear();
     _pincodeCtrl.clear();
+    _verifiedPincode = '';
     _selectedRelationship = null;
     _selectedRelationshipId = null;
     _selectedIdType = null;
@@ -515,11 +530,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 actionLabel: 'Check',
                 onAction: _handlePincodeCheck,
                 isActionLoading: _isPincodeChecking,
-                onChanged: (_) {
-                  if (!_isPincodeValid) {
-                    setState(() => _isPincodeValid = true);
-                  }
-                },
+                onChanged: (_) => setState(() {}),
                 validator: (v) {
                   if (v != null && v.isNotEmpty && v.length != 6) {
                     return 'Enter valid 6-digit pincode';
@@ -571,7 +582,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 svgIconPath: 'assets/buttons/folder-add.svg',
                 isLoading: _isSaving,
                 loadingText: 'Saving...',
-                onPressed: (_isSaving || !_isPincodeValid) ? null : _handleSubmit,
+                onPressed: (_isSaving || !_isPincodeConfirmed) ? null : _handleSubmit,
                 gradient: const LinearGradient(
                   colors: [Color(0xFF003716), Color(0xFF167525)],
                 ),
@@ -1081,11 +1092,16 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
 
     // Pincode is optional, but if the customer started typing one it must be
     // complete — otherwise an untouched/never-"Check"ed partial pincode
-    // (e.g. "123") would silently save with the nominee record, since
-    // _isPincodeValid only ever flips false when Check is explicitly run.
+    // (e.g. "123") would silently save with the nominee record. It must also
+    // be confirmed via Check - that is what _isPincodeConfirmed enforces.
     final pincode = _pincodeCtrl.text.trim();
     if (pincode.isNotEmpty && pincode.length != 6) {
       AppToast.show(context, 'Enter a valid 6-digit pincode', type: ToastType.error);
+      return;
+    }
+    if (!_isPincodeConfirmed) {
+      AppToast.show(context, 'Please tap Check to verify the pincode',
+          type: ToastType.error);
       return;
     }
 
@@ -1232,7 +1248,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     if (result['success'] == true) {
       final data = result['data'] as Map<String, dynamic>;
       setState(() {
-        _isPincodeValid = true;
+        _verifiedPincode = pincode;
         _stateCtrl.text = data['state'] ?? '';
         _cityCtrl.text = data['city'] ?? '';
         _idCity = int.tryParse(data['id_city'] ?? '');
@@ -1241,7 +1257,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
       });
     } else {
       setState(() {
-        _isPincodeValid = false;
+        _verifiedPincode = '';
         _stateCtrl.text = '';
         _cityCtrl.text = '';
       });
