@@ -78,9 +78,11 @@ class PortfolioNotifier extends StateNotifier<AsyncValue<PortfolioData>> {
     try {
       final data =
           await _portfolioService.getPortfolioSummary(_idMetal, _idCustomer);
+      if (!mounted) return;
       _portfolioCache[_idMetal] = data;
       state = AsyncValue.data(data);
     } catch (e, st) {
+      if (!mounted) return;
       // If we had previous data, keep it visible with the error
       if (prev != null) {
         state = AsyncValue.data(prev);
