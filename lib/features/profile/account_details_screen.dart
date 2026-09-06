@@ -119,10 +119,11 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
 
   @override
   void dispose() {
-    // Reset editing state so it doesn't persist when navigating away
-    Future.microtask(() {
-      ref.read(profileProvider.notifier).setEditing(false);
-    });
+    // Reset editing state so it doesn't persist when navigating away.
+    // Resolve the notifier NOW: `ref` belongs to this widget and must not be
+    // touched from the microtask, which runs after dispose() has returned.
+    final profile = ref.read(profileProvider.notifier);
+    Future.microtask(() => profile.setEditing(false));
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();

@@ -146,7 +146,12 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
             idCity: '',
           ),
         )) {
-    fetchProfileDetails();
+    // The watched customer id is empty until auth resolves. Fetching then
+    // both wastes a round trip on `id_customer: ''` and lands its reply on
+    // this notifier after the id arrives and the provider replaces it.
+    if (_customerId.isNotEmpty) {
+      fetchProfileDetails();
+    }
   }
 
   /// Safely parse nullable API fields.
@@ -159,9 +164,15 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   }
 
   Future<void> fetchProfileDetails() async {
+    if (!mounted) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final data = await _profileService.getProfileDetails(_customerId);
+      // This provider is rebuilt whenever the watched customer id changes
+      // (login / logout), which disposes this notifier. A request already in
+      // flight still completes here, and writing `state` on a disposed
+      // notifier throws, so bail out instead.
+      if (!mounted) return;
       if (data != null) {
         state = state.copyWith(
           user: UserProfile(
@@ -194,11 +205,13 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         state = state.copyWith(isLoading: false);
       }
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(isLoading: false, error: 'Failed to load profile');
     }
   }
 
   void setEditing(bool editing) {
+    if (!mounted) return;
     state = state.copyWith(isEditing: editing, error: null);
   }
 
@@ -235,6 +248,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     required String idState,
     required String idCity,
   }) {
+    if (!mounted) return;
     state = state.copyWith(
       user: state.user.copyWith(
         state: stateVal,
@@ -273,6 +287,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         idState: state.user.idState,
         idCity: state.user.idCity,
       );
+      if (!mounted) return result['success'] == true;
 
       if (result['success'] == true) {
         // A verification stamp belongs to the mailbox it verified — mirrors
@@ -307,6 +322,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         return false;
       }
     } catch (e) {
+      if (!mounted) return false;
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to update profile. Please try again.',
@@ -323,16 +339,19 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         photo: photo,
         customerId: state.user.id,
       );
+      if (!mounted) return success;
 
       if (success) {
         // Re-fetch profile to get the updated photo_url from server
         await fetchProfileDetails();
+        if (!mounted) return true;
         state = state.copyWith(isPhotoLoading: false);
         return true;
       } else {
         throw Exception('Upload failed');
       }
     } catch (e) {
+      if (!mounted) return false;
       state = state.copyWith(
         isPhotoLoading: false,
         error: 'Failed to upload photo. Please try again.',
