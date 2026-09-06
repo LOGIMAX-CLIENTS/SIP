@@ -139,61 +139,66 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
             SizedBox(height: 14.h),
 
             // Ã¢â€â‚¬Ã¢â€â‚¬ Date Range with decorative gradient lines Ã¢â€â‚¬Ã¢â€â‚¬
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Left gradient line (fades from left)
-                Container(
-                  width: 56.w,
-                  height: 1,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFFFFF1CF), Color(0xFFDE6A02)],
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24.w),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Left gradient line (fades from left)
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFFFF1CF), Color(0xFFDE6A02)],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                SizedBox(width: 12.w),
-                // Date text
-                Builder(builder: (_) {
-                  final dateParts = _splitTextAndNumbers(
-                    '${widget.offer.offerStartDate} \u2013 ${widget.offer.offerEndDate}',
-                  );
-                  return RichText(
-                    text: TextSpan(
-                      children: dateParts.map((part) {
-                        final isNum = RegExp(r'^\d+$').hasMatch(part);
-                        return TextSpan(
-                          text: part,
-                          style: isNum
-                              ? GoogleFonts.lora(
-                                  fontSize: 18.sp,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFFDE6A02),
-                                  letterSpacing: 0.8,
-                                )
-                              : GoogleFonts.playfairDisplay(
-                                  fontSize: 18.sp,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFFDE6A02),
-                                  letterSpacing: 0.8,
-                                ),
-                        );
-                      }).toList(),
-                    ),
-                  );
-                }),
-                SizedBox(width: 12.w),
-                // Right gradient line (fades to right)
-                Container(
-                  width: 56.w,
-                  height: 1,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFFDE6A02), Color(0xFFFFF1CF)],
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10.w),
+                    child: Builder(builder: (_) {
+                      final dateParts = _splitTextAndNumbers(
+                        '${widget.offer.offerStartDate} \u2013 ${widget.offer.offerEndDate}',
+                      );
+                      return RichText(
+                        text: TextSpan(
+                          children: dateParts.map((part) {
+                            final isNum = RegExp(r'^\d+$').hasMatch(part);
+                            return TextSpan(
+                              text: part,
+                              style: isNum
+                                  ? GoogleFonts.lora(
+                                      fontSize: 18.sp,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFFDE6A02),
+                                      letterSpacing: 0.8,
+                                    )
+                                  : GoogleFonts.playfairDisplay(
+                                      fontSize: 18.sp,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFFDE6A02),
+                                      letterSpacing: 0.8,
+                                    ),
+                            );
+                          }).toList(),
+                        ),
+                      );
+                    }),
+                  ),
+                  // Right gradient line (fades to right)
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFDE6A02), Color(0xFFFFF1CF)],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             SizedBox(height: 16.h),
 
@@ -304,48 +309,54 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
           width: 340.w,
           fit: BoxFit.contain,
         ),
-        // Text overlay Ã¢â‚¬â€ gold gradient via ShaderMask
-        ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            begin: Alignment(-0.98, -0.19),
-            end: Alignment(0.98, 0.19),
-            colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
-          ).createShader(bounds),
-          blendMode: BlendMode.srcIn,
-          child: Builder(builder: (_) {
-            // Playfair Display's digit glyphs sit at a different optical
-            // size/weight than its uppercase letters at the same fontSize
-            // (e.g. "100" looks bigger/bolder than "DAY GRAND LAUNCH
-            // OFFER") — same fix already used for the date-range text
-            // above: numbers in Lora, letters in Playfair Display, both at
-            // the same fontSize/weight so they read as one balanced line.
-            final nameParts = _splitTextAndNumbers(
-              widget.offer.offerName.toUpperCase(),
-            );
-            return RichText(
-              text: TextSpan(
-                children: nameParts.map((part) {
-                  final isNum = RegExp(r'^\d+$').hasMatch(part);
-                  return TextSpan(
-                    text: part,
-                    style: isNum
-                        ? GoogleFonts.lora(
-                            fontSize: 17.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.8,
-                          )
-                        : GoogleFonts.playfairDisplay(
-                            fontSize: 17.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.8,
-                          ),
-                  );
-                }).toList(),
-              ),
-            );
-          }),
+        // Text overlay — gold gradient via ShaderMask
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24.w),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                begin: Alignment(-0.98, -0.19),
+                end: Alignment(0.98, 0.19),
+                colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
+              ).createShader(bounds),
+              blendMode: BlendMode.srcIn,
+              child: Builder(builder: (_) {
+                // Playfair Display's digit glyphs sit at a different optical
+                // size/weight than its uppercase letters at the same fontSize
+                // (e.g. "100" looks bigger/bolder than "DAY GRAND LAUNCH
+                // OFFER") — same fix already used for the date-range text
+                // above: numbers in Lora, letters in Playfair Display, both at
+                // the same fontSize/weight so they read as one balanced line.
+                final nameParts = _splitTextAndNumbers(
+                  widget.offer.offerName.toUpperCase(),
+                );
+                return RichText(
+                  text: TextSpan(
+                    children: nameParts.map((part) {
+                      final isNum = RegExp(r'^\d+$').hasMatch(part);
+                      return TextSpan(
+                        text: part,
+                        style: isNum
+                            ? GoogleFonts.lora(
+                                fontSize: 17.sp,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.8,
+                              )
+                            : GoogleFonts.playfairDisplay(
+                                fontSize: 17.sp,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.8,
+                              ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              }),
+            ),
+          ),
         ),
       ],
     );
@@ -435,20 +446,23 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
     return Expanded(
       child: Column(
         children: [
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              begin: Alignment(-0.98, -0.19),
-              end: Alignment(0.98, 0.19),
-              colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
-            ).createShader(bounds),
-            blendMode: BlendMode.srcIn,
-            child: Text(
-              value,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.lora(
-                fontSize: 32.sp,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                begin: Alignment(-0.98, -0.19),
+                end: Alignment(0.98, 0.19),
+                colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
+              ).createShader(bounds),
+              blendMode: BlendMode.srcIn,
+              child: Text(
+                value,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.lora(
+                  fontSize: 32.sp,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
