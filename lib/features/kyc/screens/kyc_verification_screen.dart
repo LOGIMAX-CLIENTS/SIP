@@ -438,7 +438,14 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     // fires on top of a failed attempt (rpdStatus is `failed`, not
     // `actionable`, in that case) — a failed attempt shows its own Retry
     // action instead of being relaunched automatically.
-    if (rpdActive && rpdStatus == KycStepStatus.actionable && cbankId != null && _autoLaunchedRpdCbankId != cbankId) {
+    // Only when the customer came here to FINISH verification (a purchase,
+    // withdrawal or SIP gate sent them). Opening the checklist from Profile
+    // to look at it is not a request to start paying, and `actionable` only
+    // means "RPD can be done now" -- not "BAV just cleared" -- so from
+    // Profile this fired on every visit, for as long as RPD stayed
+    // NOT_STARTED.
+    final cameHereToFinish = widget.requestFrom != 'profile';
+    if (cameHereToFinish && rpdActive && rpdStatus == KycStepStatus.actionable && cbankId != null && _autoLaunchedRpdCbankId != cbankId) {
       _autoLaunchedRpdCbankId = cbankId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _startRpd(cbankId);
