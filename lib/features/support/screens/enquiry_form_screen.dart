@@ -158,7 +158,7 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
               SizedBox(height: 24.h),
 
               // ── Subject ────────────────────────────────────────────────
-              _buildSectionLabel('Subject'),
+              _buildSectionLabel('Subject *'),
               SizedBox(height: 10.h),
               _buildTextField(
                 controller: _subjectController,
@@ -170,7 +170,7 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
               SizedBox(height: 24.h),
 
               // ── Content / Message ──────────────────────────────────────
-              _buildSectionLabel('Message'),
+              _buildSectionLabel('Message *'),
               SizedBox(height: 10.h),
               _buildTextField(
                 controller: _contentController,
