@@ -866,9 +866,12 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
             status: rpdStatus,
             pillLabel: rpdPill,
             subtitle: rpdSubtitle,
+            // Kept short — the card's own title right above already says
+            // "Additional Verification"; repeating it here was too long to
+            // fit this narrow sub-item button and overflowed.
             actionLabel: rpdStatus == KycStepStatus.verified || rpdStatus == KycStepStatus.locked
                 ? null
-                : (rpdStatus == KycStepStatus.failed ? 'Retry Additional Verification' : 'Start Additional Verification'),
+                : (rpdStatus == KycStepStatus.failed ? 'Retry Verification' : 'Start Verification'),
             onAction: cbankId == null ? null : () => _startRpd(cbankId),
           ),
         ],

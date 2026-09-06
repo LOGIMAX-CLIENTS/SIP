@@ -97,13 +97,17 @@ class CustomButton extends StatelessWidget {
                       ),
                     ),
                     SizedBox(width: 12.w),
-                    Text(
-                      displayLoadingText,
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3,
-                        color: effectiveColor.withOpacity(0.9),
+                    Flexible(
+                      child: Text(
+                        displayLoadingText,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                          color: effectiveColor.withOpacity(0.9),
+                        ),
                       ),
                     ),
                   ],
@@ -125,11 +129,15 @@ class CustomButton extends StatelessWidget {
                       ),
                       SizedBox(width: 8.w),
                     ],
-                    Text(
-                      _toTitleCase(text),
-                      style: AppTextStyles.button(isDark).copyWith(
-                        letterSpacing: 0.5,
-                        color: effectiveColor,
+                    Flexible(
+                      child: Text(
+                        _toTitleCase(text),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: AppTextStyles.button(isDark).copyWith(
+                          letterSpacing: 0.5,
+                          color: effectiveColor,
+                        ),
                       ),
                     ),
                   ],
