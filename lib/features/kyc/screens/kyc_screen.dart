@@ -901,7 +901,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
     if (!mounted) return false;
     final currentName = ref.read(pc.profileProvider).user.name;
-    return currentName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
+    if (currentName.trim().toUpperCase() == verifiedName.trim().toUpperCase()) return true;
+    // One retry after a short pause before conceding "genuinely different" —
+    // this runs right after the OTHER document's mismatch-confirm write
+    // (_finalize_name_mismatch_confirmation) just landed on the primary DB a
+    // moment ago; a read hitting a replica that hasn't caught up yet would
+    // otherwise show this same "confirm your profile name" dialog a second
+    // time for a name that was already saved (see this method's own doc
+    // comment for why that's pure redundancy, not a genuine ask).
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return false;
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    if (!mounted) return false;
+    final retriedName = ref.read(pc.profileProvider).user.name;
+    return retriedName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
   }
 
   /// Success animation, then the MANDATORY verified-details confirmation —
@@ -2308,6 +2321,19 @@ DateTime? _parseKycDob(String? raw) {
 String _formatKycDob(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
 
+// Read-only DOB rows (Current Profile Date of Birth, etc.) get their raw
+// value straight from the backend, which serializes Customer.cus_dob as
+// ISO (YYYY-MM-DD) — shown as-is that reads wrong for an Indian audience
+// expecting DD-MM-YYYY, and inconsistent with the editable field right next
+// to it (which always displays via _formatKycDob). Re-parses through the
+// same _parseKycDob so ISO and DD-MM-YYYY inputs both land on one display
+// format; falls back to the raw string only if it's neither.
+String? _formatDisplayDob(String? raw) {
+  if (raw == null || raw.isEmpty) return raw;
+  final parsed = _parseKycDob(raw);
+  return parsed == null ? raw : _formatKycDob(parsed);
+}
+
 InputDecoration _kycInputBoxDecoration(bool isDark) {
   final borderColor = isDark ? Colors.white24 : Colors.black12;
   return InputDecoration(
@@ -2662,16 +2688,20 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
               style: AppTextStyles.fieldHelper(isDark),
             ),
             SizedBox(height: 16.h),
-            _buildVerifiedRow('Verified $_documentLabel Name', widget.prompt.verifiedName, isDark),
-            if (_needsDob) ...[
-              SizedBox(height: 12.h),
-              _buildVerifiedRow('Verified $_documentLabel Date of Birth', widget.prompt.verifiedDob, isDark),
-            ],
-            SizedBox(height: 12.h),
+            // Verified name/DOB used to be shown here too, duplicating what
+            // the editable fields below are already pre-filled with (see
+            // initState) — dropped so the customer isn't shown the exact
+            // same values twice for no reason. Only what's actually
+            // DIFFERENT (the current, about-to-be-replaced profile values)
+            // is worth a read-only row here.
             _buildVerifiedRow('Current Profile Name', widget.prompt.profileName, isDark),
             if (widget.prompt.profileDob != null && widget.prompt.profileDob!.isNotEmpty) ...[
               SizedBox(height: 12.h),
-              _buildVerifiedRow('Current Profile Date of Birth', widget.prompt.profileDob, isDark),
+              _buildVerifiedRow(
+                'Current Profile Date of Birth',
+                _formatDisplayDob(widget.prompt.profileDob),
+                isDark,
+              ),
             ],
             SizedBox(height: 20.h),
             Text('Your Name', style: AppTextStyles.fieldLabel(isDark)),

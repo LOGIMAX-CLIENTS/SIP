@@ -481,12 +481,22 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     ref.read(pc.profileProvider.notifier).fetchProfileDetails();
   }
 
+  // See kyc_screen.dart's identically-named method for the full doc comment
+  // on why this exists and why a single mismatched read gets one retry
+  // before conceding "genuinely different" (replica-lag race right after
+  // the OTHER document's mismatch-confirm write, not a real difference).
   Future<bool> _profileAlreadyMatches(String? verifiedName) async {
     if (verifiedName == null || verifiedName.trim().isEmpty) return false;
     await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
     if (!mounted) return false;
     final currentName = ref.read(pc.profileProvider).user.name;
-    return currentName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
+    if (currentName.trim().toUpperCase() == verifiedName.trim().toUpperCase()) return true;
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return false;
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    if (!mounted) return false;
+    final retriedName = ref.read(pc.profileProvider).user.name;
+    return retriedName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
   }
 
   Future<void> _showSuccessAnimation() async {
