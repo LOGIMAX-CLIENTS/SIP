@@ -107,23 +107,33 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
         decoration: BoxDecoration(gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient),
         child: Scaffold(
           backgroundColor: Colors.transparent,
-          body: docsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
-            data: (docsResult) {
-              syncAadhaarWithBackend(docsResult);
-              return _buildBody(
-                isDark: isDark,
-                docsResult: docsResult,
-                aadhaarState: aadhaarState,
-                bankAccounts: bankAccountsAsync.valueOrNull,
-                bavHistory: bavHistoryAsync.valueOrNull,
-                rpdHistory: rpdHistoryAsync.valueOrNull,
-                verificationStatus: verificationStatusAsync.valueOrNull,
-                bankDataLoading: bankAccountsAsync.isLoading || bavHistoryAsync.isLoading,
-                profileName: profileName,
-              );
-            },
+          // AnimatedSwitcher cross-fades the loading spinner into the
+          // checklist content instead of the previous hard cut (the
+          // "flickers during loading" half of this bug) — each branch has
+          // an explicit key so the switcher can tell them apart.
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: docsAsync.when(
+              loading: () => const Center(key: ValueKey('kyc-checklist-loading'), child: CircularProgressIndicator()),
+              error: (e, _) => Center(key: const ValueKey('kyc-checklist-error'), child: Text('Error: $e')),
+              data: (docsResult) {
+                syncAadhaarWithBackend(docsResult);
+                return KeyedSubtree(
+                  key: const ValueKey('kyc-checklist-data'),
+                  child: _buildBody(
+                    isDark: isDark,
+                    docsResult: docsResult,
+                    aadhaarState: aadhaarState,
+                    bankAccounts: bankAccountsAsync.valueOrNull,
+                    bavHistory: bavHistoryAsync.valueOrNull,
+                    rpdHistory: rpdHistoryAsync.valueOrNull,
+                    verificationStatus: verificationStatusAsync.valueOrNull,
+                    bankDataLoading: bankAccountsAsync.isLoading || bavHistoryAsync.isLoading,
+                    profileName: profileName,
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ),
