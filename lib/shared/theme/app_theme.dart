@@ -40,6 +40,21 @@ class AppTheme {
       useMaterial3: true,
       fontFamily: GoogleFonts.playfairDisplay().fontFamily,
       brightness: Brightness.light,
+      // Android declares predictive back in the manifest
+      // (enableOnBackInvokedCallback), and from Android 16 it is on by default
+      // for apps targeting SDK 36 like this one. Declaring it without giving
+      // Flutter a matching page transition left the framework animating a
+      // route the system was already previewing, so a swipe-back-and-hold
+      // showed the destination underneath painting through the current route
+      // -- Home, kept alive in MainScreen's IndexedStack, bleeding into
+      // Withdrawal. This builder makes Flutter drive the same gesture the
+      // system is reporting; it falls back to the Material zoom transition on
+      // platforms without predictive back, which is what was used before.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        },
+      ),
       primaryColor: primaryGreen,
       scaffoldBackgroundColor: Colors.transparent,
       colorScheme: ColorScheme.fromSeed(
@@ -94,6 +109,21 @@ class AppTheme {
       useMaterial3: true,
       fontFamily: GoogleFonts.playfairDisplay().fontFamily,
       brightness: Brightness.dark,
+      // Android declares predictive back in the manifest
+      // (enableOnBackInvokedCallback), and from Android 16 it is on by default
+      // for apps targeting SDK 36 like this one. Declaring it without giving
+      // Flutter a matching page transition left the framework animating a
+      // route the system was already previewing, so a swipe-back-and-hold
+      // showed the destination underneath painting through the current route
+      // -- Home, kept alive in MainScreen's IndexedStack, bleeding into
+      // Withdrawal. This builder makes Flutter drive the same gesture the
+      // system is reporting; it falls back to the Material zoom transition on
+      // platforms without predictive back, which is what was used before.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        },
+      ),
       primaryColor: primaryGreen,
       scaffoldBackgroundColor: midnightNavy,
       colorScheme: ColorScheme.fromSeed(

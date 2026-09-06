@@ -62,6 +62,7 @@ import '../features/sip/screens/sip_transaction_history_screen.dart';
 import '../features/sip/screens/sip_transaction_details_screen.dart';
 import '../features/sip/screens/sip_overview_screen.dart';
 import '../features/nominee/screens/nominee_screen.dart';
+import '../shared/theme/app_theme.dart';
 import '../features/invoice/invoice_viewer_screen.dart';
 import '../features/jewellery/jewellery_screen.dart';
 
@@ -422,10 +423,33 @@ class AppRouter {
         jewellery: (context) => const JewelleryScreen(),
       };
 
+  /// Paints the app gradient behind a route's own widgets.
+  ///
+  /// The theme sets `scaffoldBackgroundColor: Colors.transparent` so screens
+  /// can let MaterialApp's single global gradient show through. That works
+  /// while one route is on screen, but Android's predictive back draws the
+  /// outgoing route and its destination in the same frame: held mid-gesture,
+  /// the destination showed through every transparent gap in the route on top
+  /// -- Transaction History's rows appearing between Transaction Details'
+  /// cards, Home appearing inside Withdrawal. A few screens had already been
+  /// given their own opaque background one at a time (eda35aa); doing it here
+  /// covers every route at once, and keeps the gradient identical because it
+  /// is the same one MaterialApp paints.
+  static Widget _withOpaqueBackground(BuildContext context, Widget child) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
+      ),
+      child: child,
+    );
+  }
+
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     if (routes.containsKey(settings.name)) {
       return MaterialPageRoute(
-        builder: (context) => routes[settings.name]!(context),
+        builder: (context) =>
+            _withOpaqueBackground(context, routes[settings.name]!(context)),
         settings: settings,
       );
     }
