@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../routes/app_router.dart';
@@ -93,47 +92,53 @@ class CountdownOfferExisting extends StatelessWidget {
           fit: BoxFit.contain,
         ),
         // Text overlay — gold gradient via ShaderMask
-        ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            begin: Alignment(-0.98, -0.19),
-            end: Alignment(0.98, 0.19),
-            colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
-          ).createShader(bounds),
-          blendMode: BlendMode.srcIn,
-          child: Builder(builder: (_) {
-            // Playfair Display's digit glyphs sit at a different optical
-            // size/weight than its uppercase letters at the same fontSize
-            // (e.g. "100" looks bigger/bolder than "DAY GRAND LAUNCH
-            // OFFER") — same fix already used for the date-range text
-            // below: numbers in Lora, letters in Playfair Display, both at
-            // the same fontSize/weight so they read as one balanced line.
-            final nameParts = _splitTextAndNumbers(
-              offer.offerName.toUpperCase(),
-            );
-            return RichText(
-              text: TextSpan(
-                children: nameParts.map((part) {
-                  final isNum = RegExp(r'^\d+$').hasMatch(part);
-                  return TextSpan(
-                    text: part,
-                    style: isNum
-                        ? GoogleFonts.lora(
-                            fontSize: 17.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.8,
-                          )
-                        : GoogleFonts.playfairDisplay(
-                            fontSize: 17.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.8,
-                          ),
-                  );
-                }).toList(),
-              ),
-            );
-          }),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24.w),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                begin: Alignment(-0.98, -0.19),
+                end: Alignment(0.98, 0.19),
+                colors: [Color(0xFFFFB500), Color(0xFFFFCA49)],
+              ).createShader(bounds),
+              blendMode: BlendMode.srcIn,
+              child: Builder(builder: (_) {
+                // Playfair Display's digit glyphs sit at a different optical
+                // size/weight than its uppercase letters at the same fontSize
+                // (e.g. "100" looks bigger/bolder than "DAY GRAND LAUNCH
+                // OFFER") — same fix already used for the date-range text
+                // below: numbers in Lora, letters in Playfair Display, both at
+                // the same fontSize/weight so they read as one balanced line.
+                final nameParts = _splitTextAndNumbers(
+                  offer.offerName.toUpperCase(),
+                );
+                return RichText(
+                  text: TextSpan(
+                    children: nameParts.map((part) {
+                      final isNum = RegExp(r'^\d+$').hasMatch(part);
+                      return TextSpan(
+                        text: part,
+                        style: isNum
+                            ? GoogleFonts.lora(
+                                fontSize: 17.sp,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.8,
+                              )
+                            : GoogleFonts.playfairDisplay(
+                                fontSize: 17.sp,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.8,
+                              ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              }),
+            ),
+          ),
         ),
       ],
     );
