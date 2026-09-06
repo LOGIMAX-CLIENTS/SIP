@@ -347,11 +347,23 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Aadhaar Verification'),
         content: Text(state.message ?? 'Aadhaar verification failed. Please try again.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Close')),
+          // DigiLocker isn't the only way through — a customer whose consent
+          // was denied, or hit an upstream gateway error, had no way forward
+          // from this dialog besides dismissing and retrying the same failing
+          // path. Route straight to the manual-upload screen instead, same
+          // as the checklist card's own "Upload Manually" button.
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              openManualUpload('2', requestFrom);
+            },
+            child: const Text('Upload Manually'),
+          ),
         ],
       ),
     );

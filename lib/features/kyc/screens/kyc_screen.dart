@@ -705,14 +705,24 @@ class _KycScreenState extends ConsumerState<KycScreen> {
 
       // pollUntilTerminal exhausted its retries while DigiLocker was still
       // processing (e.g. the provider's document-fetch/cross-verify chain
-      // outran the client's polling window) — it resets to awaitingConsent
-      // with an explanatory message instead of a terminal phase. Without this,
-      // the user sees the DigiLocker screen close and nothing else: no
-      // success, no error. Surface it so they know to check back / retry.
+      // outran the client's polling window, or — for Meon — a swallowed 4xx
+      // kept reporting PENDING) — it resets to awaitingConsent with an
+      // explanatory message instead of a terminal phase. Without this, the
+      // user sees the DigiLocker screen close and nothing else: no success,
+      // no error. Surface it so they know to check back / retry.
       if (finalState.message != null) {
         if (!mounted) return;
         AppToast.show(context, finalState.message!, type: ToastType.info);
       }
+      // The initiate call already wrote a PENDING KYC row, so
+      // digilocker_attempted is true server-side and "Upload manually" is
+      // eligible to show — but docsResult was fetched before this attempt,
+      // so the card wouldn't reveal that option until some unrelated refresh
+      // happened to occur. Invalidate now so "Try again" and "Upload
+      // manually" are both visible immediately instead of leaving the
+      // customer on a stale card with no visible way forward.
+      if (!mounted) return;
+      ref.invalidate(kycDocumentsProvider(widget.requestFrom));
     } finally {
       AppLifecycleObserver.suppressAppLock = false;
       notifier.resumeAutoDispose();
