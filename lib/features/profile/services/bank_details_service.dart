@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/network/api_client.dart';
 import '../models/bank_account.dart';
 
@@ -56,6 +58,42 @@ class BankDetailsService {
       // customer who hit a genuine name mismatch.
       'has_kyc': data['has_kyc'] != false,
     };
+  }
+
+  /// POST account/verify-bank/contact-admin — "Contact Admin" after a BAV
+  /// failure. Records what the customer typed as a case awaiting an admin;
+  /// verifies nothing on its own (see backend BankAccountService.
+  /// request_manual_review's docstring — no CustomerBank row is created and
+  /// no verification status changes). [passbookPhoto] (passbook or
+  /// cancelled-cheque photo) is required — same evidence expectation as
+  /// PAN/Aadhaar's own manual upload (KycRepository.submitManualKyc) — sent
+  /// as multipart/form-data under key "passbook", same reasoning as that
+  /// method's doc comment (ApiClient.post() auto-detects FormData; the
+  /// encryption interceptor only touches Map payloads). Same raw-map return
+  /// shape as the other bank-account calls above — caller reads
+  /// result['success'].
+  ///
+  /// Lives here, not in withdrawal_service.dart — this is a bank-account
+  /// verification concern (same family as checkBeneficiaryName above), and
+  /// its only caller, add_bank_account_sheet.dart, is a shared widget used
+  /// by both Withdrawal and Profile → Bank Details, not withdrawal-specific.
+  Future<Map<String, dynamic>> requestManualBavReview({
+    required String accNo,
+    required String ifsc,
+    required String holderName,
+    required XFile passbookPhoto,
+  }) async {
+    final formData = FormData.fromMap({
+      'account_no': accNo,
+      'ifsc_code': ifsc,
+      'account_holder': holderName,
+      'passbook': await MultipartFile.fromFile(
+        passbookPhoto.path,
+        filename: passbookPhoto.name,
+      ),
+    });
+    final response = await _apiClient.post('account/verify-bank/contact-admin', data: formData);
+    return response.data ?? {};
   }
 }
 

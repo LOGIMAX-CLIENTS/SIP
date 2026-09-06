@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:startgold/shared/theme/app_text_styles.dart';
 import '../../core/providers/user_provider.dart';
 import '../../core/error/failures.dart';
@@ -66,12 +69,73 @@ Future<void> showAddBankAccountSheet(
   bool manualReviewRequested = false;
   bool isRequestingReview = false;
 
+  // Required evidence for "Contact Admin" — same strictness as PAN/Aadhaar's
+  // own manual upload (ManualKycUploadScreen): typed details alone gave the
+  // admin nothing to actually confirm the account from.
+  final passbookPicker = ImagePicker();
+  XFile? passbookFile;
+
   // StatefulBuilder hands back the SAME StateSetter across rebuilds (it's
   // bound to the underlying State), so capturing it here and registering
   // the FocusNode listener ONCE outside builder is safe — and necessary:
   // registering inside builder would re-add a new listener on every
   // rebuild, firing checkName() multiple times per single field blur.
+  // Declared here (not nearer checkName()) so pickPassbookPhoto below can
+  // also reference it before StatefulBuilder assigns the real setter.
   StateSetter? modalSetState;
+
+  Future<void> pickPassbookPhoto(BuildContext pickerCtx) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: pickerCtx,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: accentGreen),
+              title: const Text('Take Photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: accentGreen),
+              title: const Text('Choose from Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel, color: Colors.grey),
+              title: const Text('Cancel'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    try {
+      final file = await passbookPicker.pickImage(
+        source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 85,
+      );
+      if (file == null) return;
+
+      // Mirrors the backend's 5MB cap (shared/utils/upload_validation.py).
+      final sizeBytes = await file.length();
+      if (sizeBytes > 5 * 1024 * 1024) {
+        if (pickerCtx.mounted) {
+          AppToast.show(pickerCtx, 'Image is too large. Maximum allowed size is 5MB.', type: ToastType.error);
+        }
+        return;
+      }
+
+      modalSetState?.call(() => passbookFile = file);
+    } catch (_) {
+      if (pickerCtx.mounted) {
+        AppToast.show(pickerCtx, 'Could not pick the image. Please try again.', type: ToastType.error);
+      }
+    }
+  }
 
   Future<void> checkName() async {
     final name = nameCtrl.text.trim();
@@ -453,19 +517,73 @@ Future<void> showAddBankAccountSheet(
                               .copyWith(color: accentGreen),
                         ),
                       )
-                    else
+                    else ...[
+                      // Required before the button is enabled — an admin
+                      // reviewing typed text alone has nothing to actually
+                      // confirm the account against.
+                      GestureDetector(
+                        onTap: isRequestingReview ? null : () => pickPassbookPhoto(sheetCtx),
+                        child: Container(
+                          width: double.infinity,
+                          padding: EdgeInsets.all(14.r),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white.withOpacity(0.03) : Colors.black.withOpacity(0.02),
+                            borderRadius: BorderRadius.circular(14.r),
+                            border: Border.all(
+                              color: passbookFile != null
+                                  ? accentGreen
+                                  : (isDark ? Colors.white24 : Colors.black12),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              if (passbookFile != null)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8.r),
+                                  child: Image.file(File(passbookFile!.path), width: 40.w, height: 40.w, fit: BoxFit.cover),
+                                )
+                              else
+                                Container(
+                                  width: 40.w,
+                                  height: 40.w,
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.white12 : Colors.black12,
+                                    borderRadius: BorderRadius.circular(8.r),
+                                  ),
+                                  child: Icon(Icons.add_a_photo_outlined,
+                                      size: 18.sp, color: isDark ? Colors.white54 : Colors.black45),
+                                ),
+                              SizedBox(width: 12.w),
+                              Expanded(
+                                child: Text(
+                                  passbookFile != null
+                                      ? 'Passbook/cheque photo — tap to retake'
+                                      : 'Upload passbook photo or cancelled cheque',
+                                  style: AppTextStyles.fieldHelper(isDark),
+                                ),
+                              ),
+                              Icon(
+                                passbookFile != null ? Icons.check_circle : Icons.chevron_right,
+                                color: passbookFile != null ? accentGreen : (isDark ? Colors.white38 : Colors.black38),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 10.h),
                       OutlinedButton(
-                        onPressed: (isVerifying || isRequestingReview)
+                        onPressed: (isVerifying || isRequestingReview || passbookFile == null)
                             ? null
                             : () async {
                                 setModalState(() => isRequestingReview = true);
                                 try {
                                   final result = await ref
-                                      .read(withdrawalServiceProvider)
+                                      .read(bankDetailsServiceProvider)
                                       .requestManualBavReview(
                                         accNo: accCtrl.text.trim(),
                                         ifsc: ifscCtrl.text.trim(),
                                         holderName: nameCtrl.text.trim(),
+                                        passbookPhoto: passbookFile!,
                                       );
                                   if (!sheetCtx.mounted) return;
                                   if (result['success'] == true) {
@@ -522,6 +640,7 @@ Future<void> showAddBankAccountSheet(
                                 style: AppTextStyles.button(isDark)
                                     .copyWith(color: accentGreen)),
                       ),
+                    ],
                   ],
                   SizedBox(height: 8.h),
                 ],
