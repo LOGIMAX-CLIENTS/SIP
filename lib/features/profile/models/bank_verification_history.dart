@@ -263,7 +263,7 @@ class BankVerificationCard {
       if (item == null) return null;
       return BankTimelineEntry(
         kind: BankTimelineKind.reversePennyDrop,
-        title: 'Reverse Penny Drop Verification',
+        title: 'Additional Verification',
         status: item.status,
         dateTime: item.createdOn,
         cbankId: item.cbankId,

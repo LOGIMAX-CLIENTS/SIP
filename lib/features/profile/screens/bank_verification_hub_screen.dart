@@ -217,7 +217,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
                 },
                 icon: Icon(Icons.verified_user_outlined, size: 16.sp, color: _accentGreen),
                 label: Text(
-                  'Additional Verification (Reverse Penny Drop)',
+                  'Additional Verification',
                   style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w700,

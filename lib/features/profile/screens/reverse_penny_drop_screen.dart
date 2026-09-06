@@ -214,7 +214,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          const GradientHeader(title: 'Reverse Penny Drop Verification'),
+          const GradientHeader(title: 'Additional Verification'),
           Expanded(
             child: Padding(
               padding: EdgeInsets.all(24.w),

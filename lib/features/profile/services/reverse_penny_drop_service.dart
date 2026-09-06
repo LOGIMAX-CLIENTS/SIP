@@ -22,7 +22,7 @@ class ReversePennyDropService {
     );
     if (response.data == null || response.data['success'] != true) {
       throw Exception(_extractErrorMessage(
-          response.data, 'Could not start Reverse Penny Drop verification.'));
+          response.data, 'Could not start additional verification.'));
     }
     return Map<String, dynamic>.from(response.data['data'] ?? {});
   }

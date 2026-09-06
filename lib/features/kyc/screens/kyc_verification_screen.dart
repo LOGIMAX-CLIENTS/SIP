@@ -74,6 +74,11 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
   bool _checkingPanBankLink = false;
   bool _retryingPanAadhaarLink = false;
   bool _refreshingNameDob = false;
+  // cbankId of the account we've already auto-pushed the customer into
+  // Additional Verification for — prevents re-triggering the navigation on
+  // every rebuild once BAV clears; only fires once per account, and never
+  // on top of a failed attempt (that shows its own Retry action instead).
+  String? _autoLaunchedRpdCbankId;
 
   @override
   void initState() {
@@ -133,6 +138,19 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     final entry = verificationStatus?[key];
     if (entry is Map) return entry['is_active'] != false;
     return true;
+  }
+
+  /// Reads `verifications[key].is_mandatory` — unlike [_isActive], absent
+  /// means NOT mandatory (Optional), matching the backend's own default for
+  /// every capability that can be marked Optional (aadhaar_pan_link,
+  /// pan_bank_link, reverse_penny_drop — see VerificationStatusService's
+  /// _MANDATORY_CAPABILITY_FOR_KEY). Used to decide whether an unresolved
+  /// check reads as "Optional" (informational, never blocks) or as an
+  /// actionable prompt the customer needs to complete.
+  bool _isMandatory(Map<String, dynamic>? verificationStatus, String key) {
+    final entry = verificationStatus?[key];
+    if (entry is Map) return entry['is_mandatory'] == true;
+    return false;
   }
 
   Widget _buildBody({
@@ -248,6 +266,10 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     // the session that ran the check. See verificationStatusProvider's
     // docstring for the vgr_is_mandatory=1 prerequisite that mirror needs.
     final persistedPanAadhaarLink = (verificationStatus?['aadhaar_pan_link'] as Map?)?['status'] as String?;
+    // Same is_mandatory-driven "Optional" labeling as PAN-Bank Link — the
+    // retry action (see _retryAadhaarPanLink) is always available and
+    // always safe to tap regardless of mandatory status.
+    final panAadhaarLinkMandatory = _isMandatory(verificationStatus, 'aadhaar_pan_link');
     KycStepStatus panAadhaarLinkStatus;
     String panAadhaarLinkPill;
     String panAadhaarLinkSubtitle;
@@ -263,6 +285,10 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       panAadhaarLinkStatus = KycStepStatus.failed;
       panAadhaarLinkPill = 'Not Linked';
       panAadhaarLinkSubtitle = 'Not linked as per Income Tax records. You can retry to refresh this.';
+    } else if (!panAadhaarLinkMandatory) {
+      panAadhaarLinkStatus = KycStepStatus.underReview;
+      panAadhaarLinkPill = 'Optional';
+      panAadhaarLinkSubtitle = 'This check isn\'t required right now — you can still check it.';
     } else {
       panAadhaarLinkStatus = KycStepStatus.underReview;
       panAadhaarLinkPill = 'Pending';
@@ -311,6 +337,17 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     // check_pan_account_linkage), but the customer can also retry it
     // directly here — see _buildPanBankLinkSubItem.
     final persistedPanBankLink = (verificationStatus?['pan_bank_link'] as Map?)?['status'] as String?;
+    // is_mandatory only changes the LABEL/whether this can block anything
+    // — the check itself is always retryable (the backend no longer
+    // refuses the call while Optional). While Optional and never yet
+    // checked, this reads as "Optional" rather than an actionable prompt,
+    // but the action button stays available (tapping it is harmless — see
+    // _buildBavDetail). The moment an admin flips PAN_BANK_LINK back to
+    // Mandatory, is_mandatory flips to true here (next refresh) and the
+    // pill becomes the actionable Retry/Check Now prompt on its own — that
+    // IS the "instruct the customer to complete it" behavior, driven by
+    // the persisted flag rather than a separate one-off notification.
+    final panBankLinkMandatory = _isMandatory(verificationStatus, 'pan_bank_link');
     KycStepStatus panBankLinkStatus;
     String panBankLinkPill;
     String panBankLinkSubtitle;
@@ -322,6 +359,10 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       panBankLinkStatus = KycStepStatus.failed;
       panBankLinkPill = 'Not Linked';
       panBankLinkSubtitle = 'Your PAN does not appear to be linked to this bank account';
+    } else if (!panBankLinkMandatory) {
+      panBankLinkStatus = KycStepStatus.underReview;
+      panBankLinkPill = 'Optional';
+      panBankLinkSubtitle = 'This check isn\'t required right now.';
     } else {
       panBankLinkStatus = KycStepStatus.actionable;
       panBankLinkPill = persistedPanBankLink == 'PENDING' ? 'Retry' : 'Check Now';
@@ -339,11 +380,11 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     if (latestRpd != null && latestRpd.status.toLowerCase() == 'success') {
       rpdStatus = KycStepStatus.verified;
       rpdPill = 'Verified';
-      rpdSubtitle = 'Ownership confirmed via reverse penny drop';
+      rpdSubtitle = 'Ownership confirmed';
     } else if (latestRpd != null && latestRpd.status.toLowerCase() == 'failed') {
       rpdStatus = KycStepStatus.failed;
       rpdPill = 'Retry';
-      rpdSubtitle = latestRpd.failureReason ?? 'Reverse penny drop failed. Please try again.';
+      rpdSubtitle = latestRpd.failureReason ?? 'Additional verification failed. Please try again.';
     } else if (cbankId == null) {
       rpdStatus = KycStepStatus.locked;
       rpdPill = 'Locked';
@@ -352,6 +393,19 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       rpdStatus = KycStepStatus.actionable;
       rpdPill = 'Start';
       rpdSubtitle = 'Confirm ownership with a ₹1 transfer from your bank app';
+    }
+
+    // Auto-push into Additional Verification the moment it becomes
+    // actionable (i.e. right after BAV clears) — no "Start" tap required.
+    // Fires once per cbankId: never re-fires on every rebuild, and never
+    // fires on top of a failed attempt (rpdStatus is `failed`, not
+    // `actionable`, in that case) — a failed attempt shows its own Retry
+    // action instead of being relaunched automatically.
+    if (rpdActive && rpdStatus == KycStepStatus.actionable && cbankId != null && _autoLaunchedRpdCbankId != cbankId) {
+      _autoLaunchedRpdCbankId = cbankId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startRpd(cbankId);
+      });
     }
 
     // Dynamic numbering/progress — hidden (VGR-inactive) capabilities don't
@@ -384,7 +438,8 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     tally(bavStatus);
 
     final bavNeedsSubItemAttention = bavStatus == KycStepStatus.verified &&
-        ((panBankLinkActive && panBankLinkStatus != KycStepStatus.verified) ||
+        ((panBankLinkActive &&
+                (panBankLinkStatus == KycStepStatus.actionable || panBankLinkStatus == KycStepStatus.failed)) ||
             (rpdActive && rpdStatus != KycStepStatus.verified && rpdStatus != KycStepStatus.locked));
 
     // Which card should auto-expand / drive the footer CTA — first
@@ -393,7 +448,13 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     String? attentionKey;
     if (nameDobStatus != KycStepStatus.verified && nameDobStatus != KycStepStatus.locked) {
       attentionKey = 'name_dob';
-    } else if (aadhaarPanLinkActive && panAadhaarLinkStatus != KycStepStatus.verified && panAadhaarLinkStatus != KycStepStatus.locked) {
+    } else if (aadhaarPanLinkActive &&
+        (panAadhaarLinkStatus == KycStepStatus.failed ||
+            (panAadhaarLinkMandatory && panAadhaarLinkStatus == KycStepStatus.underReview))) {
+      // A real NOT_LINKED result always deserves attention; an unresolved
+      // "Pending" only nags while Mandatory — while Optional it reads as
+      // "Optional" instead and doesn't force attention (see
+      // panAadhaarLinkStatus's computation above).
       attentionKey = 'pan_aadhaar_link';
     } else if (bavStatus != KycStepStatus.verified && bavStatus != KycStepStatus.locked) {
       attentionKey = 'bav';
@@ -748,6 +809,10 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
             status: panBankLinkStatus,
             pillLabel: panBankLinkPill,
             subtitle: panBankLinkSubtitle,
+            // The action stays available even while Optional (underReview
+            // here means "Optional, not yet checked") — the backend no
+            // longer refuses the check just because it isn't required, so
+            // checking anyway is harmless; it just never blocks anything.
             actionLabel: panBankLinkStatus == KycStepStatus.verified
                 ? null
                 : (panBankLinkPill == 'Retry' ? 'Retry PAN-Bank Link' : 'Check PAN-Bank Link'),
@@ -759,13 +824,13 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
           SizedBox(height: 16.h),
           _buildBavSubItem(
             isDark: isDark,
-            title: 'Reverse Penny Drop (RPD)',
+            title: 'Additional Verification',
             status: rpdStatus,
             pillLabel: rpdPill,
             subtitle: rpdSubtitle,
             actionLabel: rpdStatus == KycStepStatus.verified || rpdStatus == KycStepStatus.locked
                 ? null
-                : (rpdStatus == KycStepStatus.failed ? 'Retry Reverse Penny Drop' : 'Start Reverse Penny Drop'),
+                : (rpdStatus == KycStepStatus.failed ? 'Retry Additional Verification' : 'Start Additional Verification'),
             onAction: cbankId == null ? null : () => _startRpd(cbankId),
           ),
         ],
@@ -854,10 +919,18 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
   Future<void> _checkPanBankLink(String cbankId) async {
     setState(() => _checkingPanBankLink = true);
     try {
-      await ref.read(bankVerificationHistoryServiceProvider).checkPanBankLink(cbankId: cbankId);
+      final result = await ref.read(bankVerificationHistoryServiceProvider).checkPanBankLink(cbankId: cbankId);
       ref.invalidate(verificationStatusProvider);
       if (mounted) {
-        AppToast.show(context, 'PAN-Bank account linkage checked.', type: ToastType.success);
+        // The provider's own reason (e.g. "Bank account and PAN holder
+        // names do not match") when available — falls back to a generic
+        // confirmation only if the provider didn't supply one.
+        final message = (result['message'] as String?)?.trim();
+        AppToast.show(
+          context,
+          message?.isNotEmpty == true ? message! : 'PAN-Bank account linkage checked.',
+          type: result['linked'] == true ? ToastType.success : ToastType.info,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -882,8 +955,12 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
   }
 
   Future<void> _startRpd(String cbankId) async {
-    final result = await Navigator.pushNamed(context, AppRouter.reversePennyDrop, arguments: {'cbankId': cbankId});
-    if (result == true && mounted) {
+    await Navigator.pushNamed(context, AppRouter.reversePennyDrop, arguments: {'cbankId': cbankId});
+    // Always refresh, not just on a truthy result — a failed/cancelled
+    // attempt still writes a real (failed) history row server-side, and
+    // the checklist needs that to render "Failed — Retry" immediately
+    // rather than requiring a manual pull-to-refresh.
+    if (mounted) {
       ref.invalidate(bankAccountsProvider);
       ref.invalidate(rpdHistoryProvider);
     }
