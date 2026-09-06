@@ -813,8 +813,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
       if (_isAmountMode) {
         final double gstRate = configAsync.valueOrNull?.gst ?? 3.0;
-        final double goldValue = _trunc2(inputVal / (1 + (gstRate / 100)));
-        conversion = rate > 0 ? _trunc6(goldValue / rate) : 0.0;
+        conversion = _amountSplit(inputVal, rate, gstRate)['grams']!;
       } else {
         conversion = _trunc2(inputVal * rate);
       }
@@ -1095,8 +1094,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         if (inputVal > 0 && goldRate > 0) {
           if (_isAmountMode) {
             // ₹ mode → remove GST → convert to grams
-            final double goldValue = _trunc2(inputVal / (1 + (gstRate / 100)));
-            goldQty = _trunc6(goldValue / goldRate);
+            goldQty = _amountSplit(inputVal, goldRate, gstRate)['grams']!;
           } else {
             // Grams mode → user entered gold grams directly
             goldQty = _trunc6(inputVal);
@@ -1372,14 +1370,11 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         : market.value.silverSell;
     double totalPayable, metalValue, gstAmount, grams;
     if (_isAmountMode) {
-      totalPayable = _trunc2(inputVal);
-      final rawMetalValue = totalPayable / (1 + gstRate);
-      gstAmount = _roundTaxToEvenPaisa(totalPayable - rawMetalValue);
-      // totalPayable and gstAmount are both already exact to the paisa —
-      // floor-truncating their difference again risks a false -0.01 from
-      // binary floating-point noise (e.g. 273.78 * 100 == 27377.999...996).
-      metalValue = totalPayable - gstAmount;
-      grams = rate > 0 ? _trunc6(metalValue / rate) : 0.0;
+      final split = _amountSplit(inputVal, rate, config.gst);
+      totalPayable = split['total']!;
+      gstAmount = split['gst']!;
+      metalValue = split['metalValue']!;
+      grams = split['grams']!;
     } else {
       grams = _trunc6(inputVal);
       metalValue = _trunc2(grams * rate);
@@ -1824,6 +1819,35 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     int paisa = (v * 100).round();
     if (paisa % 2 != 0) paisa += 1;
     return paisa / 100;
+  }
+
+  /// Splits an amount-mode purchase into metal value, GST and grams exactly
+  /// the way the server does in SavingsService.initiate_purchase (AMOUNT
+  /// branch), so every screen that shows any part of the split agrees with
+  /// what is actually bought:
+  ///
+  ///   gross = the amount typed          (paise, truncated)
+  ///   tax   = evenPaisa(gross - gross / (1 + gst))
+  ///   net   = gross - tax
+  ///   grams = net / rate                (6 dp, truncated)
+  ///
+  /// The net is DERIVED from the tax rather than computed as
+  /// `trunc(gross / (1 + gst))`. That matters: the tax is nudged up to an
+  /// even paisa, so the leftover net can land a paisa higher than a plain
+  /// truncation would give, which at 6 dp is a whole microgram. Deriving it
+  /// this way is also what keeps `net + tax == gross` exact.
+  static Map<String, double> _amountSplit(
+      double amount, double rate, double gstPercent) {
+    final double gross = _trunc2(amount);
+    final double tax =
+        _roundTaxToEvenPaisa(gross - gross / (1 + gstPercent / 100));
+    final double net = gross - tax;
+    return {
+      'total': gross,
+      'gst': tax,
+      'metalValue': net,
+      'grams': rate > 0 ? _trunc6(net / rate) : 0.0,
+    };
   }
 }
 
