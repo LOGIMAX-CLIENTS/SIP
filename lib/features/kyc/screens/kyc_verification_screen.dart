@@ -295,29 +295,33 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       panAadhaarLinkSubtitle = 'Link status refreshes the next time you verify';
     }
 
-    // Step: Bank Account Validation (BAV)
+    // Step: Bank Account Validation (BAV) — the pennyless check specifically.
+    // This gates whether the PAN-Bank Link / Additional Verification
+    // sub-items render at all; the top-level bavStatus/pill/subtitle used
+    // for the row itself is the COMPOSITE status computed further below,
+    // once those sub-items' own statuses are known.
     final sortedBav = [...?bavHistory]..sort((a, b) => (b.attemptedOn ?? DateTime(0)).compareTo(a.attemptedOn ?? DateTime(0)));
     final latestBav = sortedBav.isEmpty ? null : sortedBav.first;
     final nameDobDone = nameDobStatus == KycStepStatus.verified;
-    KycStepStatus bavStatus;
-    String bavPill;
-    String bavSubtitle;
+    KycStepStatus pennylessBavStatus;
+    String pennylessBavPill;
+    String pennylessBavSubtitle;
     if (!nameDobDone) {
-      bavStatus = KycStepStatus.locked;
-      bavPill = 'Locked';
-      bavSubtitle = 'Unlocks after Name & DOB Match clears';
+      pennylessBavStatus = KycStepStatus.locked;
+      pennylessBavPill = 'Locked';
+      pennylessBavSubtitle = 'Unlocks after Name & DOB Match clears';
     } else if (latestBav != null && latestBav.isApproved) {
-      bavStatus = KycStepStatus.verified;
-      bavPill = 'Verified';
-      bavSubtitle = latestBav.accountLast4 != null ? 'Account ending ${latestBav.accountLast4}' : 'Penny-less BAV verified';
+      pennylessBavStatus = KycStepStatus.verified;
+      pennylessBavPill = 'Verified';
+      pennylessBavSubtitle = latestBav.accountLast4 != null ? 'Account ending ${latestBav.accountLast4}' : 'Penny-less BAV verified';
     } else if (latestBav != null && latestBav.status.toLowerCase() == 'rejected') {
-      bavStatus = KycStepStatus.failed;
-      bavPill = 'Retry';
-      bavSubtitle = 'Bank verification failed. Please try again.';
+      pennylessBavStatus = KycStepStatus.failed;
+      pennylessBavPill = 'Retry';
+      pennylessBavSubtitle = 'Bank verification failed. Please try again.';
     } else {
-      bavStatus = KycStepStatus.actionable;
-      bavPill = 'Initiate';
-      bavSubtitle = 'Penny-less — no debit from your account';
+      pennylessBavStatus = KycStepStatus.actionable;
+      pennylessBavPill = 'Initiate';
+      pennylessBavSubtitle = 'Penny-less — no debit from your account';
     }
 
     // Resolved early — the PAN-Bank Link sub-item's retry action needs it
@@ -358,7 +362,13 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     } else if (persistedPanBankLink == 'NOT_LINKED') {
       panBankLinkStatus = KycStepStatus.failed;
       panBankLinkPill = 'Not Linked';
-      panBankLinkSubtitle = 'Your PAN does not appear to be linked to this bank account';
+      // Still says "(Optional)" here even on a real failed result — without
+      // it, a customer whose account genuinely isn't linked (while this
+      // check isn't required) has no way to tell that from a blocking
+      // failure, and keeps tapping Retry for no reason.
+      panBankLinkSubtitle = panBankLinkMandatory
+          ? 'Your PAN does not appear to be linked to this bank account'
+          : 'Your PAN does not appear to be linked to this bank account. (Optional — this won\'t affect your account.)';
     } else if (!panBankLinkMandatory) {
       panBankLinkStatus = KycStepStatus.underReview;
       panBankLinkPill = 'Optional';
@@ -371,6 +381,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
 
     // Reverse Penny Drop (RPD) sub-item (inside BAV) — same "no locked
     // branch" reasoning as PAN-Bank Link above.
+    final rpdMandatory = _isMandatory(verificationStatus, 'reverse_penny_drop');
     final sortedRpd = (rpdHistory ?? const <RpdHistoryItem>[]).where((r) => cbankId != null && r.cbankId == cbankId).toList()
       ..sort((a, b) => (b.createdOn ?? DateTime(0)).compareTo(a.createdOn ?? DateTime(0)));
     final latestRpd = sortedRpd.isEmpty ? null : sortedRpd.first;
@@ -393,6 +404,32 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       rpdStatus = KycStepStatus.actionable;
       rpdPill = 'Start';
       rpdSubtitle = 'Confirm ownership with a ₹1 transfer from your bank app';
+    }
+
+    // Composite Bank Account Validation status — the row only reads
+    // Verified once pennyless BAV passed AND every sub-item that's
+    // actually required (mandatory) is resolved. A sub-item that's
+    // Optional (or inactive) never blocks this — same "if mandatory"
+    // principle used for its own pill above. Prevents the checklist ever
+    // showing "All done — fully verified" while a mandatory sub-check is
+    // still outstanding.
+    final panBankLinkSatisfied = !panBankLinkActive || !panBankLinkMandatory || panBankLinkStatus == KycStepStatus.verified;
+    final rpdSatisfied = !rpdActive || !rpdMandatory || rpdStatus == KycStepStatus.verified;
+    final KycStepStatus bavStatus;
+    final String bavPill;
+    final String bavSubtitle;
+    if (pennylessBavStatus != KycStepStatus.verified) {
+      bavStatus = pennylessBavStatus;
+      bavPill = pennylessBavPill;
+      bavSubtitle = pennylessBavSubtitle;
+    } else if (panBankLinkSatisfied && rpdSatisfied) {
+      bavStatus = KycStepStatus.verified;
+      bavPill = 'Verified';
+      bavSubtitle = pennylessBavSubtitle;
+    } else {
+      bavStatus = KycStepStatus.underReview;
+      bavPill = 'In Progress';
+      bavSubtitle = 'Complete the checks below to finish bank validation';
     }
 
     // Auto-push into Additional Verification the moment it becomes
@@ -437,14 +474,11 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     final bavIndex = ++stepCounter;
     tally(bavStatus);
 
-    final bavNeedsSubItemAttention = bavStatus == KycStepStatus.verified &&
-        ((panBankLinkActive &&
-                (panBankLinkStatus == KycStepStatus.actionable || panBankLinkStatus == KycStepStatus.failed)) ||
-            (rpdActive && rpdStatus != KycStepStatus.verified && rpdStatus != KycStepStatus.locked));
-
     // Which card should auto-expand / drive the footer CTA — first
-    // actionable, unlocked step in display order; BAV also counts as
-    // "needing attention" once verified if a sub-item still needs action.
+    // actionable, unlocked step in display order. bavStatus is now the
+    // COMPOSITE status (pennyless + mandatory sub-items), so this one
+    // check already covers "pennyless done but a mandatory sub-item still
+    // needs action" — no separate sub-item-attention check needed.
     String? attentionKey;
     if (nameDobStatus != KycStepStatus.verified && nameDobStatus != KycStepStatus.locked) {
       attentionKey = 'name_dob';
@@ -457,8 +491,6 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       // panAadhaarLinkStatus's computation above).
       attentionKey = 'pan_aadhaar_link';
     } else if (bavStatus != KycStepStatus.verified && bavStatus != KycStepStatus.locked) {
-      attentionKey = 'bav';
-    } else if (bavNeedsSubItemAttention) {
       attentionKey = 'bav';
     }
 
@@ -490,7 +522,11 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     String? footerKey;
     if (digilockerActive && !bothIdVerified) {
       footerKey = 'id';
-    } else if (bavStatus != KycStepStatus.verified && bavStatus != KycStepStatus.locked) {
+    } else if (pennylessBavStatus != KycStepStatus.verified && pennylessBavStatus != KycStepStatus.locked) {
+      // Checked against the pennyless-only status, not the composite
+      // bavStatus — once pennyless itself is done, there's nothing left to
+      // "Initiate"; a pending mandatory sub-item has its own action button
+      // inside the expanded BAV card instead of a footer CTA.
       footerKey = 'bav';
     }
 
@@ -575,7 +611,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                       lockedHint: bavStatus == KycStepStatus.locked ? bavSubtitle : null,
                       detail: _buildBavDetail(
                         isDark: isDark,
-                        bavStatus: bavStatus,
+                        pennylessBavStatus: pennylessBavStatus,
                         bankDataLoading: bankDataLoading,
                         panBankLinkActive: panBankLinkActive,
                         panBankLinkStatus: panBankLinkStatus,
@@ -763,7 +799,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
 
   Widget _buildBavDetail({
     required bool isDark,
-    required KycStepStatus bavStatus,
+    required KycStepStatus pennylessBavStatus,
     required bool bankDataLoading,
     required bool panBankLinkActive,
     required KycStepStatus panBankLinkStatus,
@@ -775,7 +811,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     required String rpdSubtitle,
     required String? cbankId,
   }) {
-    if (bavStatus != KycStepStatus.verified) {
+    if (pennylessBavStatus != KycStepStatus.verified) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -785,7 +821,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
           ),
           SizedBox(height: 12.h),
           CustomButton(
-            text: bavStatus == KycStepStatus.failed ? 'Retry Bank Validation' : 'Initiate Bank Validation',
+            text: pennylessBavStatus == KycStepStatus.failed ? 'Retry Bank Validation' : 'Initiate Bank Validation',
             svgIconPath: 'assets/buttons/tick.svg',
             isLoading: bankDataLoading,
             onPressed: () => _initiateBav(isDark),
@@ -795,12 +831,14 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       );
     }
 
-    // BAV itself is verified — PAN-Bank Link and Reverse Penny Drop render
-    // as sub-items here rather than their own top-level steps.
+    // Pennyless BAV passed — PAN-Bank Link and Additional Verification
+    // render as sub-items here rather than their own top-level steps. No
+    // separate "Verified" banner: the row header above already shows that
+    // (and, once every mandatory sub-item is also resolved, the composite
+    // bavStatus/pill reflect that too) — repeating it here said nothing new.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const KycVerifiedBanner(),
         if (panBankLinkActive) ...[
           SizedBox(height: 16.h),
           _buildBavSubItem(
