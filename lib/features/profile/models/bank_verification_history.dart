@@ -162,9 +162,9 @@ class RpdHistoryItem {
 
 enum BankTimelineKind { bav, pennyPayment, pennyRefund, reversePennyDrop }
 
-/// One row in the merged Bank Account Verification timeline — combines BAV
+/// One row in the merged Bank Account Validation timeline — combines BAV
 /// attempts and Rs.1 payment/refund attempts into a single chronological
-/// feed (Profile > Bank Account Verification).
+/// feed (Profile > Bank Account Validation).
 class BankTimelineEntry {
   final BankTimelineKind kind;
   final String title;
@@ -273,7 +273,7 @@ class BankVerificationCard {
 
     BankTimelineEntry bavEntry(BavHistoryItem item) => BankTimelineEntry(
           kind: BankTimelineKind.bav,
-          title: 'Bank Account Verification',
+          title: 'Bank Account Validation',
           status: item.status,
           provider: item.provider,
           dateTime: item.attemptedOn,

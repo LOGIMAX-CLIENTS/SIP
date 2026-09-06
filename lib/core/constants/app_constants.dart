@@ -51,7 +51,7 @@ class AppConstants {
   static const String availableBalance = 'Available Balance';
   static const String enterAmount = 'Enter Amount';
   static const String withdrawNow = 'Withdraw Now';
-  static const String kycRequired = 'KYC Verification Required';
+  static const String kycRequired = 'KYC Validation Required';
   static const String kycRequiredDesc =
       'Please complete your KYC to enable withdrawals.';
   static const String selectBank = 'Select Bank Account / UPI';

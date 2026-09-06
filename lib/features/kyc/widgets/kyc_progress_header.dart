@@ -13,6 +13,7 @@ class KycProgressHeader extends StatelessWidget {
   final int completed;
   final int total;
   final VoidCallback? onBack;
+  final VoidCallback? onRefresh;
 
   const KycProgressHeader({
     super.key,
@@ -21,6 +22,7 @@ class KycProgressHeader extends StatelessWidget {
     required this.completed,
     required this.total,
     this.onBack,
+    this.onRefresh,
   });
 
   static const _kGradient = LinearGradient(
@@ -55,11 +57,19 @@ class KycProgressHeader extends StatelessWidget {
                         color: Colors.white, size: 20.sp),
                     onPressed: onBack ?? () => NavigationUtils.safePop(context),
                   ),
-                  Text(
-                    'KYC Verification',
-                    style: AppTextStyles.titleMedium(false)
-                        .copyWith(color: Colors.white),
+                  Expanded(
+                    child: Text(
+                      'KYC Validation',
+                      style: AppTextStyles.titleMedium(false)
+                          .copyWith(color: Colors.white),
+                    ),
                   ),
+                  if (onRefresh != null)
+                    IconButton(
+                      icon: Icon(Icons.refresh_rounded,
+                          color: Colors.white, size: 22.sp),
+                      onPressed: onRefresh,
+                    ),
                 ],
               ),
               SizedBox(height: 8.h),

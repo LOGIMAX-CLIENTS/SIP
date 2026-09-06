@@ -464,7 +464,7 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('KYC Verification', style: AppTextStyles.titleMedium(isDark).copyWith(color: const Color(0xFF643D41))),
+              Text('KYC Validation', style: AppTextStyles.titleMedium(isDark).copyWith(color: const Color(0xFF643D41))),
               SizedBox(height: 24.h),
               Container(
                 width: 72.r,

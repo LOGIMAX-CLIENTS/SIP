@@ -360,7 +360,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     // WHOLE success-dialogs sequence on every subsequent reopen of this
     // screen for the rest of the session, not just once — this function's
     // own _completionCheckedOnLoad only guards ONE instance, and a fresh
-    // instance is exactly what Profile's "KYC Verification" tap-in creates
+    // instance is exactly what Profile's "KYC Validation" tap-in creates
     // every time. Falls back to a purely local key when there's no live
     // verificationId (e.g. a customer recovering from an earlier app
     // session, where aadhaarProvider has reset to its pristine state) so
@@ -952,13 +952,13 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     }
 
     // Refreshed directly here, not left to the caller's own pop-result
-    // handling — Profile's own "KYC Verification" tap-in DOES await this
+    // handling — Profile's own "KYC Validation" tap-in DOES await this
     // push and refresh on `result == true`, but this screen can just as
     // easily be reached via MainScreen's app-shell fallback navigation
     // (SDK-bounce recovery — see MainScreen's _navigateToKycAndLetItHandle),
     // which pushes this route directly and never awaits a result at all.
     // Without this, that path's customer would see a still-unverified
-    // "KYC Verification" badge on Profile despite everything having just
+    // "KYC Validation" badge on Profile despite everything having just
     // succeeded, until they happened to revisit another tab that also
     // invalidates profileProvider.
     ref.read(pc.profileProvider.notifier).fetchProfileDetails();
@@ -984,7 +984,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'KYC Verification',
+                'KYC Validation',
                 style: AppTextStyles.titleMedium(isDark)
                     .copyWith(color: const Color(0xFF643D41)),
               ),

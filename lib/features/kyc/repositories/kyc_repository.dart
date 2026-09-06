@@ -418,6 +418,21 @@ class KycRepository {
     throw Exception(response.data['message'] ?? 'Could not load verification status.');
   }
 
+  /// "Retry" action for the checklist's PAN-Aadhaar Link step — recomputes
+  /// from the stored PAN record server-side rather than redoing DigiLocker
+  /// consent (see KYCService.retry_aadhaar_pan_link's docstring). Response
+  /// is `{status, needs_reverify}`; `needs_reverify: true` means the stored
+  /// PAN record has nothing to recompute from and the caller should fall
+  /// back to the existing PAN re-verify flow (KycIdVerificationScreen).
+  Future<Map<String, dynamic>> retryAadhaarPanLink() async {
+    final response = await _apiClient.post('kyc/retry/aadhaar-pan-link');
+    if (response.data['success'] == true) {
+      final data = response.data['data'];
+      return data is Map<String, dynamic> ? data : <String, dynamic>{};
+    }
+    throw Exception(response.data['message'] ?? 'Could not check PAN-Aadhaar link.');
+  }
+
   Future<void> updateProfileDob({required String source, String? dob}) async {
     final response = await _apiClient.post('kyc/update-profile-dob', data: {
       'source': source,

@@ -9,6 +9,8 @@ import '../../core/error/failures.dart';
 import '../../routes/app_router.dart';
 import 'models/bank_account.dart';
 import 'services/bank_details_service.dart';
+import 'services/bank_verification_history_service.dart';
+import '../kyc/controllers/kyc_controller.dart';
 
 class BankDetailsScreen extends ConsumerWidget {
   const BankDetailsScreen({super.key});
@@ -37,6 +39,14 @@ class BankDetailsScreen extends ConsumerWidget {
     try {
       await ref.read(bankDetailsServiceProvider).removeBank(account.idBank);
       ref.invalidate(bankAccountsProvider);
+      // The KYC checklist's Bank Account Validation card (and its PAN-Bank
+      // Link / RPD sub-items) read bavHistoryProvider/rpdHistoryProvider/
+      // verificationStatusProvider — without this, a KYC screen already
+      // open in the widget tree keeps showing the removed account as
+      // Verified until it's reopened.
+      ref.invalidate(bavHistoryProvider);
+      ref.invalidate(rpdHistoryProvider);
+      ref.invalidate(verificationStatusProvider);
       if (context.mounted) {
         AppToast.show(context, 'Bank account removed', type: ToastType.success);
       }

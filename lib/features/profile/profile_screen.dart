@@ -160,7 +160,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.bankDetails),
                           ),
                           _buildMenuItem(
-                            'Bank Account Verification',
+                            'Bank Account Validation',
                             'assets/withdraw/bank.svg',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.bankVerificationHub),
@@ -172,7 +172,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.transactionHistory),
                           ),
                           _buildMenuItem(
-                            'KYC Verification',
+                            'KYC Validation',
                             'assets/sidemenu/kyc.svg',
                             onTap: () async {
                               // Always open the KYC screen — even when already

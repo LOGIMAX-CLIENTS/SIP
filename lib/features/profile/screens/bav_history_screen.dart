@@ -38,7 +38,7 @@ class BavHistoryScreen extends ConsumerWidget {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          GradientHeader(title: 'Bank Account Verification History'),
+          GradientHeader(title: 'Bank Account Validation History'),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async => ref.invalidate(bavHistoryProvider),

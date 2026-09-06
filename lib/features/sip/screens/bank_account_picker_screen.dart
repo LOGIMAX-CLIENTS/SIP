@@ -108,7 +108,7 @@ class BankAccountPickerScreen extends ConsumerWidget {
   }
 
   /// A pending account's row previously had onTap: null — a dead tap with
-  /// no way forward except the separate Bank Account Verification hub.
+  /// no way forward except the separate Bank Account Validation hub.
   /// Sends the customer straight to the ₹1 penny-drop screen for THIS
   /// account instead; on success, refreshes the list so it re-renders as
   /// selectable/verified immediately rather than needing a manual pull-to-
