@@ -37,6 +37,25 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   final aadhaarNameController = TextEditingController();
   final aadhaarFormKey = GlobalKey<FormState>();
 
+  /// How many KYC host screens are mounted right now.
+  ///
+  /// MainScreen's app-shell fallback exists to show a pending outcome when
+  /// NO host screen is around to show it itself. It decided that by racing
+  /// the shared `handled*` claim sets on a 150 ms timer -- but a host can
+  /// only claim an outcome it can already see, and
+  /// [checkAadhaarOutcomeRecoveryOnLoad] runs once on mount, before
+  /// `kyc/document-types` has answered. When the prompt only arrives with
+  /// that response (`pending_action: CONFIRM_PROFILE_NAME`, say), the host
+  /// never claims it, the fallback wins the race by default, and pushes a
+  /// SECOND copy of the checklist on top of the one the customer is already
+  /// looking at. That reads as "Back doesn't work": the first Back pops the
+  /// duplicate and reveals the identical screen underneath.
+  ///
+  /// Counting mounted hosts answers the question the fallback is actually
+  /// asking, and does not depend on when the data lands.
+  static int _mountedHosts = 0;
+  static bool get hasMountedHost => _mountedHosts > 0;
+
   bool _aadhaarSeeded = false;
   bool _aadhaarReconciled = false;
   bool aadhaarEditing = false;
@@ -53,7 +72,14 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   void onKycStepCompleted() {}
 
   @override
+  void initState() {
+    super.initState();
+    _mountedHosts++;
+  }
+
+  @override
   void dispose() {
+    _mountedHosts--;
     panNameController.dispose();
     panNumberController.dispose();
     aadhaarNumberController.dispose();

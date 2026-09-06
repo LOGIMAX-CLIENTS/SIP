@@ -21,6 +21,7 @@ import '../../core/services/notification_service.dart';
 import '../../routes/app_router.dart';
 import '../../core/security/secure_logger.dart';
 import '../kyc/controllers/kyc_controller.dart';
+import '../kyc/controllers/kyc_verification_flow_mixin.dart';
 
 /// Shared provider so any child screen can switch tabs
 final selectedTabProvider = StateProvider<int>((ref) => 0);
@@ -177,8 +178,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: scheduling fallback for ${prompt.verificationId}');
     Future.delayed(_fallbackGracePeriod, () {
       final alreadyShown = AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId);
-      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: grace period elapsed, mounted=$mounted, alreadyShownByKycScreen=$alreadyShown');
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: grace period elapsed, mounted=$mounted, alreadyShownByKycScreen=$alreadyShown, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
       if (!mounted || alreadyShown) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
       if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
       SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: navigating');
       _navigateToKycAndLetItHandle();
@@ -191,6 +193,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   void _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) {
     Future.delayed(_fallbackGracePeriod, () {
       if (!mounted || AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId)) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
       if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
       _navigateToKycAndLetItHandle();
     });
@@ -204,6 +207,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     final key = '${state.verificationId ?? state.message}-${state.phase}';
     Future.delayed(_fallbackGracePeriod, () {
       if (!mounted || AadhaarNotifier.handledFailureKeys.contains(key)) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
       if (!_navigatedFailureKeys.add(key)) return;
       _navigateToKycAndLetItHandle();
     });
@@ -224,8 +228,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: scheduling fallback for $key');
     Future.delayed(_fallbackGracePeriod, () {
       final alreadyClaimed = AadhaarNotifier.handledApprovedKeys.contains(key);
-      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: grace elapsed, mounted=$mounted, alreadyClaimedByKycScreen=$alreadyClaimed');
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: grace elapsed, mounted=$mounted, alreadyClaimedByKycScreen=$alreadyClaimed, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
       if (!mounted || alreadyClaimed) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
       if (!_navigatedApprovedKeys.add(key)) return;
       SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: navigating');
       _navigateToKycAndLetItHandle();
