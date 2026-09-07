@@ -1,7 +1,7 @@
 ---
 module: kyc
 brain_status: 🟢 (Round 1, ~95%)
-last_updated: 2026-08-19
+last_updated: 2026-09-07
 files_read: 10/10 lib/features/kyc/**/*.dart + core/utils/kyc_validator.dart + cross-module callers
 ---
 
@@ -173,6 +173,17 @@ and `withdrawal/services/withdrawal_service.dart:59` call the identical path.
    the actual regex lives inline in `screens/kyc_screen.dart`.
 5. `KycImagesRequirement` is modeled but unused — if a future backend change starts requiring image upload,
    the UI has no code path for it yet.
+6. `_profileAlreadyMatches` and `_runCompletionSequence` are **duplicated verbatim** in
+   `controllers/kyc_verification_flow_mixin.dart` and `screens/kyc_screen.dart` (the merged checklist and
+   the older hub each carry their own copy). The 2026-09-07 blank-verified-name fix had to be applied to
+   both — a fix landed in only one of them silently leaves the other path broken. Same for
+   `NameMismatchDialog`, which lives in `kyc_screen.dart` but is used by the mixin too, so that one at
+   least has a single definition. See `BUSINESS_RULES.md` RULE-KYC-013.
+7. The completion flow's "confirmed" signal is `update_profile_name_from_kyc` → `confirm_and_sync()`
+   server-side. Any client path that skips the Profile Name Selection dialog (deferring it, or the
+   RULE-KYC-013 blank-name skip) therefore does NOT mark KYC confirmed — except after a mismatch
+   confirmation, where `_finalize_name_mismatch_confirmation` already called `confirm_and_sync()` itself.
+   Check which of those two paths applies before changing when that dialog is shown.
 
 ## 9. See Also
 

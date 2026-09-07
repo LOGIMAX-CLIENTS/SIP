@@ -114,6 +114,64 @@ Aadhaar was already done — confusing, since there was nothing left to complete
 for the PAN doc and renders `_buildPanSkippedNotice` instead, with a "Retry PAN Verification" button
 (`_onRetryPan()`) that re-runs the DigiLocker consent and explicitly tells the user to check PAN this time.
 
+## RULE-KYC-013 — A blank verified name must never open the Profile Name Selection popup (fixed 2026-09-07)
+
+`_profileAlreadyMatches(verifiedName)` — duplicated in `controllers/kyc_verification_flow_mixin.dart:554`
+and `screens/kyc_screen.dart:929` — returns **true** (nothing to confirm) when `verifiedName` is null or
+blank. It used to return false, which meant "doesn't match" and opened `KycVerifiedDetailsDialog` with
+`Verified PAN Name: —` and an empty, unsaveable name field.
+
+That was reachable in production: a PAN mismatch row is created by the backend's
+`_offer_pan_name_mismatch_confirmation` with **no `payload` key at all**, and
+`_finalize_name_mismatch_confirmation` wrote only `verified_dob` on approval — never the name. Both readers
+of the PAN verified name (`get_document_types()` and `update_profile_name_from_kyc()`) look at
+`kyc_response["payload"]["name"]`, so they found nothing. Save then failed server-side with *"Verified name
+not available for this document."*, leaving "Do this later" as the only exit — which aborts
+`_runCompletionSequence` before `confirm_and_sync()`, so the identical popup returned on every subsequent
+status check.
+
+Backend fix (`KYCService._finalize_name_mismatch_confirmation`): also writes `payload.name` and
+`entered_name` from `final_name`. Already-approved rows predating the fix need the
+`backfill_kyc_mismatch_verified_name` management command — the code fix only applies at confirmation time.
+
+❌ Treating "no verified name" as a mismatch.
+✅ No verified name to compare against means there is nothing to ask the customer to confirm.
+
+## RULE-KYC-014 — The mismatch dialog asks for only the field that actually failed (added 2026-09-07)
+
+`CONFIRM_NAME_UPDATE` now carries `name_mismatch` / `dob_mismatch` booleans
+(`KYCService._confirm_name_update_prompt`), parsed into `NameMismatchPrompt.nameMismatch/dobMismatch`.
+`NameMismatchDialog` shows the name field only when the name failed and the DOB picker only when the DOB
+failed; the title and body copy follow.
+
+Both flags are decided **server-side and never re-derived on the client** — the name comparison is fuzzy
+(`NameMatchingService.compute_match`, score threshold), so a client-side string compare of `verifiedName`
+vs `profileName` would disagree with the gate that actually blocked the customer.
+
+The customer still submits **both** values: `_validate_mismatch_resubmission` re-checks both regardless, so
+the hidden field is sent pre-filled from the verified value (`initState`) rather than dropped. Sending an
+empty DOB when the document carried one would fail `dob_ok` and reject the resubmission.
+
+Where the flags come from:
+- **Aadhaar** (`_check_aadhaar_kyc`): `name_mismatch = not name_matched_bool`,
+  `dob_mismatch = dob_conflict or dob_missing` (a profile with no DOB still prompts, so the customer sees
+  and confirms the value before it's written). Persisted into `awaiting_confirmation` so a plain re-poll
+  rebuilds the same single-field prompt.
+- **PAN** (`_offer_pan_name_mismatch_confirmation`): the caller passes `name_mismatch` (the name-mismatch
+  branch passes true, the DOB-mismatch branch passes false since the name already matched); the DOB
+  condition is re-derived inside the function, because the name-mismatch caller reaches it *before* the DOB
+  cross-check has run.
+
+Backward compatibility: a backend without these keys sends neither, and `NameMismatchPrompt.fromJson`
+falls back to the old behaviour — name always, DOB whenever the document carried one. Rows written before
+the flags existed read the same defaults out of `awaiting_confirmation`.
+
+Covered by `test/name_mismatch_dialog_test.dart` (10 tests: field visibility per flag combination, the
+no-DOB document case, hidden-field pre-fill on submit, and the `fromJson` defaults).
+
+❌ Deciding on the client which field mismatched, or hiding a field without still submitting its value.
+✅ Server decides; client hides the field but sends the verified value back.
+
 ## Unconfirmed / needs a fresh backend-contract check
 
 - Exact `id_document` value the backend assigns to the PAN document type (the app never hardcodes it — it's

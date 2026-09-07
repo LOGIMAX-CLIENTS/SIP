@@ -116,6 +116,16 @@ class NameMismatchPrompt {
   final String? profileDob;
   final String? message;
 
+  /// Which field actually failed the server's comparison, so the dialog can
+  /// ask for only that one. Decided server-side and never re-derived here:
+  /// the name check is fuzzy (NameMatchingService.compute_match with a score
+  /// threshold), so comparing [verifiedName] to [profileName] on the client
+  /// would disagree with the gate that actually blocked the customer.
+  /// The customer still resubmits BOTH values — the hidden one is sent back
+  /// pre-filled from the verified value, since the server re-checks both.
+  final bool nameMismatch;
+  final bool dobMismatch;
+
   const NameMismatchPrompt({
     required this.document,
     required this.verificationId,
@@ -124,17 +134,27 @@ class NameMismatchPrompt {
     this.profileName,
     this.profileDob,
     this.message,
+    this.nameMismatch = true,
+    this.dobMismatch = false,
   });
 
   factory NameMismatchPrompt.fromJson(Map<String, dynamic> json) {
+    final verifiedDob = json['verified_dob']?.toString();
     return NameMismatchPrompt(
       document: (json['document'] ?? '').toString(),
       verificationId: (json['verification_id'] ?? '').toString(),
       verifiedName: json['verified_name']?.toString(),
-      verifiedDob: json['verified_dob']?.toString(),
+      verifiedDob: verifiedDob,
       profileName: json['profile_name']?.toString(),
       profileDob: json['profile_dob']?.toString(),
       message: json['message']?.toString(),
+      // A backend that predates these keys sends neither — fall back to the
+      // old "ask for both" behaviour (name always, DOB whenever the document
+      // carried one) so a new app against an old server never hides a field
+      // the customer still has to correct.
+      nameMismatch: json['name_mismatch'] as bool? ?? true,
+      dobMismatch: json['dob_mismatch'] as bool? ??
+          (verifiedDob != null && verifiedDob.isNotEmpty),
     );
   }
 }
