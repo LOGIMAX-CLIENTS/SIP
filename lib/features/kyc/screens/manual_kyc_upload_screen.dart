@@ -37,10 +37,23 @@ class ManualKycUploadScreen extends ConsumerStatefulWidget {
   final String docType;
   final String requestFrom;
 
+  /// Carried over from whatever the customer already typed on the previous
+  /// screen, so they don't retype the same name/number here. Optional — this
+  /// screen is also reachable from paths that have nothing to hand over.
+  ///
+  /// [prefillNumber] must arrive in THIS screen's own field format: the PAN
+  /// field holds the raw 10 characters (UpperCaseFormatter + length 10), while
+  /// Aadhaar's holds the space-grouped form (AadhaarInputFormatter). Callers
+  /// unformat/format accordingly rather than this screen guessing.
+  final String? prefillName;
+  final String? prefillNumber;
+
   const ManualKycUploadScreen({
     super.key,
     required this.docType,
     required this.requestFrom,
+    this.prefillName,
+    this.prefillNumber,
   });
 
   @override
@@ -61,6 +74,15 @@ class _ManualKycUploadScreenState extends ConsumerState<ManualKycUploadScreen> {
 
   bool get _isPan => widget.docType == '1';
   bool get _filesReady => _isPan ? _panFile != null : (_frontFile != null && _backFile != null);
+
+  @override
+  void initState() {
+    super.initState();
+    final name = widget.prefillName?.trim() ?? '';
+    if (name.isNotEmpty) _nameController.text = name;
+    final number = widget.prefillNumber?.trim() ?? '';
+    if (number.isNotEmpty) _numberController.text = number;
+  }
 
   @override
   void dispose() {
