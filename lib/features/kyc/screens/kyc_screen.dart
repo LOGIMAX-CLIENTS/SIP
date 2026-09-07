@@ -939,7 +939,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     // "KYC Validation" badge on Profile despite everything having just
     // succeeded, until they happened to revisit another tab that also
     // invalidates profileProvider.
-    ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    // AWAITED — Navigator.pop is two lines below. fetchProfileDetails() sets
+    // `state` synchronously, so leaving it in flight across the pop notifies
+    // consumers on a tree that is already tearing down, and Riverpod calls
+    // markNeedsBuild on a defunct element.
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    if (!mounted) return;
 
     SecureLogger.d('[KYC DEBUG] _runCompletionSequence: popping(true)');
     Navigator.pop(context, true);
@@ -1470,7 +1475,8 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
     if (result == true && mounted) {
       ref.invalidate(kycDocumentsProvider(widget.requestFrom));
-      ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+      // Awaited for the same reason as _runCompletionSequence's own call.
+      await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
     }
   }
 
