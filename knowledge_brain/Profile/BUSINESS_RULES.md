@@ -90,3 +90,55 @@ strings are, and have been, plain forward slashes — `'account/verify-bank'` an
 Add Bank Account call (path correctly matches `AppConfig.encryptedEndpoints`'s `'verify-bank'` entry).
 Treat this rule as void — kept here (rather than deleted) only as a record that the claim was checked and
 disproven, so it isn't independently "rediscovered" and re-flagged later.
+
+## RULE-PROFILE-011 — DOB is typed as DD/MM/YYYY with auto-inserted separators (added 2026-09-07)
+
+`DobInputFormatter` (`shared/utils/dob_input_formatter.dart`) owns DOB text entry on **both** the
+registration screen and Account Details. It inserts the slashes while typing — `19` -> `19/`,
+`1906` -> `19/06/`, `19061992` -> `19/06/1992` — so a customer can type straight through with no
+separators. Caret re-anchoring follows `AadhaarInputFormatter`'s approach; the trailing separator is
+suppressed while deleting, or backspace could never move left past a slash.
+
+**Why the field owns typing.** The "Invalid format." error customers hit came from **Flutter's own**
+`showDatePicker` keyboard-entry mode, not from this codebase (the string appears nowhere in `lib/`). That
+mode parses by locale — `en_US` => MM/DD/YYYY — so `19061992` was rejected. Both pickers now pass
+`initialEntryMode: DatePickerEntryMode.calendarOnly`, removing that path entirely.
+
+Formatting and validation are deliberately split, same as `AadhaarInputFormatter`: the formatter never
+rejects an impossible day/month mid-keystroke. `DobInputFormatter.parse()` is the gate — it returns null
+for an incomplete value AND for a date that isn't real (`31/02/1990`, which `DateTime` would otherwise
+silently roll to 3 March).
+
+**Account Details specifics.** DOB was previously `isEditable: false` (display-only via `hint`); it is now
+editable in edit mode with a "Pick" action for the calendar. Two consequences:
+
+- The controller is seeded through `_toDisplayDob()` — the API returns ISO (`2000-12-11`) but the field's
+  text is now what the customer reads and edits. `profile/update` accepts **either** shape (backend
+  `identity.py`: a `/` in the value parses as `%d/%m/%Y`, otherwise `date.fromisoformat`), so sending
+  `19/06/1992` is safe.
+- Save-time validation was added (required / valid date / 18+). This is **not optional politeness**:
+  `profile/update`'s dob branch swallows a malformed value silently (`except (ValueError, TypeError):
+  pass`), so without it the customer would be told "Profile updated successfully" while their DOB was
+  quietly dropped.
+
+❌ Re-deriving the DD/MM/YYYY split inline, or relying on the date picker's own keyboard entry.
+✅ `DobInputFormatter` for input, `.parse()` for validation, `.formatDate()` for DateTime -> display.
+
+### UI follow-ups (2026-09-07)
+
+- **DOB action is a calendar icon**, not a "Pick" label — `_buildInputField` gained an `actionIcon` param
+  for actions better shown as a glyph. Matches RegistrationScreen's own DOB field.
+- **The e-mail Verify action lives INSIDE the field**, not beside the label. Account Details uses a new
+  `actionWidget` slot (rendered in the value box, and deliberately NOT gated on `isEditable` — the badge
+  decides its own state); RegistrationScreen passes `_buildEmailVerifyAction()` as the field's `suffixIcon`.
+  That widget must stay wrapped in a constrained container: a bare `Row` inside `suffixIcon` stretches to
+  the field's full height and pushes the value text off-centre.
+- **The Verify tap target is the whole padded region**, not the word. Both screens wrap it in a
+  `GestureDetector` with `behavior: HitTestBehavior.opaque` — without that, transparent padding is not
+  hit-testable and only the glyphs respond, which is exactly how it shipped first.
+- **Playfair Display digits are forced to lining figures.** `AppTextStyles.digitFeatures`
+  (`liningFigures` + `tabularFigures`) is applied to `bodyLarge` and `inputHint` — the two Playfair styles
+  used by text inputs. Playfair ships OLDSTYLE figures by default, so digits render at varying heights and
+  an e-mail like `sankarguru.8750@...` looked like the numbers were bouncing. Lora (the numeric style)
+  already used lining figures and needed nothing. This is a SHARED style, so it changes digit rendering
+  anywhere `bodyLarge` is used, not only these two fields.
