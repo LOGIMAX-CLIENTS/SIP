@@ -1,11 +1,13 @@
 class LinkedUpi {
+  final String id;
   final String upiId;
   final bool isVerified;
 
-  LinkedUpi({required this.upiId, required this.isVerified});
+  LinkedUpi({required this.id, required this.upiId, required this.isVerified});
 
   factory LinkedUpi.fromJson(Map<String, dynamic> json) {
     return LinkedUpi(
+      id: json['id']?.toString() ?? '',
       upiId: json['upi_id']?.toString() ?? '',
       isVerified: json['is_verified'] == true,
     );

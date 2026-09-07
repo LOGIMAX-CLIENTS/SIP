@@ -41,22 +41,16 @@ class BankDetailsService {
     }
   }
 
-  /// POST account/verify-upi — verify a VPA and save it as a UPI beneficiary.
-  /// Verified standalone here, same endpoint Withdrawal's UPI form uses
-  /// (WithdrawalService.verifyAndAddUpi) — this call carries no bank_id, so
-  /// the resulting CustomerUPI row is NOT linked to any specific bank
-  /// account. Only Reverse Penny Drop (the "Verify Now" flow on a Pending
-  /// card above) proves and records that link — see CustomerUPI.
-  /// cupi_cbank_id on the backend. A UPI added here still shows up for
-  /// Withdrawal/Auto Savings selection, just not tagged under any one bank
-  /// card.
-  Future<Map<String, dynamic>> verifyAndAddUpi({
-    required String mobile,
-    required String upiId,
-  }) async {
-    final response = await _apiClient
-        .post('account/verify-upi', data: {'mobile': mobile, 'upi_id': upiId});
-    return response.data ?? {};
+  /// POST profile/bank-accounts/upi/remove — soft-remove a UPI linked to a
+  /// bank account (backend keeps the RPD-proven link for audit).
+  Future<void> removeUpi(String cupiId) async {
+    final response = await _apiClient.post(
+      'profile/bank-accounts/upi/remove',
+      data: {'id': cupiId},
+    );
+    if (response.data == null || response.data['success'] != true) {
+      throw Exception(response.data?['message'] ?? 'Could not remove this UPI.');
+    }
   }
 
   /// POST account/check-beneficiary-name — live name-match check against the

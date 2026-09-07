@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/add_bank_account_sheet.dart';
-import '../../shared/widgets/add_upi_sheet.dart';
 import '../../core/error/failures.dart';
 import '../../routes/app_router.dart';
 import 'models/bank_account.dart';
@@ -74,6 +73,57 @@ class BankDetailsScreen extends ConsumerWidget {
     );
     if (verified == true) {
       ref.invalidate(bankAccountsProvider);
+    }
+  }
+
+  /// "+Add UPI" on a Verified account — reuses the SAME ₹1 Reverse Penny
+  /// Drop flow [_verifyPendingAccount] uses, rather than a standalone VPA
+  /// text-field verify: RPD is the only mechanism that actually proves a
+  /// UPI pays from THIS specific account (see reverse_penny_drop_status's
+  /// account-match on the backend), so this is the one path that can add
+  /// an entry to [BankAccount.linkedUpis] at all.
+  Future<void> _addUpi(
+      BuildContext context, WidgetRef ref, BankAccount account) async {
+    final verified = await Navigator.pushNamed(
+      context,
+      AppRouter.reversePennyDrop,
+      arguments: {'cbankId': account.idBank},
+    );
+    if (verified == true) {
+      ref.invalidate(bankAccountsProvider);
+    }
+  }
+
+  Future<void> _confirmRemoveUpi(
+      BuildContext context, WidgetRef ref, LinkedUpi upi) async {
+    final confirmed = await showGeneralDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          barrierLabel: 'Dismiss',
+          barrierColor: Colors.black.withOpacity(0.6),
+          transitionDuration: const Duration(milliseconds: 280),
+          transitionBuilder: (ctx, a1, a2, child) {
+            return ScaleTransition(
+              scale: CurvedAnimation(parent: a1, curve: Curves.easeOutBack),
+              child: FadeTransition(opacity: a1, child: child),
+            );
+          },
+          pageBuilder: (ctx, _, __) => _RemoveUpiDialog(upi: upi),
+        ) ??
+        false;
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(bankDetailsServiceProvider).removeUpi(upi.id);
+      ref.invalidate(bankAccountsProvider);
+      if (context.mounted) {
+        AppToast.show(context, 'UPI removed', type: ToastType.success);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        final message = e is Failure ? e.message : 'Could not remove this UPI.';
+        AppToast.show(context, message, type: ToastType.error);
+      }
     }
   }
 
@@ -308,16 +358,18 @@ class BankDetailsScreen extends ConsumerWidget {
                               fontWeight: FontWeight.w600,
                               color: isDark ? Colors.white : const Color(0xFF1E293B),
                             )),
+                        SizedBox(width: 4.w),
+                        InkWell(
+                          onTap: () => _confirmRemoveUpi(context, ref, upi),
+                          borderRadius: BorderRadius.circular(100.r),
+                          child: Icon(Icons.close_rounded,
+                              size: 13.sp, color: _accentGreen.withOpacity(0.6)),
+                        ),
                       ],
                     ),
                   ),
                 InkWell(
-                  onTap: () => showAddUpiSheet(
-                    context,
-                    ref,
-                    isDark: isDark,
-                    onAdded: () => ref.invalidate(bankAccountsProvider),
-                  ),
+                  onTap: () => _addUpi(context, ref, account),
                   borderRadius: BorderRadius.circular(100.r),
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
@@ -452,6 +504,147 @@ class _RemoveBankDialog extends StatelessWidget {
               ),
               child: Text(
                 'You can add this account again anytime — your verification\nhistory is kept.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF6B7280),
+                  height: 1.5,
+                ),
+              ),
+            ),
+            SizedBox(height: 24.h),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF374151),
+                      side: BorderSide(color: Colors.black.withOpacity(0.12)),
+                      minimumSize: Size(0, 50.h),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(50.r),
+                      ),
+                    ),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.playfairDisplay(
+                          fontSize: 14.sp, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment(-0.87, -0.5),
+                        end: Alignment(0.87, 0.5),
+                        colors: [Color(0xFFB91C1C), Color(0xFFEF4444)],
+                      ),
+                      borderRadius: BorderRadius.circular(50.r),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _danger.withOpacity(0.30),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        foregroundColor: Colors.white,
+                        minimumSize: Size(0, 50.h),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(50.r),
+                        ),
+                      ),
+                      child: Text(
+                        'Yes, Remove',
+                        style: GoogleFonts.playfairDisplay(
+                            fontSize: 14.sp, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RemoveUpiDialog extends StatelessWidget {
+  final LinkedUpi upi;
+
+  const _RemoveUpiDialog({required this.upi});
+
+  static const _danger = Color(0xFFDC2626);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.all(28.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24.r),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 40,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64.w,
+              height: 64.w,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _danger.withOpacity(0.08),
+                border: Border.all(color: _danger.withOpacity(0.2), width: 1.5),
+              ),
+              child: Icon(Icons.delete_outline_rounded, color: _danger, size: 30.sp),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Remove UPI?',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF1A1A2E),
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              upi.upiId,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF374151),
+              ),
+            ),
+            SizedBox(height: 8.h),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+              decoration: BoxDecoration(
+                color: _danger.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10.r),
+              ),
+              child: Text(
+                'You can add it again anytime with a fresh ₹1 verification.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 12.sp,
