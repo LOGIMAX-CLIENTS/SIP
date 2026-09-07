@@ -63,6 +63,20 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   bool verifyingAadhaar = false;
   bool completingKyc = false;
 
+  /// Standalone PAN verification (RULE-KYC-019) — the typed PAN number sent
+  /// straight to the provider's PAN API instead of redoing DigiLocker consent.
+  bool verifyingPanDirect = false;
+  /// True once a standalone attempt has actually FAILED. Manual upload (which
+  /// needs a human to review a document) is revealed only after this, so the
+  /// customer gets the automatic route first.
+  bool panDirectFailed = false;
+  /// True while the customer is re-entering an ALREADY-VERIFIED PAN after
+  /// tapping Edit on its verified card. Drives `allow_reverify` on the submit
+  /// below — without it the backend's idempotency check short-circuits with
+  /// "already approved" and silently ignores the corrected value
+  /// (RULE-KYC-005).
+  bool panEditing = false;
+
   /// Called once a docs-status refresh (triggered by [checkAndHandleCompletion])
   /// finishes reacting to a verify attempt — whether or not KYC is fully
   /// complete yet. No-op by default: the merged checklist screen just keeps
@@ -228,6 +242,29 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   void editAadhaar() {
     setState(() => aadhaarEditing = true);
     ref.read(aadhaarProvider.notifier).reset();
+  }
+
+  /// Reopens the PAN form on an already-verified PAN card so the customer can
+  /// correct the number/name and re-verify.
+  ///
+  /// This became possible only once standalone PAN verification existed
+  /// (RULE-KYC-019). Before that PAN had no manual re-entry path at all — the
+  /// only way to redo it was a full DigiLocker re-consent via Aadhaar's own
+  /// Edit — which is why the verified PAN card shipped without an Edit action.
+  ///
+  /// [prefillName] seeds the name field with what was verified, so a customer
+  /// correcting only the PAN number doesn't have to retype their name.
+  void editPan({String? prefillName}) {
+    setState(() {
+      panEditing = true;
+      // A fresh attempt — don't carry a previous failure's manual-upload
+      // fallback into it.
+      panDirectFailed = false;
+    });
+    if (prefillName != null && prefillName.trim().isNotEmpty) {
+      panNameController.text = prefillName.trim();
+    }
+    panNumberController.clear();
   }
 
   Future<void> _runVerify(String requestFrom, {bool panOnlyResume = false}) async {
@@ -564,9 +601,31 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   }
 
   Future<void> openManualUpload(String docType, String requestFrom) async {
+    // Hand over whatever the customer already typed on this screen so they
+    // don't enter the same name/number twice. Manual upload is reached AFTER
+    // an automatic attempt has failed, so those fields are normally filled in.
+    //
+    // Formats are converted to what ManualKycUploadScreen's own fields expect:
+    // its PAN field holds the RAW 10 characters (this screen's controller is
+    // space-grouped by PanInputFormatter), while both Aadhaar fields use the
+    // same AadhaarInputFormatter grouping and pass through unchanged.
+    final isPan = docType == '1';
+    final prefillName =
+        isPan ? panNameController.text.trim() : aadhaarNameController.text.trim();
+    final prefillNumber = isPan
+        ? PanInputFormatter.unformat(panNumberController.text)
+        : aadhaarNumberController.text.trim();
+
     final result = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => ManualKycUploadScreen(docType: docType, requestFrom: requestFrom)),
+      MaterialPageRoute(
+        builder: (_) => ManualKycUploadScreen(
+          docType: docType,
+          requestFrom: requestFrom,
+          prefillName: prefillName,
+          prefillNumber: prefillNumber,
+        ),
+      ),
     );
     if (result == true && mounted) {
       ref.invalidate(kycDocumentsProvider(requestFrom));
@@ -616,6 +675,76 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
           ),
         ],
       ],
+    );
+  }
+
+  /// Verifies the TYPED PAN number directly against the provider's standalone
+  /// PAN API — SurePass `/pan/pan-comprehensive`, Meon `/api/pan/export-data`
+  /// (backend: `upload_document(id_document="1")` -> `verify_pan()`).
+  ///
+  /// The route for "Aadhaar verified, PAN wasn't shared in the consent":
+  /// DigiLocker has already handed over everything it is going to, so redoing
+  /// the whole consent just to retry PAN achieves nothing. Manual upload is
+  /// revealed only if THIS fails — see [panDirectFailed].
+  Future<void> verifyPanDirect(String requestFrom) async {
+    final panNumber = PanInputFormatter.unformat(panNumberController.text);
+    final panName = panNameController.text.trim();
+
+    if (panName.isEmpty) {
+      AppToast.show(context, 'Enter your name as on PAN', type: ToastType.error);
+      return;
+    }
+    final panError = KycValidator.validatePAN(panNumber);
+    if (panError != null) {
+      AppToast.show(context, panError, type: ToastType.error);
+      return;
+    }
+
+    setState(() => verifyingPanDirect = true);
+    try {
+      await ref.read(kycRepositoryProvider).uploadKyc(
+            customerId: '',
+            requestFrom: requestFrom,
+            documentId: '1', // PAN
+            fields: {
+              'pan_number': panNumber,
+              'name': panName,
+              // Only when re-verifying an already-approved PAN. The backend
+              // skips its "already approved" short-circuit on this flag and
+              // invalidates the PAN mirror up front, so the customer is not
+              // treated as KYC-complete while this attempt is in flight
+              // (RULE-KYC-005).
+              if (panEditing) 'allow_reverify': true,
+            },
+          );
+      if (!mounted) return;
+      AppToast.show(context, 'PAN verified successfully', type: ToastType.success);
+      setState(() => panEditing = false);
+      ref.invalidate(kycDocumentsProvider(requestFrom));
+      ref.invalidate(verificationStatusProvider);
+      ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+      await checkAndHandleCompletion(requestFrom, expectDocumentApproved: 'PAN');
+    } catch (e) {
+      if (!mounted) return;
+      var msg = e.toString();
+      if (msg.startsWith('Exception: ')) msg = msg.substring('Exception: '.length);
+      // Only NOW offer manual upload — the automatic route has been tried and
+      // genuinely could not verify this PAN.
+      setState(() => panDirectFailed = true);
+      AppToast.show(context, msg, type: ToastType.error);
+    } finally {
+      if (mounted) setState(() => verifyingPanDirect = false);
+    }
+  }
+
+  /// "Verify PAN" primary action — the standalone route's own button.
+  Widget buildVerifyPanDirectButton(String requestFrom) {
+    return CustomButton(
+      text: 'Verify PAN',
+      svgIconPath: 'assets/buttons/tick.svg',
+      isLoading: verifyingPanDirect,
+      onPressed: verifyingPanDirect ? null : () => verifyPanDirect(requestFrom),
+      gradient: AppTheme.greenGradient,
     );
   }
 

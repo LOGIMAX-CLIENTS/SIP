@@ -151,7 +151,12 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
           child: Stack(
             children: [
               SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 100.h),
+                // The 100.h tail is clearance for the floating footer CTA —
+                // drop it to normal padding when that button isn't rendered
+                // (bothDone, or panSkippedInConsent), or the page ends in a
+                // block of dead space.
+                padding: EdgeInsets.fromLTRB(
+                    20.w, 20.h, 20.w, (bothDone || panSkippedInConsent) ? 24.h : 100.h),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -214,7 +219,13 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
                     ),
                   ),
                 ),
-              if (!bothDone)
+              // Hidden once Aadhaar is verified and PAN is the only step left
+              // (panSkippedInConsent). In that state this button ran a FULL
+              // DigiLocker re-consent purely to retry PAN — pointless now that
+              // the PAN card offers "Verify PAN", which checks the typed number
+              // against the provider's PAN API directly (RULE-KYC-019). Showing
+              // both invited the customer down the slower, heavier route.
+              if (!bothDone && !panSkippedInConsent)
                 Positioned(
                   left: 20.w,
                   right: 20.w,
@@ -262,6 +273,43 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
     bool allowManualUpload,
     KycDocumentType? panDocValue,
   ) {
+    // Verified PAN, and the customer has tapped Edit on it — show the form
+    // again so they can correct the number/name and re-verify. Checked BEFORE
+    // panDone so edit mode wins over the verified banner.
+    if (panDone && panEditing) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          buildPanFieldsCard(isDark),
+          SizedBox(height: 12.h),
+          // Submits with allow_reverify (see the mixin's panEditing doc) —
+          // without it the backend short-circuits as "already approved" and
+          // the corrected value is silently ignored.
+          buildVerifyPanDirectButton(widget.requestFrom),
+          // Same fallback ordering as everywhere else — a human-reviewed
+          // upload is offered only once the automatic route has failed.
+          if (panDirectFailed) ...[
+            SizedBox(height: 8.h),
+            _manualUploadButton('1'),
+          ],
+          // Cancel sits LAST, below both actions: it's the way out of edit
+          // mode, not one of the ways forward, so it shouldn't separate the
+          // primary action from its fallback.
+          SizedBox(height: 8.h),
+          Center(
+            child: TextButton(
+              onPressed: verifyingPanDirect
+                  ? null
+                  : () => setState(() => panEditing = false),
+              child: Text(
+                'Cancel',
+                style: AppTextStyles.fieldLabel(isDark),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     if (panDone) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -271,6 +319,13 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
             maskedValue: panDocValue?.maskedValue,
             nameLabel: 'Name as on PAN',
             verifiedName: panDocValue?.verifiedName,
+            // Edit is possible only because standalone PAN verification now
+            // exists (RULE-KYC-019). Previously PAN had no manual re-entry
+            // path — redoing it meant a full DigiLocker re-consent through
+            // Aadhaar's own Edit — which is why this card shipped without it.
+            // The verified name is prefilled so correcting just the number
+            // doesn't mean retyping the name.
+            onEdit: () => editPan(prefillName: panDocValue?.verifiedName),
           ),
         ],
       );
@@ -307,8 +362,20 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
           ),
           SizedBox(height: 12.h),
           buildPanFieldsCard(isDark),
-          SizedBox(height: 8.h),
-          _manualUploadButton('1'),
+          SizedBox(height: 12.h),
+          // Primary route (RULE-KYC-019): verify the TYPED PAN against the
+          // provider's standalone PAN API. DigiLocker has already given
+          // everything it will here — Aadhaar is approved, PAN simply wasn't
+          // in that consent — so re-running the whole consent to retry PAN
+          // achieves nothing.
+          buildVerifyPanDirectButton(widget.requestFrom),
+          // Manual upload needs a human to review a document, so it appears
+          // only once the automatic route above has actually been tried and
+          // failed — not as a peer option beside it.
+          if (panDirectFailed) ...[
+            SizedBox(height: 8.h),
+            _manualUploadButton('1'),
+          ],
         ],
       );
     }
@@ -316,6 +383,12 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         buildPanFieldsCard(isDark),
+        // NOT gated on panDirectFailed here, unlike the panSkippedInConsent
+        // branch above. This is the Aadhaar-NOT-yet-verified state, and the
+        // backend only allows standalone PAN verification once Aadhaar is
+        // APPROVED (RULE-KYC-019) — so there is no automatic route to try
+        // first, and hiding manual upload behind a failure that can never
+        // happen would strand the customer with no way forward at all.
         if (allowManualUpload) ...[
           SizedBox(height: 8.h),
           _manualUploadButton('1'),

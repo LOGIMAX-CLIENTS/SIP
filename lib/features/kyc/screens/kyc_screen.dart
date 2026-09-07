@@ -1444,11 +1444,27 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// not an immediate approval), so any profile-facing screen stayed on
   /// stale customer data until something else happened to refresh it.
   Future<void> _openManualUpload(String docType) async {
+    // Carry over what the customer already typed here — same handover the
+    // merged checklist's mixin does. ManualKycUploadScreen's PAN field holds
+    // the RAW 10 characters (this screen's controller is space-grouped by
+    // PanInputFormatter); both Aadhaar fields share AadhaarInputFormatter's
+    // grouping, so that one passes through unchanged.
+    final isPan = docType == '1';
+    final prefillName = isPan
+        ? _panNameController.text.trim()
+        : _aadhaarNameController.text.trim();
+    final prefillNumber = isPan
+        ? PanInputFormatter.unformat(_panNumberController.text)
+        : _aadhaarNumberController.text.trim();
+
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => ManualKycUploadScreen(
-          docType: docType, requestFrom: widget.requestFrom,
+          docType: docType,
+          requestFrom: widget.requestFrom,
+          prefillName: prefillName,
+          prefillNumber: prefillNumber,
         ),
       ),
     );
