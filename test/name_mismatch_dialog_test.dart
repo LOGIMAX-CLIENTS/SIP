@@ -59,7 +59,8 @@ void main() {
     testWidgets('name-only mismatch shows the name field alone', (tester) async {
       await pump(tester, prompt(nameMismatch: true, dobMismatch: false));
 
-      expect(find.text('Name Mismatch'), findsOneWidget);
+      // Title is deliberately fixed — only WHICH fields render varies.
+      expect(find.text('Name / DOB Mismatch'), findsOneWidget);
       expect(find.text('Your Name'), findsOneWidget);
       expect(find.text('Date of Birth'), findsNothing);
       // The DOB the customer isn't being asked about isn't displayed either.
@@ -70,7 +71,7 @@ void main() {
     testWidgets('dob-only mismatch shows the DOB field alone', (tester) async {
       await pump(tester, prompt(nameMismatch: false, dobMismatch: true));
 
-      expect(find.text('Date of Birth Mismatch'), findsOneWidget);
+      expect(find.text('Name / DOB Mismatch'), findsOneWidget);
       expect(find.text('Date of Birth'), findsOneWidget);
       expect(find.text('Your Name'), findsNothing);
       expect(find.text('Current Profile Name:'), findsNothing);
