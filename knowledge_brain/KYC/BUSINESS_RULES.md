@@ -275,6 +275,45 @@ safe because `entered_name` was the gate and so could not diverge from the verif
 moved it can, so `payload.name` now stores `name_at_source` (the authoritative provider name), which is
 what both readers already meant by it. See RULE-KYC-013 for the other half of that field's history.
 
+## RULE-KYC-016 — The mismatch-confirm path must record the profile-match statuses (fixed 2026-09-07)
+
+**Symptom:** PAN and Aadhaar both show VERIFIED, the profile name was genuinely updated to match the PAN,
+and yet the checklist's **"Name & DOB Match" step stays on Pending** with "Confirm your verified details to
+finish this step". Observed live on staging 2026-09-07 right after a successful mismatch confirmation.
+
+**Cause.** Two capabilities back that step — `PROFILE_NAME_PAN_NAME_MATCH` and `PROFILE_DOB_PAN_DOB_MATCH`
+— and both were written **only** at the tail of `_try_persist_digilocker_pan`. The mismatch path never
+reaches that tail: `_offer_pan_name_mismatch_confirmation` returns early to raise the confirm prompt. So
+`_finalize_name_mismatch_confirmation` approved the PAN row and updated `cus_name` while leaving both
+statuses `NOT_STARTED`.
+
+This was **masked until now** by the post-verification confirmation popup, whose Save called
+`update_profile_name_from_kyc()` — which recomputes the name match at its tail via
+`_record_profile_pan_name_match()`. Removing that popup (RULE-KYC-007) removed the only thing recomputing
+it, so the stuck state became permanent and visible.
+
+Note the ordering: this is also precisely the bug the incoming commit `966b6a3` tried to solve, by giving
+that step's Retry button the confirm dialog back. That treats the symptom — it asks the customer to
+re-confirm data that is already correct. The status simply was never recorded.
+
+**Fix.** `_finalize_name_mismatch_confirmation` now records both, straight after `confirm_and_sync()`:
+- `_record_profile_pan_name_match(user, final_name)` — same call `update_profile_name_from_kyc` makes
+- `PROFILE_DOB_PAN_DOB_MATCH` → matched, guarded on `final_dob_raw` being present (Meon's PAN branch
+  returns no DOB; mirrors `_try_persist_digilocker_pan`'s own `dob_match_detail` gate). Recording `True` is
+  sound because `_validate_mismatch_resubmission` already proved the resubmitted DOB matches the verified
+  record before this function is reachable.
+
+Both are wrapped in try/except: a status-surface write must never fail a verification that has already been
+approved and persisted.
+
+❌ Adding a customer-facing dialog to clear a checklist step that is stuck because a status was never written.
+✅ Writing the status on every path that reaches the terminal state — including the mismatch-resolution path.
+
+**Watch for the same shape elsewhere:** `AADHAAR_PAN_LINK` is written in that same unreached tail, and was
+observed going `PENDING` → `NOT_STARTED` across a mismatch-confirm. Not addressed here — its own step
+declares "Link status refreshes the next time you verify", so it is not obviously stuck-forever the way the
+name/DOB step was, but it deserves a look.
+
 ## Unconfirmed / needs a fresh backend-contract check
 
 - Exact `id_document` value the backend assigns to the PAN document type (the app never hardcodes it — it's
