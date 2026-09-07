@@ -19,6 +19,7 @@ import '../auth/controller/auth_controller.dart';
 import '../../core/services/auth_service.dart';
 import '../auth/registration/email_otp_sheet.dart';
 import 'package:startgold/shared/utils/dob_input_formatter.dart';
+import 'package:startgold/shared/widgets/dob_date_picker.dart';
 
 class AccountDetailsScreen extends ConsumerStatefulWidget {
   const AccountDetailsScreen({super.key});
@@ -477,13 +478,13 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     final now = DateTime.now();
     final maxDob = DateTime(now.year - 18, now.month, now.day);
     final typed = DobInputFormatter.parse(_dobController.text);
-    final picked = await showDatePicker(
+    // See RegistrationScreen's _selectDate — the stock picker has no month
+    // step, so DOB uses showDobPicker on both screens.
+    final picked = await showDobPicker(
       context: context,
       initialDate: (typed != null && !typed.isAfter(maxDob)) ? typed : maxDob,
       firstDate: DateTime(1900),
       lastDate: maxDob,
-      initialEntryMode: DatePickerEntryMode.calendarOnly,
-      initialDatePickerMode: DatePickerMode.day,
     );
     if (picked != null && mounted) {
       setState(() => _dobController.text = DobInputFormatter.formatDate(picked));

@@ -18,6 +18,7 @@ import '../../../core/utils/validators.dart';
 import '../../../shared/theme/app_text_styles.dart';
 import 'email_otp_sheet.dart';
 import 'package:startgold/shared/utils/dob_input_formatter.dart';
+import 'package:startgold/shared/widgets/dob_date_picker.dart';
 
 class RegistrationScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -99,30 +100,15 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     final DateTime initial =
         (typed != null && !typed.isAfter(maxDob)) ? typed : maxDob;
 
-    final DateTime? picked = await showDatePicker(
+    // Custom picker: Flutter's own showDatePicker has no MONTH step — its
+    // header toggles straight to a bare year list, and the month disappears
+    // while the customer scrolls years. showDobPicker keeps "<Month> <Year>"
+    // visible in every mode and steps Day -> Month -> Year.
+    final DateTime? picked = await showDobPicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(1900),
       lastDate: maxDob,
-      // calendarOnly removes the picker's own keyboard-entry mode. That mode
-      // parses by locale (en_US => MM/DD/YYYY) and is what rejected
-      // "19061992" with "Invalid format." — typing is handled by the field
-      // itself now, so this path should not be reachable at all.
-      initialEntryMode: DatePickerEntryMode.calendarOnly,
-      // Day grid first; the header still switches to the year list.
-      initialDatePickerMode: DatePickerMode.day,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF064E3B),
-              onPrimary: Colors.white,
-              onSurface: Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
 
     if (picked != null) {

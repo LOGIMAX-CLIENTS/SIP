@@ -199,11 +199,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               // back button never refreshed anything here.
                               // fetchProfileDetails() is cheap and safe to
                               // call even when nothing actually changed.
-                              if (mounted) {
+                              // Deferred by a frame, not called inline.
+                              // fetchProfileDetails() sets `state` SYNCHRONOUSLY
+                              // on its first line (isLoading: true), which makes
+                              // Riverpod notify every consumer immediately. Run
+                              // straight off the pop, that lands while the KYC
+                              // route is still being torn down, and a consumer
+                              // element already marked defunct gets
+                              // markNeedsBuild called on it — the
+                              // "'_lifecycleState != _ElementLifecycle.defunct'
+                              // is not true" crash seen after completing PAN
+                              // verification. A `mounted` check alone does not
+                              // cover it: THIS widget is alive, the dying one is
+                              // the route being popped.
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
                                 ref
                                     .read(pc.profileProvider.notifier)
                                     .fetchProfileDetails();
-                              }
+                              });
                             },
                             // Prefer the LIVE per-step count (kycProgressProvider,
                             // same computeKycStepStatuses the checklist itself

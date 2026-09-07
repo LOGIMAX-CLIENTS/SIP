@@ -463,6 +463,15 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     final wasAlreadyConfirmed = ref.read(kycDocumentsProvider(requestFrom)).valueOrNull?.kycConfirmed ?? false;
     KycDocumentsResult result;
     try {
+      // verificationStatusProvider is invalidated ALONGSIDE the docs refresh.
+      // The checklist's "Name & DOB Match" step reads
+      // profile_name_pan_name_match / profile_dob_pan_dob_match from THAT
+      // provider (RULE-KYC-017), not from document-types — so refreshing only
+      // the docs left the step showing a cached NOT_STARTED after a mismatch
+      // was resolved through the DigiLocker path, even though the backend had
+      // already written MATCHED. Tapping Retry appeared to "fix" it purely
+      // because _retryNameDobMatch invalidates this provider too.
+      ref.invalidate(verificationStatusProvider);
       result = await ref.refresh(kycDocumentsProvider(requestFrom).future);
     } catch (_) {
       if (mounted) {
@@ -561,7 +570,13 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     await _showSuccessAnimation();
     if (!mounted) return;
 
-    ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    // AWAITED, not fire-and-forget. The caller pops this screen via
+    // onKycStepCompleted() as soon as this returns; an in-flight
+    // fetchProfileDetails() would then land on a torn-down tree and Riverpod
+    // would call markNeedsBuild on a defunct element —
+    // "'_lifecycleState != _ElementLifecycle.defunct': is not true".
+    // Awaiting lets the profile update finish while the tree is still alive.
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
   }
 
   Future<void> _showSuccessAnimation() async {
@@ -629,7 +644,8 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     );
     if (result == true && mounted) {
       ref.invalidate(kycDocumentsProvider(requestFrom));
-      ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+      // Awaited for the same reason as _runCompletionSequence's own call.
+      await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
     }
   }
 
@@ -765,7 +781,10 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
       setState(() => panEditing = false);
       ref.invalidate(kycDocumentsProvider(requestFrom));
       ref.invalidate(verificationStatusProvider);
-      ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+      // Awaited before checkAndHandleCompletion, which pops this screen —
+      // otherwise the fetch resolves against a disposed tree.
+      await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+      if (!mounted) return;
       await checkAndHandleCompletion(requestFrom, expectDocumentApproved: 'PAN');
     } catch (e) {
       if (!mounted) return;
