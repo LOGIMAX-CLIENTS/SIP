@@ -314,6 +314,58 @@ observed going `PENDING` → `NOT_STARTED` across a mismatch-confirm. Not addres
 declares "Link status refreshes the next time you verify", so it is not obviously stuck-forever the way the
 name/DOB step was, but it deserves a look.
 
+## RULE-KYC-017 — "Name & DOB Match" reads its own capabilities, not the whole-KYC gate (fixed 2026-09-07)
+
+`kyc_step_status.dart` derived this step from **`docsResult.kycConfirmed`** — which is the backend's
+`is_kyc_complete()` (kyc.py:632), the *transaction* gate covering PAN + Aadhaar + the PAN-Aadhaar link.
+
+So the step labelled "Name & DOB Match" was reporting something else entirely. Confirmed live 2026-09-07:
+`customer_verification_status` held `profile_name_pan_name_match: MATCHED, score 100.0`, the API returned
+it, and the pill still read **Pending** — because `aadhaar_pan_link` was `NOT_STARTED` and mandatory, so
+`is_kyc_complete()` was false. The step the customer was being asked to fix was already correct; a
+completely unrelated capability was holding it down.
+
+It now reads `profile_name_pan_name_match` / `profile_dob_pan_dob_match` from `verificationStatus`, the two
+capabilities it is named after:
+
+| Condition | Pill |
+|---|---|
+| name `MATCHED` and dob not `NOT_MATCHED` | Matched |
+| either `NOT_MATCHED` | **Not Matched** (new — a recorded divergence, distinct from "never checked") |
+| neither row written | Pending |
+
+The DOB is checked as "not `NOT_MATCHED`" rather than "`== MATCHED`" on purpose: a document carrying no DOB
+never gets that row written at all (Meon's PAN branch returns none — see `_try_persist_digilocker_pan`'s own
+`dob_match_detail` gate), and a missing row must not hold back an otherwise-matched step.
+
+Neither capability is gateway-routed, so neither carries `is_mandatory` and neither appears in
+`is_kyc_complete()` — **this step is display-only** and must never be driven by a transaction gate.
+
+❌ Binding a named step to a broad composite gate because it happens to be true at the same time.
+✅ Each step reads the capability it claims to describe.
+
+## RULE-KYC-018 — Every terminal-state write must exist on the mismatch path too (fixed 2026-09-07)
+
+A recurring defect shape, hit three times in one day. `_try_persist_digilocker_pan` writes several statuses
+at its **tail**, and `_offer_pan_name_mismatch_confirmation` **returns early** to raise the confirm prompt —
+so a PAN approved through mismatch resolution skipped every one of them:
+
+| Capability | Impact | Fixed in |
+|---|---|---|
+| `PROFILE_NAME_PAN_NAME_MATCH` | Step stuck Pending (cosmetic) | RULE-KYC-016 |
+| `PROFILE_DOB_PAN_DOB_MATCH` | Same | RULE-KYC-016 |
+| `AADHAAR_PAN_LINK` | **Blocks SIP/withdrawals** when Mandatory — it IS in `is_kyc_complete()` | this rule |
+
+`aadhaar_linked` is now captured onto the mismatch row at creation (there is no provider call on the confirm
+path to re-fetch it) and synced by `_finalize_name_mismatch_confirmation`. `None` maps to PENDING —
+"checked, result unknown" — mirroring the original site rather than inventing a LINKED/NOT_LINKED. Guarded
+on `is_mandatory(AADHAAR_PAN_LINK, default=False)` exactly as the original is, and wrapped in try/except:
+a status-surface write must never fail an already-approved verification.
+
+**Before adding any new status write to `_try_persist_digilocker_pan`, add it to
+`_finalize_name_mismatch_confirmation` as well** — or it silently will not run for any customer who resolved
+a name/DOB mismatch.
+
 ## Unconfirmed / needs a fresh backend-contract check
 
 - Exact `id_document` value the backend assigns to the PAN document type (the app never hardcodes it — it's

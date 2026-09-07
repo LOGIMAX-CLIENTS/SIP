@@ -205,6 +205,27 @@ KycStepStatuses computeKycStepStatuses({
   final bothIdVerified = (panDone && aadhaarDone) || !digilockerActive;
 
   // Step: Name & DOB Match
+  //
+  // Reads the two capabilities this step is actually named after, from
+  // customer_verification_status (see BUSINESS_RULES.md RULE-KYC-017).
+  //
+  // It used to key off `docsResult.kycConfirmed`, which is the backend's
+  // `is_kyc_complete()` — the WHOLE-KYC transaction gate, covering PAN,
+  // Aadhaar AND the PAN-Aadhaar link. A customer whose name/DOB matched
+  // perfectly therefore still saw this step stuck on "Pending" whenever some
+  // unrelated capability (in practice aadhaar_pan_link: NOT_STARTED) held
+  // is_kyc_complete() at false. Confirmed live 2026-09-07:
+  // profile_name_pan_name_match was MATCHED at score 100.0 while this pill
+  // read Pending.
+  //
+  // Neither of these two capabilities is gateway-routed, so neither carries
+  // is_mandatory and neither appears in is_kyc_complete() — this step is
+  // display-only and must not be driven by a transaction gate.
+  final persistedNameMatch =
+      (verificationStatus?['profile_name_pan_name_match'] as Map?)?['status'] as String?;
+  final persistedDobMatch =
+      (verificationStatus?['profile_dob_pan_dob_match'] as Map?)?['status'] as String?;
+
   KycStepStatus nameDobStatus;
   String nameDobPill;
   String nameDobSubtitle;
@@ -212,11 +233,26 @@ KycStepStatuses computeKycStepStatuses({
     nameDobStatus = KycStepStatus.locked;
     nameDobPill = 'Locked';
     nameDobSubtitle = 'Unlocks once PAN and Aadhaar are verified';
-  } else if (docsResult.kycConfirmed) {
+  } else if (persistedNameMatch == 'MATCHED' &&
+      // A document that carried no DOB never gets this row written at all
+      // (Meon's PAN branch returns no DOB — see kyc.py's dob_match gate), so
+      // NOT_STARTED here must not hold an otherwise-matched step back. Only
+      // an explicit NOT_MATCHED should.
+      persistedDobMatch != 'NOT_MATCHED') {
     nameDobStatus = KycStepStatus.verified;
     nameDobPill = 'Matched';
     nameDobSubtitle = 'PAN / Aadhaar matched with profile';
+  } else if (persistedNameMatch == 'NOT_MATCHED' || persistedDobMatch == 'NOT_MATCHED') {
+    // A real, recorded divergence between the profile and the verified
+    // document — distinct from "never checked" below, and not something a
+    // refetch can clear.
+    nameDobStatus = KycStepStatus.failed;
+    nameDobPill = 'Not Matched';
+    nameDobSubtitle = persistedNameMatch == 'NOT_MATCHED'
+        ? 'Your profile name doesn\'t match your verified PAN / Aadhaar.'
+        : 'Your profile date of birth doesn\'t match your verified PAN / Aadhaar.';
   } else {
+    // Neither row written yet — verification hasn't recorded the comparison.
     nameDobStatus = KycStepStatus.inProgress;
     nameDobPill = 'Pending';
     nameDobSubtitle = 'Confirm your verified details to finish this step';
