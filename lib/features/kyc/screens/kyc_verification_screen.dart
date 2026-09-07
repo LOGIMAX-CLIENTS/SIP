@@ -6,6 +6,7 @@ import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/controllers/kyc_verification_flow_mixin.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
+import 'package:startgold/features/kyc/utils/kyc_step_status.dart';
 import 'package:startgold/features/kyc/widgets/kyc_progress_header.dart';
 import 'package:startgold/features/kyc/widgets/kyc_step_row.dart';
 import 'package:startgold/features/profile/models/bank_account.dart';
@@ -97,6 +98,17 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     final verificationStatusAsync = ref.watch(verificationStatusProvider);
     final profileName = ref.watch(pc.profileProvider).user.name;
 
+    // Reactive fallback for state transitions that land after this SPECIFIC
+    // screen instance's own await chain (verifyPanAndAadhaar/retryPan) has
+    // already been disposed and recreated by a DigiLocker SDK bounce — see
+    // handleAadhaarStateChange's doc comment. Without this, checkAadhaarOutcomeRecoveryOnLoad's
+    // one-shot on-mount check is the only thing watching, and it always
+    // runs before the poll resolves, so the customer saw no update at all
+    // until manually refreshing.
+    ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
+      handleAadhaarStateChange(widget.requestFrom, next);
+    });
+
     return PopScope(
       canPop: !verificationInFlight,
       onPopInvokedWithResult: (didPop, _) {
@@ -140,29 +152,6 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     );
   }
 
-  /// Reads a nested `verifications[key].is_active` flag from the persisted
-  /// status map — absent (no VerificationGatewayRouting row yet, or a key
-  /// with no routable capability, e.g. the two profile-match keys) means
-  /// active, same default the backend itself uses.
-  bool _isActive(Map<String, dynamic>? verificationStatus, String key) {
-    final entry = verificationStatus?[key];
-    if (entry is Map) return entry['is_active'] != false;
-    return true;
-  }
-
-  /// Reads `verifications[key].is_mandatory` — unlike [_isActive], absent
-  /// means NOT mandatory (Optional), matching the backend's own default for
-  /// every capability that can be marked Optional (aadhaar_pan_link,
-  /// pan_bank_link, reverse_penny_drop — see VerificationStatusService's
-  /// _MANDATORY_CAPABILITY_FOR_KEY). Used to decide whether an unresolved
-  /// check reads as "Optional" (informational, never blocks) or as an
-  /// actionable prompt the customer needs to complete.
-  bool _isMandatory(Map<String, dynamic>? verificationStatus, String key) {
-    final entry = verificationStatus?[key];
-    if (entry is Map) return entry['is_mandatory'] == true;
-    return false;
-  }
-
   Widget _buildBody({
     required bool isDark,
     required KycDocumentsResult docsResult,
@@ -174,26 +163,26 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     required bool bankDataLoading,
     required String profileName,
   }) {
-    final panDoc = docsResult.documents.where(
-      (d) => d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'),
+    // Step-status derivation lives in computeKycStepStatuses() (kyc/utils/
+    // kyc_step_status.dart) — shared with kycProgressProvider so the
+    // Profile page's "N/total" badge can never disagree with this screen's
+    // own progress ring, since both run the exact same function over the
+    // same data.
+    final statuses = computeKycStepStatuses(
+      docsResult: docsResult,
+      aadhaarState: aadhaarState,
+      verificationStatus: verificationStatus,
+      bankAccounts: bankAccounts,
+      bavHistory: bavHistory,
+      rpdHistory: rpdHistory,
+      verifyingAadhaar: verifyingAadhaar,
+      aadhaarEditing: aadhaarEditing,
+      retryingPanOnly: retryingPanOnly,
     );
-    final panDocValue = panDoc.isEmpty ? null : panDoc.first;
-    final panDone = panDocValue?.alreadyUploaded ?? false;
-    final panUnderReview = panDocValue?.isUnderReview ?? false;
-
-    final aadhaarBusy = verifyingAadhaar || aadhaarState.phase == AadhaarPhase.initiating || aadhaarState.phase == AadhaarPhase.polling;
-    // During a PAN-only retry (retryingPanOnly), the Aadhaar provider phase
-    // transitions through initiating/polling too (it's the SAME DigiLocker
-    // session) even though Aadhaar itself isn't being re-verified — its
-    // card must keep showing the Verified banner throughout, not flicker
-    // back to a form.
-    final aadhaarDone = aadhaarState.phase == AadhaarPhase.approved ||
-        (docsResult.aadhaarApproved && !aadhaarEditing && (!aadhaarBusy || retryingPanOnly));
-    final aadhaarUnderReview = docsResult.aadhaarUnderReview && !aadhaarEditing;
-    final aadhaarFailedPhase = aadhaarState.phase == AadhaarPhase.expired ||
-        aadhaarState.phase == AadhaarPhase.rejected ||
-        aadhaarState.phase == AadhaarPhase.failed;
-    final panSkippedInConsent = !panDone && !aadhaarEditing && (aadhaarState.phase == AadhaarPhase.approved || docsResult.aadhaarApproved);
+    final panDone = statuses.panDone;
+    final aadhaarDone = statuses.aadhaarDone;
+    final panDocValue = statuses.panDocValue;
+    final panSkippedInConsent = statuses.panSkippedInConsent;
 
     if (widget.popWhenIdVerified && panDone && aadhaarDone && !_poppedForIdVerified) {
       _poppedForIdVerified = true;
@@ -202,245 +191,41 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       });
     }
 
-    // VGR-driven visibility — DIGILOCKER_KYC covers PAN+Aadhaar together,
-    // AADHAAR_PAN_LINK/PAN_BANK_LINK/RPD are each their own capability. A
-    // capability with no routing row configured yet defaults to active,
-    // same as the backend's own default.
-    final digilockerActive = _isActive(verificationStatus, 'digilocker_pan') && _isActive(verificationStatus, 'digilocker_aadhaar');
-    final aadhaarPanLinkActive = _isActive(verificationStatus, 'aadhaar_pan_link');
-    final panBankLinkActive = _isActive(verificationStatus, 'pan_bank_link');
-    final rpdActive = _isActive(verificationStatus, 'reverse_penny_drop');
+    final digilockerActive = statuses.digilockerActive;
+    final aadhaarPanLinkActive = statuses.aadhaarPanLinkActive;
+    final panBankLinkActive = statuses.panBankLinkActive;
+    final rpdActive = statuses.rpdActive;
 
-    // Step: PAN
-    KycStepStatus panStatus;
-    String panPill;
-    if (panDone) {
-      panStatus = KycStepStatus.verified;
-      panPill = 'Verified';
-    } else if (panUnderReview) {
-      panStatus = KycStepStatus.underReview;
-      panPill = 'Under Review';
-    } else if (panSkippedInConsent) {
-      panStatus = KycStepStatus.failed;
-      panPill = 'Retry';
-    } else {
-      panStatus = KycStepStatus.actionable;
-      panPill = 'Pending';
-    }
+    final panStatus = statuses.panStatus;
+    final panPill = statuses.panPill;
+    final aadhaarStatus = statuses.aadhaarStatus;
+    final aadhaarPill = statuses.aadhaarPill;
+    final bothIdVerified = statuses.bothIdVerified;
 
-    // Step: Aadhaar
-    KycStepStatus aadhaarStatus;
-    String aadhaarPill;
-    if (aadhaarDone) {
-      aadhaarStatus = KycStepStatus.verified;
-      aadhaarPill = 'Verified';
-    } else if (aadhaarUnderReview) {
-      aadhaarStatus = KycStepStatus.underReview;
-      aadhaarPill = 'Under Review';
-    } else if (aadhaarBusy) {
-      aadhaarStatus = KycStepStatus.inProgress;
-      aadhaarPill = 'In Progress';
-    } else if (aadhaarFailedPhase) {
-      aadhaarStatus = KycStepStatus.failed;
-      aadhaarPill = 'Retry';
-    } else {
-      aadhaarStatus = KycStepStatus.actionable;
-      aadhaarPill = 'Pending';
-    }
+    final nameDobStatus = statuses.nameDobStatus;
+    final nameDobPill = statuses.nameDobPill;
+    final nameDobSubtitle = statuses.nameDobSubtitle;
 
-    final bothIdVerified = (panDone && aadhaarDone) || !digilockerActive;
+    final panAadhaarLinkMandatory = statuses.panAadhaarLinkMandatory;
+    final panAadhaarLinkStatus = statuses.panAadhaarLinkStatus;
+    final panAadhaarLinkPill = statuses.panAadhaarLinkPill;
+    final panAadhaarLinkSubtitle = statuses.panAadhaarLinkSubtitle;
 
-    // Step: Name & DOB Match — comes before PAN-Aadhaar Link in display
-    // order now (previously the other way around).
-    KycStepStatus nameDobStatus;
-    String nameDobPill;
-    String nameDobSubtitle;
-    if (!bothIdVerified) {
-      nameDobStatus = KycStepStatus.locked;
-      nameDobPill = 'Locked';
-      nameDobSubtitle = 'Unlocks once PAN and Aadhaar are verified';
-    } else if (docsResult.kycConfirmed) {
-      nameDobStatus = KycStepStatus.verified;
-      nameDobPill = 'Matched';
-      nameDobSubtitle = 'PAN / Aadhaar matched with profile';
-    } else {
-      nameDobStatus = KycStepStatus.inProgress;
-      nameDobPill = 'Pending';
-      nameDobSubtitle = 'Confirm your verified details to finish this step';
-    }
+    final pennylessBavStatus = statuses.pennylessBavStatus;
 
-    // Step: PAN-Aadhaar Link — the live-session field (freshest, from the
-    // verify call that just ran) takes priority; falls back to the
-    // persisted CustomerVerificationStatus mirror so the real result still
-    // shows after navigating away or reopening the app, not just within
-    // the session that ran the check. See verificationStatusProvider's
-    // docstring for the vgr_is_mandatory=1 prerequisite that mirror needs.
-    final persistedPanAadhaarLink = (verificationStatus?['aadhaar_pan_link'] as Map?)?['status'] as String?;
-    // Same is_mandatory-driven "Optional" labeling as PAN-Bank Link — the
-    // retry action (see _retryAadhaarPanLink) is always available and
-    // always safe to tap regardless of mandatory status.
-    final panAadhaarLinkMandatory = _isMandatory(verificationStatus, 'aadhaar_pan_link');
-    KycStepStatus panAadhaarLinkStatus;
-    String panAadhaarLinkPill;
-    String panAadhaarLinkSubtitle;
-    if (!bothIdVerified) {
-      panAadhaarLinkStatus = KycStepStatus.locked;
-      panAadhaarLinkPill = 'Locked';
-      panAadhaarLinkSubtitle = 'Unlocks once PAN and Aadhaar are verified';
-    } else if (aadhaarState.aadhaarPanLinked == true || persistedPanAadhaarLink == 'LINKED') {
-      panAadhaarLinkStatus = KycStepStatus.verified;
-      panAadhaarLinkPill = 'Verified';
-      panAadhaarLinkSubtitle = 'Linked as per Income Tax records';
-    } else if (aadhaarState.aadhaarPanLinked == false || persistedPanAadhaarLink == 'NOT_LINKED') {
-      panAadhaarLinkStatus = KycStepStatus.failed;
-      panAadhaarLinkPill = 'Not Linked';
-      panAadhaarLinkSubtitle = 'Not linked as per Income Tax records. You can retry to refresh this.';
-    } else if (!panAadhaarLinkMandatory) {
-      panAadhaarLinkStatus = KycStepStatus.underReview;
-      panAadhaarLinkPill = 'Optional';
-      panAadhaarLinkSubtitle = 'This check isn\'t required right now — you can still check it.';
-    } else {
-      panAadhaarLinkStatus = KycStepStatus.underReview;
-      panAadhaarLinkPill = 'Pending';
-      panAadhaarLinkSubtitle = 'Link status refreshes the next time you verify';
-    }
+    final cbankId = statuses.cbankId;
 
-    // Step: Bank Account Validation (BAV) — the pennyless check specifically.
-    // This gates whether the PAN-Bank Link / Additional Verification
-    // sub-items render at all; the top-level bavStatus/pill/subtitle used
-    // for the row itself is the COMPOSITE status computed further below,
-    // once those sub-items' own statuses are known.
-    final sortedBav = [...?bavHistory]..sort((a, b) => (b.attemptedOn ?? DateTime(0)).compareTo(a.attemptedOn ?? DateTime(0)));
-    final latestBav = sortedBav.isEmpty ? null : sortedBav.first;
-    final nameDobDone = nameDobStatus == KycStepStatus.verified;
-    KycStepStatus pennylessBavStatus;
-    String pennylessBavPill;
-    String pennylessBavSubtitle;
-    if (!nameDobDone) {
-      pennylessBavStatus = KycStepStatus.locked;
-      pennylessBavPill = 'Locked';
-      pennylessBavSubtitle = 'Unlocks after Name & DOB Match clears';
-    } else if (latestBav != null && latestBav.isApproved) {
-      pennylessBavStatus = KycStepStatus.verified;
-      pennylessBavPill = 'Verified';
-      pennylessBavSubtitle = latestBav.accountLast4 != null ? 'Account ending ${latestBav.accountLast4}' : 'Penny-less BAV verified';
-    } else if (latestBav != null && latestBav.status.toLowerCase() == 'rejected') {
-      pennylessBavStatus = KycStepStatus.failed;
-      pennylessBavPill = 'Retry';
-      pennylessBavSubtitle = 'Bank verification failed. Please try again.';
-    } else {
-      pennylessBavStatus = KycStepStatus.actionable;
-      pennylessBavPill = 'Initiate';
-      pennylessBavSubtitle = 'Penny-less — no debit from your account';
-    }
+    final panBankLinkStatus = statuses.panBankLinkStatus;
+    final panBankLinkPill = statuses.panBankLinkPill;
+    final panBankLinkSubtitle = statuses.panBankLinkSubtitle;
 
-    // Resolved early — the PAN-Bank Link sub-item's retry action needs it
-    // too, not just Reverse Penny Drop's.
-    final primaryAccounts = (bankAccounts ?? const <BankAccount>[]).where((a) => a.isPrimary);
-    final fallbackCbankId = primaryAccounts.isEmpty ? null : primaryAccounts.first.idBank;
-    final cbankId = latestBav?.cbankId ?? fallbackCbankId;
+    final rpdStatus = statuses.rpdStatus;
+    final rpdPill = statuses.rpdPill;
+    final rpdSubtitle = statuses.rpdSubtitle;
 
-    // PAN-Bank Link sub-item (inside BAV) — a REAL, separate provider check
-    // (BankVerificationSurePassService.verify_pan_account_linkage), not
-    // Bank Account Validation's own beneficiary-name match. Only ever
-    // rendered once BAV itself verifies, so there's no "locked" branch here
-    // any more. Read from the persisted CustomerVerificationStatus mirror;
-    // see verificationStatusProvider's docstring for the vgr_is_mandatory=1
-    // prerequisite this needs to ever leave NOT_STARTED. Runs automatically
-    // right after a successful BAV (see BankAccountService.
-    // check_pan_account_linkage), but the customer can also retry it
-    // directly here — see _buildPanBankLinkSubItem.
-    final persistedPanBankLink = (verificationStatus?['pan_bank_link'] as Map?)?['status'] as String?;
-    // is_mandatory only changes the LABEL/whether this can block anything
-    // — the check itself is always retryable (the backend no longer
-    // refuses the call while Optional). While Optional and never yet
-    // checked, this reads as "Optional" rather than an actionable prompt,
-    // but the action button stays available (tapping it is harmless — see
-    // _buildBavDetail). The moment an admin flips PAN_BANK_LINK back to
-    // Mandatory, is_mandatory flips to true here (next refresh) and the
-    // pill becomes the actionable Retry/Check Now prompt on its own — that
-    // IS the "instruct the customer to complete it" behavior, driven by
-    // the persisted flag rather than a separate one-off notification.
-    final panBankLinkMandatory = _isMandatory(verificationStatus, 'pan_bank_link');
-    KycStepStatus panBankLinkStatus;
-    String panBankLinkPill;
-    String panBankLinkSubtitle;
-    if (persistedPanBankLink == 'LINKED') {
-      panBankLinkStatus = KycStepStatus.verified;
-      panBankLinkPill = 'Verified';
-      panBankLinkSubtitle = 'Your PAN is linked to this bank account';
-    } else if (persistedPanBankLink == 'NOT_LINKED') {
-      panBankLinkStatus = KycStepStatus.failed;
-      panBankLinkPill = 'Not Linked';
-      // Still says "(Optional)" here even on a real failed result — without
-      // it, a customer whose account genuinely isn't linked (while this
-      // check isn't required) has no way to tell that from a blocking
-      // failure, and keeps tapping Retry for no reason.
-      panBankLinkSubtitle = panBankLinkMandatory
-          ? 'Your PAN does not appear to be linked to this bank account'
-          : 'Your PAN does not appear to be linked to this bank account. (Optional — this won\'t affect your account.)';
-    } else if (!panBankLinkMandatory) {
-      panBankLinkStatus = KycStepStatus.underReview;
-      panBankLinkPill = 'Optional';
-      panBankLinkSubtitle = 'This check isn\'t required right now.';
-    } else {
-      panBankLinkStatus = KycStepStatus.actionable;
-      panBankLinkPill = persistedPanBankLink == 'PENDING' ? 'Retry' : 'Check Now';
-      panBankLinkSubtitle = 'Check whether your PAN is linked to this bank account';
-    }
-
-    // Reverse Penny Drop (RPD) sub-item (inside BAV) — same "no locked
-    // branch" reasoning as PAN-Bank Link above.
-    final rpdMandatory = _isMandatory(verificationStatus, 'reverse_penny_drop');
-    final sortedRpd = (rpdHistory ?? const <RpdHistoryItem>[]).where((r) => cbankId != null && r.cbankId == cbankId).toList()
-      ..sort((a, b) => (b.createdOn ?? DateTime(0)).compareTo(a.createdOn ?? DateTime(0)));
-    final latestRpd = sortedRpd.isEmpty ? null : sortedRpd.first;
-    KycStepStatus rpdStatus;
-    String rpdPill;
-    String rpdSubtitle;
-    if (latestRpd != null && latestRpd.status.toLowerCase() == 'success') {
-      rpdStatus = KycStepStatus.verified;
-      rpdPill = 'Verified';
-      rpdSubtitle = 'Ownership confirmed';
-    } else if (latestRpd != null && latestRpd.status.toLowerCase() == 'failed') {
-      rpdStatus = KycStepStatus.failed;
-      rpdPill = 'Retry';
-      rpdSubtitle = latestRpd.failureReason ?? 'Additional verification failed. Please try again.';
-    } else if (cbankId == null) {
-      rpdStatus = KycStepStatus.locked;
-      rpdPill = 'Locked';
-      rpdSubtitle = 'Add a bank account to continue';
-    } else {
-      rpdStatus = KycStepStatus.actionable;
-      rpdPill = 'Start';
-      rpdSubtitle = 'Confirm ownership with a ₹1 transfer from your bank app';
-    }
-
-    // Composite Bank Account Validation status — the row only reads
-    // Verified once pennyless BAV passed AND every sub-item that's
-    // actually required (mandatory) is resolved. A sub-item that's
-    // Optional (or inactive) never blocks this — same "if mandatory"
-    // principle used for its own pill above. Prevents the checklist ever
-    // showing "All done — fully verified" while a mandatory sub-check is
-    // still outstanding.
-    final panBankLinkSatisfied = !panBankLinkActive || !panBankLinkMandatory || panBankLinkStatus == KycStepStatus.verified;
-    final rpdSatisfied = !rpdActive || !rpdMandatory || rpdStatus == KycStepStatus.verified;
-    final KycStepStatus bavStatus;
-    final String bavPill;
-    final String bavSubtitle;
-    if (pennylessBavStatus != KycStepStatus.verified) {
-      bavStatus = pennylessBavStatus;
-      bavPill = pennylessBavPill;
-      bavSubtitle = pennylessBavSubtitle;
-    } else if (panBankLinkSatisfied && rpdSatisfied) {
-      bavStatus = KycStepStatus.verified;
-      bavPill = 'Verified';
-      bavSubtitle = pennylessBavSubtitle;
-    } else {
-      bavStatus = KycStepStatus.underReview;
-      bavPill = 'In Progress';
-      bavSubtitle = 'Complete the checks below to finish bank validation';
-    }
+    final bavStatus = statuses.bavStatus;
+    final bavPill = statuses.bavPill;
+    final bavSubtitle = statuses.bavSubtitle;
 
     // Auto-push into Additional Verification the moment it becomes
     // actionable (i.e. right after BAV clears) — no "Start" tap required.
@@ -462,34 +247,23 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       });
     }
 
-    // Dynamic numbering/progress — hidden (VGR-inactive) capabilities don't
-    // consume a step number or count toward the ring, and PAN-Bank
-    // Link/RPD (now BAV sub-items) don't factor into top-level progress at
-    // all: BAV counts done as soon as BAV itself is approved.
+    // Dynamic numbering — pure display numbering, recomputed locally since
+    // it isn't part of the shared completed/total tally.
     int stepCounter = 0;
-    int total = 0;
-    int completed = 0;
-    void tally(KycStepStatus status) {
-      total++;
-      if (status == KycStepStatus.verified) completed++;
-    }
-
     int? panIndex, aadhaarIndex;
     if (digilockerActive) {
       panIndex = ++stepCounter;
       aadhaarIndex = ++stepCounter;
-      tally(panStatus);
-      tally(aadhaarStatus);
     }
     final nameDobIndex = ++stepCounter;
-    tally(nameDobStatus);
     int? panAadhaarLinkIndex;
     if (aadhaarPanLinkActive) {
       panAadhaarLinkIndex = ++stepCounter;
-      tally(panAadhaarLinkStatus);
     }
     final bavIndex = ++stepCounter;
-    tally(bavStatus);
+
+    final total = statuses.total;
+    final completed = statuses.completed;
 
     // Which card should auto-expand / drive the footer CTA — first
     // actionable, unlocked step in display order. bavStatus is now the

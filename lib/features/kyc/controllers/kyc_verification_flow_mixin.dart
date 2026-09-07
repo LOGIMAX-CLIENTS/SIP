@@ -129,7 +129,31 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     if (_outcomeCheckedOnLoad) return;
     _outcomeCheckedOnLoad = true;
     if (!mounted) return;
-    final state = ref.read(aadhaarProvider);
+    handleAadhaarStateChange(requestFrom, ref.read(aadhaarProvider));
+  }
+
+  /// The actual outcome-handling logic, extracted so it can run both once
+  /// on load (above) AND reactively on every later transition via a
+  /// ref.listen the host screen's build() should register
+  /// (`ref.listen<AadhaarState>(aadhaarProvider, (_, next) =>
+  /// handleAadhaarStateChange(requestFrom, next))`).
+  ///
+  /// The on-load call alone isn't enough: SurePass's native DigiLocker SDK
+  /// Activity can leave THIS host screen instance disposed by the time
+  /// pollUntilTerminal()'s result actually lands (a fresh instance gets
+  /// (re)mounted instead, whose own on-load check already ran and found
+  /// nothing, since the poll hadn't resolved yet at that instant) — see
+  /// kyc_screen.dart's identical `ref.listen` in build() for the same
+  /// documented cause. Without a listener catching the LATER transition
+  /// too, the customer sees no visible update at all until manually
+  /// refreshing (pull-to-refresh or leaving and reopening the screen).
+  ///
+  /// Safe to call repeatedly for the same outcome from multiple call
+  /// sites — every branch below is guarded by the same shared
+  /// per-verificationId dedupe sets (AadhaarNotifier.handled*), so
+  /// whichever caller reaches a given outcome first is the only one that
+  /// actually acts on it.
+  void handleAadhaarStateChange(String requestFrom, AadhaarState state) {
     if (state.phase == AadhaarPhase.awaitingNameMismatchConfirm && state.aadhaarMismatchPrompt != null) {
       _maybeShowAadhaarMismatchDialog(requestFrom, state.aadhaarMismatchPrompt!);
     }
@@ -297,14 +321,14 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     if (!AadhaarNotifier.handledMismatchIds.add(prompt.verificationId)) return;
     final resolved = await _showMismatchDialog(requestFrom, prompt);
     if (!mounted) return;
-    if (resolved) await checkAndHandleCompletion(requestFrom);
+    if (resolved) await checkAndHandleCompletion(requestFrom, expectDocumentApproved: prompt.document);
   }
 
   Future<void> _maybeShowPanMismatchDialog(String requestFrom, NameMismatchPrompt prompt) async {
     if (!AadhaarNotifier.handledMismatchIds.add(prompt.verificationId)) return;
     final resolved = await _showMismatchDialog(requestFrom, prompt);
     if (!mounted) return;
-    if (resolved) await checkAndHandleCompletion(requestFrom);
+    if (resolved) await checkAndHandleCompletion(requestFrom, expectDocumentApproved: prompt.document);
   }
 
   Future<bool> _showMismatchDialog(String requestFrom, NameMismatchPrompt prompt) async {
@@ -371,14 +395,14 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     ref.invalidate(kycDocumentsProvider(requestFrom));
   }
 
-  Future<void> checkAndHandleCompletion(String requestFrom) async {
+  Future<void> checkAndHandleCompletion(String requestFrom, {String? expectDocumentApproved}) async {
     if (mounted) setState(() => completingKyc = true);
     try {
       if (AadhaarNotifier.completionInFlight != null) {
         await AadhaarNotifier.completionInFlight;
         return;
       }
-      final future = _doCheckAndHandleCompletion(requestFrom);
+      final future = _doCheckAndHandleCompletion(requestFrom, expectDocumentApproved: expectDocumentApproved);
       AadhaarNotifier.completionInFlight = future;
       try {
         await future;
@@ -390,10 +414,17 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     }
   }
 
-  Future<void> _doCheckAndHandleCompletion(String requestFrom) async {
+  bool _isDocumentApproved(KycDocumentsResult result, String document) {
+    if (document == 'AADHAAR') return result.aadhaarApproved;
+    return result.documents.any(
+      (d) => (d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN')) && d.alreadyUploaded,
+    );
+  }
+
+  Future<void> _doCheckAndHandleCompletion(String requestFrom, {String? expectDocumentApproved}) async {
     if (!mounted) return;
     final wasAlreadyConfirmed = ref.read(kycDocumentsProvider(requestFrom)).valueOrNull?.kycConfirmed ?? false;
-    final KycDocumentsResult result;
+    KycDocumentsResult result;
     try {
       result = await ref.refresh(kycDocumentsProvider(requestFrom).future);
     } catch (_) {
@@ -407,6 +438,27 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
       return;
     }
     if (!mounted) return;
+
+    // A mismatch-confirmation write may not have reached the DB replica
+    // this read hits yet (same reasoning as _profileAlreadyMatches's own
+    // retry below) — a customer who just resolved AADHAAR/PAN's name
+    // mismatch would otherwise see the checklist still show it as pending
+    // immediately after, only clearing once they leave and reopen the
+    // screen much later. One retry after a short pause is enough to let a
+    // typical replica catch up without meaningfully delaying the customer
+    // who's already staring at the "Updating your validation status…"
+    // loader this whole method runs under.
+    if (expectDocumentApproved != null && !_isDocumentApproved(result, expectDocumentApproved)) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      try {
+        result = await ref.refresh(kycDocumentsProvider(requestFrom).future);
+      } catch (_) {
+        // Keep the first (stale) result rather than losing the whole
+        // completion flow over a retry-only failure.
+      }
+      if (!mounted) return;
+    }
 
     setState(() {
       aadhaarEditing = false;

@@ -740,7 +740,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// comment for why this can't just be a plain reentrancy-guard bool: the
   /// duplicate calls come from DIFFERENT KycScreen instances, so the lock
   /// has to be shared (static), not per-instance.
-  Future<void> _checkAndHandleCompletion() async {
+  Future<void> _checkAndHandleCompletion({String? expectDocumentApproved}) async {
     // Visible "updating..." overlay (see build()'s _completingKyc check) —
     // without this, the gap between a verify action finishing and this
     // screen settling into its final state (re-fetch document-types,
@@ -756,7 +756,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         await AadhaarNotifier.completionInFlight;
         return;
       }
-      final future = _doCheckAndHandleCompletion();
+      final future = _doCheckAndHandleCompletion(expectDocumentApproved: expectDocumentApproved);
       AadhaarNotifier.completionInFlight = future;
       try {
         await future;
@@ -768,14 +768,21 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     }
   }
 
-  Future<void> _doCheckAndHandleCompletion() async {
+  bool _isDocumentApproved(KycDocumentsResult result, String document) {
+    if (document == 'AADHAAR') return result.aadhaarApproved;
+    return result.documents.any(
+      (d) => (d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN')) && d.alreadyUploaded,
+    );
+  }
+
+  Future<void> _doCheckAndHandleCompletion({String? expectDocumentApproved}) async {
     SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: entered, mounted=$mounted');
     if (!mounted) return;
     // Captured BEFORE refreshing — see the kycConfirmed guard below for why
     // the post-refresh value can no longer be used here.
     final wasAlreadyConfirmed =
         ref.read(kycDocumentsProvider(widget.requestFrom)).valueOrNull?.kycConfirmed ?? false;
-    final KycDocumentsResult result;
+    KycDocumentsResult result;
     try {
       result = await ref.refresh(kycDocumentsProvider(widget.requestFrom).future);
     } catch (e) {
@@ -793,6 +800,23 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       return; // Couldn't refresh — nothing reliable to show, don't block on it.
     }
     if (!mounted) return;
+
+    // A mismatch-confirmation write may not have reached the DB replica
+    // this read hits yet — see KycVerificationFlowMixin's identical retry
+    // for the full reasoning. Without this, a customer who just resolved a
+    // name mismatch sees the card still show pending immediately after,
+    // only clearing once they leave and reopen the screen much later.
+    if (expectDocumentApproved != null && !_isDocumentApproved(result, expectDocumentApproved)) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      try {
+        result = await ref.refresh(kycDocumentsProvider(widget.requestFrom).future);
+      } catch (_) {
+        // Keep the first (stale) result rather than losing the whole
+        // completion flow over a retry-only failure.
+      }
+      if (!mounted) return;
+    }
     SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: wasAlreadyConfirmed=$wasAlreadyConfirmed aadhaarApproved=${result.aadhaarApproved} kycConfirmedNow=${result.kycConfirmed} allDocsUploaded=${result.documents.every((d) => d.alreadyUploaded)}');
 
     // _initControllers only ever populates _completedDocIds from the VERY
@@ -1079,7 +1103,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     final resolved = await _showMismatchDialog(prompt);
     SecureLogger.d('[KYC DEBUG] _maybeShowAadhaarMismatchDialog: _showMismatchDialog returned resolved=$resolved, mounted=$mounted');
     if (!mounted) return;
-    if (resolved) await _checkAndHandleCompletion();
+    if (resolved) await _checkAndHandleCompletion(expectDocumentApproved: prompt.document);
   }
 
   /// Shown for EITHER mismatch prompt — AADHAAR's own (CONFIRM_NAME_UPDATE
@@ -1146,7 +1170,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     if (!_shownMismatchIds.add(prompt.verificationId)) return;
     final resolved = await _showMismatchDialog(prompt);
     if (!mounted) return;
-    if (resolved) await _checkAndHandleCompletion();
+    if (resolved) await _checkAndHandleCompletion(expectDocumentApproved: prompt.document);
   }
 
   /// Reactive counterpart to the terminal expired/rejected/failed branch in

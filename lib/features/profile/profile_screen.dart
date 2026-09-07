@@ -10,6 +10,7 @@ import '../../core/services/biometric_service.dart';
 import '../../routes/app_router.dart';
 import '../../core/security/secure_storage_service.dart';
 import '../../core/utils/masking_utils.dart';
+import '../kyc/utils/kyc_step_status.dart';
 import '../auth/controller/auth_controller.dart';
 import '../main/main_screen.dart';
 import 'profile_controller.dart' as pc;
@@ -127,6 +128,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     final user = profileState.user;
+    // "N/total" badge for the KYC Validation menu item — same
+    // computeKycStepStatuses() the checklist screen itself uses (see
+    // kyc/utils/kyc_step_status.dart), so this can never disagree with the
+    // checklist's own progress ring. Null while the underlying doc-types
+    // fetch hasn't resolved yet (e.g. first paint) — the menu item falls
+    // back to just the binary "Verified" badge in that case.
+    final kycProgress = ref.watch(kycProgressProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -179,11 +187,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               // verified, so the user can view their masked
                               // PAN/Aadhaar details and use Edit to redo
                               // verification (see kyc/screens/kyc_screen.dart).
-                              final result = await Navigator.pushNamed(
+                              await Navigator.pushNamed(
                                   context, AppRouter.kycVerification,
                                   arguments: {'request_from': 'profile'});
-                              // Refresh profile to update the verified badge
-                              if (result == true && mounted) {
+                              // Refresh regardless of the pop result — the
+                              // merged checklist screen (KycVerificationScreen)
+                              // never pops with `true` (it keeps the customer
+                              // on the same page to continue into bank
+                              // verification steps in place), so gating this
+                              // on `result == true` meant returning via the
+                              // back button never refreshed anything here.
+                              // fetchProfileDetails() is cheap and safe to
+                              // call even when nothing actually changed.
+                              if (mounted) {
                                 ref
                                     .read(pc.profileProvider.notifier)
                                     .fetchProfileDetails();
@@ -221,7 +237,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       ],
                                     ),
                                   )
-                                : null,
+                                : (kycProgress != null && kycProgress.total > 0)
+                                    ? Container(
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 10.w, vertical: 4.h),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFB45309)
+                                              .withOpacity(0.08),
+                                          borderRadius:
+                                              BorderRadius.circular(100.r),
+                                          border: Border.all(
+                                              color: const Color(0xFFB45309)
+                                                  .withOpacity(0.15)),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.pending_actions_rounded,
+                                                color: const Color(0xFFB45309),
+                                                size: 14.sp),
+                                            SizedBox(width: 4.w),
+                                            Text(
+                                              '${kycProgress.completed}/${kycProgress.total}',
+                                              style: GoogleFonts.playfairDisplay(
+                                                fontSize: 10.sp,
+                                                fontWeight: FontWeight.w900,
+                                                color: const Color(0xFFB45309),
+                                                letterSpacing: 0.3,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : null,
                           ),
                           // Nominee Details - Commented as requested
 
