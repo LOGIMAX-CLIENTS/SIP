@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/add_bank_account_sheet.dart';
+import '../../shared/widgets/add_upi_sheet.dart';
 import '../../core/error/failures.dart';
 import '../../routes/app_router.dart';
 import 'models/bank_account.dart';
@@ -277,6 +278,71 @@ class BankDetailsScreen extends ConsumerWidget {
               ),
             ],
           ),
+          // UPI(s) proven (via Reverse Penny Drop) to pay from THIS account —
+          // see BankAccount.linkedUpis. Only offered once the account itself
+          // is Verified; a UPI added here has no bank to link to until an
+          // RPD attempt cross-checks it against this specific account.
+          if (account.isVerified) ...[
+            SizedBox(height: 12.h),
+            Wrap(
+              spacing: 8.w,
+              runSpacing: 8.h,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                for (final upi in account.linkedUpis)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+                    decoration: BoxDecoration(
+                      color: _accentGreen.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(100.r),
+                      border: Border.all(color: _accentGreen.withOpacity(0.25)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified_rounded, size: 12.sp, color: _accentGreen),
+                        SizedBox(width: 4.w),
+                        Text(upi.upiId,
+                            style: GoogleFonts.lora(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                            )),
+                      ],
+                    ),
+                  ),
+                InkWell(
+                  onTap: () => showAddUpiSheet(
+                    context,
+                    ref,
+                    isDark: isDark,
+                    onAdded: () => ref.invalidate(bankAccountsProvider),
+                  ),
+                  borderRadius: BorderRadius.circular(100.r),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(100.r),
+                      border: Border.all(color: _accentGreen.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_rounded, size: 13.sp, color: _accentGreen),
+                        SizedBox(width: 2.w),
+                        Text('Add UPI',
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w700,
+                              color: _accentGreen,
+                            )),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

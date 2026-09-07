@@ -1,3 +1,17 @@
+class LinkedUpi {
+  final String upiId;
+  final bool isVerified;
+
+  LinkedUpi({required this.upiId, required this.isVerified});
+
+  factory LinkedUpi.fromJson(Map<String, dynamic> json) {
+    return LinkedUpi(
+      upiId: json['upi_id']?.toString() ?? '',
+      isVerified: json['is_verified'] == true,
+    );
+  }
+}
+
 class BankAccount {
   final String idBank;
   final String bankName;
@@ -6,6 +20,7 @@ class BankAccount {
   final String holderName;
   final String verificationStatus; // "VERIFIED" | "PENDING"
   final bool isPrimary;
+  final List<LinkedUpi> linkedUpis;
 
   BankAccount({
     required this.idBank,
@@ -15,6 +30,7 @@ class BankAccount {
     required this.holderName,
     required this.verificationStatus,
     required this.isPrimary,
+    this.linkedUpis = const [],
   });
 
   bool get isVerified => verificationStatus == 'VERIFIED';
@@ -28,6 +44,9 @@ class BankAccount {
       holderName: json['holder_name']?.toString() ?? '',
       verificationStatus: json['verification_status']?.toString() ?? 'PENDING',
       isPrimary: json['is_primary'] == true,
+      linkedUpis: (json['linked_upis'] as List<dynamic>? ?? [])
+          .map((e) => LinkedUpi.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
