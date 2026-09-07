@@ -355,6 +355,26 @@ so a PAN approved through mismatch resolution skipped every one of them:
 | `PROFILE_NAME_PAN_NAME_MATCH` | Step stuck Pending (cosmetic) | RULE-KYC-016 |
 | `PROFILE_DOB_PAN_DOB_MATCH` | Same | RULE-KYC-016 |
 | `AADHAAR_PAN_LINK` | **Blocks SIP/withdrawals** when Mandatory — it IS in `is_kyc_complete()` | this rule |
+| `cpan_number_enc` | **Worst of the four** — see below | this rule |
+
+**The fourth one, found 2026-09-07 from live `cus_pan` data** (cus_id 176 and 185 had
+`cpan_number_enc = NULL` while every non-mismatch customer had a value). `cpan_number_enc` is written at
+that same tail, and it is the ONLY place the usable PAN is retrievable — `cpan_number` and `kyc_reference`
+are masked. Two checks bail out on it with `if not cpan.cpan_number_enc: return None`:
+
+- `retry_aadhaar_pan_link()` — so **AADHAAR_PAN_LINK can never leave NOT_STARTED**, which fails
+  `is_kyc_complete()` and blocks SIP/withdrawals. The link status being stuck was a *symptom* of this, not
+  an independent problem; the earlier "MEON `pan_export_data` credentials aren't provisioned" reading
+  explains a null `aadhaar_linked` at verify time but NOT why the retry could never recover.
+- The PAN-Bank Link check (`transactions/views/verification.py`) — silently unavailable.
+
+Fixed by persisting it in `_offer_pan_name_mismatch_confirmation` (at mismatch time — the raw PAN exists
+only in that request; the confirm arrives later with no provider fetch). It goes onto the encrypted model
+field, never into `kyc_response`, which is plaintext at rest. `update_or_create` before approval is safe:
+`cpan_status` defaults to PENDING, so a row created there cannot read as verified.
+
+Existing rows: `backfill_cpan_number_enc` recovers the PAN from the stored provider response and accepts a
+candidate only when `sha256(candidate) == cpan_number_hash`, so a wrong value cannot be written.
 
 `aadhaar_linked` is now captured onto the mismatch row at creation (there is no provider call on the confirm
 path to re-fetch it) and synced by `_finalize_name_mismatch_confirmation`. `None` maps to PENDING —
