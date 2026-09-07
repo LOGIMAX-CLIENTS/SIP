@@ -572,10 +572,12 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       final result = await ref.read(kycRepositoryProvider).retryAadhaarPanLink();
       ref.invalidate(verificationStatusProvider);
       if (result['needs_reverify'] == true) {
+        // Stays on the checklist — this is just a status recheck, not a
+        // reason to send the customer through a full PAN DigiLocker
+        // re-verification (that's a much bigger ask for an Optional check).
         if (mounted) {
-          AppToast.show(context, 'Please re-verify PAN to refresh this link status.', type: ToastType.info);
+          AppToast.show(context, "Couldn't refresh the link status right now. Please try again shortly.", type: ToastType.info);
         }
-        await _openIdVerificationScreen();
         return;
       }
       if (mounted) AppToast.show(context, 'PAN-Aadhaar link status refreshed.', type: ToastType.success);
