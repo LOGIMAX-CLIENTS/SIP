@@ -17,6 +17,7 @@ import '../../../core/utils/navigation_utils.dart';
 import '../../../core/utils/validators.dart';
 import '../../../shared/theme/app_text_styles.dart';
 import 'email_otp_sheet.dart';
+import 'package:startgold/shared/utils/dob_input_formatter.dart';
 
 class RegistrationScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -92,11 +93,24 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     // The most recent date that still makes the customer 18 today.
     final DateTime maxDob = DateTime(now.year - 18, now.month, now.day);
 
+    // Seed from whatever is already typed so the picker opens on that date
+    // rather than jumping back to the 18-year cutoff.
+    final DateTime? typed = DobInputFormatter.parse(_dobController.text);
+    final DateTime initial =
+        (typed != null && !typed.isAfter(maxDob)) ? typed : maxDob;
+
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: maxDob,
+      initialDate: initial,
       firstDate: DateTime(1900),
       lastDate: maxDob,
+      // calendarOnly removes the picker's own keyboard-entry mode. That mode
+      // parses by locale (en_US => MM/DD/YYYY) and is what rejected
+      // "19061992" with "Invalid format." — typing is handled by the field
+      // itself now, so this path should not be reachable at all.
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      // Day grid first; the header still switches to the year list.
+      initialDatePickerMode: DatePickerMode.day,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -112,10 +126,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     );
 
     if (picked != null) {
-      final formattedDate =
-          "${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}";
       setState(() {
-        _dobController.text = formattedDate;
+        _dobController.text = DobInputFormatter.formatDate(picked);
       });
     }
   }
@@ -247,23 +259,40 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           hint: 'DD/MM/YYYY',
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
-                          readOnly: true,
-                          onTap: () => _selectDate(context),
+                          // Typeable now — DobInputFormatter inserts the
+                          // slashes, so "19061992" becomes 19/06/1992 as the
+                          // customer types instead of being rejected.
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [DobInputFormatter()],
                           isNumeric: true,
-                          suffixIcon: Icon(Icons.calendar_today_rounded,
-                              size: 20.sp,
-                              color: primaryTextColor.withOpacity(0.5)),
+                          // The calendar is opened from the icon rather than
+                          // by tapping the field, so tapping to edit no longer
+                          // fights the picker.
+                          // Padded off the border — suffixIconConstraints
+                          // removes Flutter's default 48x48 box, so without
+                          // this the glyph sits flush against the edge. The
+                          // padding doubles as the tap target (opaque), so the
+                          // area around the icon opens the picker too.
+                          suffixIcon: GestureDetector(
+                            onTap: () => _selectDate(context),
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                  right: 16.w, left: 12.w, top: 14.h, bottom: 14.h),
+                              child: Icon(Icons.calendar_today_rounded,
+                                  size: 20.sp,
+                                  color: primaryTextColor.withOpacity(0.5)),
+                            ),
+                          ),
                           validator: (v) {
                             if (v == null || v.isEmpty) return 'Required';
-                            final parts = v.split('/');
-                            if (parts.length != 3) return 'Required';
-                            final day = int.tryParse(parts[0]);
-                            final month = int.tryParse(parts[1]);
-                            final year = int.tryParse(parts[2]);
-                            if (day == null || month == null || year == null) {
-                              return 'Required';
+                            // parse() rejects both an incomplete value and an
+                            // impossible one (31/02/1990 — DateTime would
+                            // silently roll that to 3 March).
+                            final dob = DobInputFormatter.parse(v);
+                            if (dob == null) {
+                              return 'Enter a valid date as DD/MM/YYYY';
                             }
-                            final dob = DateTime(year, month, day);
                             if (_calculateAge(dob) < 18) {
                               return 'You must be at least 18 years old';
                             }
@@ -273,54 +302,11 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
 
                         SizedBox(height: 24.h),
 
-                        // Email Field
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildInputLabel('E-Mail *', primaryTextColor),
-                            if (_emailVerified)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.check_circle,
-                                      size: 15.sp, color: const Color(0xFF1B882C)),
-                                  SizedBox(width: 4.w),
-                                  Text(
-                                    'Verified',
-                                    style: GoogleFonts.playfairDisplay(
-                                      fontSize: 13.sp,
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF1B882C),
-                                    ),
-                                  ),
-                                ],
-                              )
-                            else
-                              GestureDetector(
-                                onTap: _isVerifyingEmail ? null : _verifyEmail,
-                                child: _isVerifyingEmail
-                                    ? SizedBox(
-                                        width: 14.w,
-                                        height: 14.w,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                              Colors.orangeAccent),
-                                        ),
-                                      )
-                                    : Text(
-                                        'Verify',
-                                        style: GoogleFonts.playfairDisplay(
-                                          fontSize: 13.sp,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.orangeAccent,
-                                          decoration: TextDecoration.underline,
-                                          decorationColor: Colors.orangeAccent,
-                                        ),
-                                      ),
-                              ),
-                          ],
-                        ),
+                        // Email Field — the Verify action / Verified badge sits
+                        // INSIDE the field (suffixIcon), matching DOB's calendar
+                        // and Account Details' own e-mail field, rather than
+                        // floating beside the label.
+                        _buildInputLabel('E-Mail *', primaryTextColor),
                         SizedBox(height: 8.h),
                         _buildClassicTextField(
                           controller: _emailController,
@@ -329,6 +315,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           textColor: primaryTextColor,
                           keyboardType: TextInputType.emailAddress,
                           validator: Validators.validateEmail,
+                          suffixIcon: _buildEmailVerifyAction(),
                         ),
 
                         SizedBox(height: 24.h),
@@ -465,6 +452,73 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     );
   }
 
+  /// E-mail Verify link / Verified badge, rendered inside the e-mail field.
+  ///
+  /// Wrapped so the suffix hugs its content — a bare Row inside `suffixIcon`
+  /// stretches to the field's full height and pushes the text off-centre.
+  Widget _buildEmailVerifyAction() {
+    final Widget child;
+    if (_emailVerified) {
+      child = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 15.sp, color: const Color(0xFF1B882C)),
+          SizedBox(width: 4.w),
+          Text(
+            'Verified',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 13.sp,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1B882C),
+            ),
+          ),
+        ],
+      );
+    } else if (_isVerifyingEmail) {
+      child = SizedBox(
+        width: 14.w,
+        height: 14.w,
+        child: const CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.orangeAccent),
+        ),
+      );
+    } else {
+      child = Text(
+        'Verify',
+        style: GoogleFonts.playfairDisplay(
+          fontSize: 13.sp,
+          fontWeight: FontWeight.w600,
+          color: Colors.orangeAccent,
+          decoration: TextDecoration.underline,
+          decorationColor: Colors.orangeAccent,
+        ),
+      );
+    }
+
+    // The GestureDetector wraps the whole padded region, not just the glyph,
+    // so the entire right-hand area behaves like a button — tapping the space
+    // around the word triggers it too. HitTestBehavior.opaque is what makes
+    // the transparent padding count as part of the hit target.
+    final tappable = _emailVerified || _isVerifyingEmail ? null : _verifyEmail;
+    // Sized to its content — no fixed or minimum width. An earlier version pinned
+    // `width: 0` with a `minWidth` floor, which reserved space the long
+    // "Verified" row then overran, producing Flutter's RIGHT OVERFLOWED stripe
+    // beside a long address. Paired with `suffixIconConstraints` on the field
+    // (defaults to a 48x48 minimum, which would re-introduce the same fight).
+    return GestureDetector(
+      onTap: tappable,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        // Horizontal padding keeps it off the border; the vertical padding is
+        // what gives the tap target real height rather than just the text's
+        // line box.
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 14.h),
+        child: child,
+      ),
+    );
+  }
+
   Widget _buildClassicTextField({
     required TextEditingController controller,
     required String hint,
@@ -502,6 +556,9 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
         hintStyle: AppTextStyles.inputHint(isDark)
             .copyWith(color: textColor.withOpacity(0.6)),
         suffixIcon: suffixIcon,
+        // Without this the suffix is forced to at least 48x48, which steals
+        // width from the value text and overflows on a long e-mail address.
+        suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
         filled: true,
         fillColor: bgColor,
         contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 20.h),

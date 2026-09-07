@@ -18,6 +18,7 @@ import '../../core/utils/validators.dart';
 import '../auth/controller/auth_controller.dart';
 import '../../core/services/auth_service.dart';
 import '../auth/registration/email_otp_sheet.dart';
+import 'package:startgold/shared/utils/dob_input_formatter.dart';
 
 class AccountDetailsScreen extends ConsumerStatefulWidget {
   const AccountDetailsScreen({super.key});
@@ -38,6 +39,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   bool _isPincodeChecking = false;
   bool _isVerifyingEmail = false;
   String? _emailError;
+  String? _dobError;
 
   // Verified baselines.
   // A pincode / e-mail counts as verified only while it EXACTLY matches the
@@ -83,7 +85,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     _firstNameController = TextEditingController(text: user.firstName);
     _lastNameController = TextEditingController(text: user.lastName);
     _emailController = TextEditingController(text: user.email);
-    _dobController = TextEditingController(text: user.dob);
+    // Seeded in DD/MM/YYYY, not the API's ISO — this field is editable now,
+    // so its text is what the customer reads and types. profile/update
+    // accepts either shape (see identity.py's dob branch).
+    _dobController = TextEditingController(text: _toDisplayDob(user.dob));
     _pincodeController = TextEditingController(text: user.pincode);
     _stateController = TextEditingController(text: user.state);
     _cityController = TextEditingController(text: user.city);
@@ -107,7 +112,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         _firstNameController.text = updated.firstName;
         _lastNameController.text = updated.lastName;
         _emailController.text = updated.email;
-        _dobController.text = updated.dob;
+        _dobController.text = _toDisplayDob(updated.dob);
         _pincodeController.text = updated.pincode;
         _stateController.text = updated.state;
         _cityController.text = updated.city;
@@ -224,6 +229,29 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       return;
     }
 
+    // -- Validate DOB ------------------------------------------------------
+    // The field is typed now, so an incomplete or impossible date can reach
+    // here. Worth failing loudly: profile/update's own dob branch swallows a
+    // malformed value silently (`except (ValueError, TypeError): pass`), so
+    // without this the customer would be told "Profile updated successfully"
+    // while their DOB was quietly dropped.
+    final dobText = _dobController.text.trim();
+    if (dobText.isEmpty) {
+      setState(() => _dobError = 'Date of birth is required');
+      return;
+    }
+    final parsedDob = DobInputFormatter.parse(dobText);
+    if (parsedDob == null) {
+      setState(() => _dobError = 'Enter a valid date as DD/MM/YYYY');
+      return;
+    }
+    final nowForDob = DateTime.now();
+    if (parsedDob.isAfter(DateTime(nowForDob.year - 18, nowForDob.month, nowForDob.day))) {
+      setState(() => _dobError = 'You must be at least 18 years old');
+      return;
+    }
+    setState(() => _dobError = null);
+
     // â”€â”€ Validate Email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final email = _emailController.text.trim();
     final emailFormatError = Validators.validateEmail(email);
@@ -292,7 +320,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         _firstNameController.text = next.user.firstName;
         _lastNameController.text = next.user.lastName;
         _emailController.text = next.user.email;
-        _dobController.text = next.user.dob;
+        _dobController.text = _toDisplayDob(next.user.dob);
         _pincodeController.text = next.user.pincode;
         _stateController.text = next.user.state;
         _cityController.text = next.user.city;
@@ -376,8 +404,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                         _buildInputField(label: 'First Name as per PAN *', controller: _firstNameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)]),
                         _buildInputField(label: 'Last Name as per PAN (Optional)', controller: _lastNameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)]),
                         _buildInputField(label: 'Phone Number *', hint: MaskingUtils.maskMobile(user.phone), isEditable: false, isDark: isDark, isNumeric: true),
-                        _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, labelAction: _buildEmailVerifyBadge(user, isDark)),
-                        _buildInputField(label: 'DOB *', hint: user.dob, isEditable: false, isDark: isDark, isNumeric: true),
+                        _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, actionWidget: _buildEmailVerifyBadge(user, isDark)),
+                        _buildInputField(label: 'DOB *', controller: _dobController, isEditable: profileState.isEditing, isDark: isDark, isNumeric: true, keyboardType: TextInputType.number, inputFormatters: [DobInputFormatter()], errorText: _dobError, onChanged: (_) { if (_dobError != null) setState(() => _dobError = null); }, actionIcon: Icons.calendar_today_rounded, onAction: profileState.isEditing ? _selectDob : null),
                         _buildInputField(label: 'Pincode *', controller: _pincodeController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)], actionLabel: 'Check', onAction: _handlePincodeCheck, isActionLoading: _isPincodeChecking, isNumeric: true),
                         if (_stateController.text.isNotEmpty)
                           _buildInputField(label: 'State', controller: _stateController, isEditable: false, isDark: isDark),
@@ -431,6 +459,37 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     );
   }
 
+  /// API DOB (ISO `2000-12-11`) -> the `DD/MM/YYYY` the field shows and the
+  /// customer types. Passes an already-formatted value straight through, so
+  /// re-seeding after a save doesn't mangle it.
+  String _toDisplayDob(String apiDob) {
+    if (apiDob.isEmpty) return '';
+    final iso = DateTime.tryParse(apiDob);
+    if (iso != null && apiDob.contains('-')) return DobInputFormatter.formatDate(iso);
+    return apiDob;
+  }
+
+  /// Calendar for the DOB field. `calendarOnly` deliberately drops the
+  /// picker's own keyboard-entry mode — it parses by locale (en_US =>
+  /// MM/DD/YYYY) and is what rejects "19061992" with "Invalid format.";
+  /// typing is handled by DobInputFormatter on the field itself.
+  Future<void> _selectDob() async {
+    final now = DateTime.now();
+    final maxDob = DateTime(now.year - 18, now.month, now.day);
+    final typed = DobInputFormatter.parse(_dobController.text);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: (typed != null && !typed.isAfter(maxDob)) ? typed : maxDob,
+      firstDate: DateTime(1900),
+      lastDate: maxDob,
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      initialDatePickerMode: DatePickerMode.day,
+    );
+    if (picked != null && mounted) {
+      setState(() => _dobController.text = DobInputFormatter.formatDate(picked));
+    }
+  }
+
   String _formatDate(String dateStr) {
     if (dateStr.isEmpty) return '';
     try {
@@ -471,11 +530,18 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       );
     }
 
+    // Whole padded region is the tap target, not just the word — same reason
+    // as RegistrationScreen's _buildEmailVerifyAction. HitTestBehavior.opaque
+    // makes the transparent padding count as part of the button.
     return GestureDetector(
       onTap: _isVerifyingEmail ? null : _verifyEmail,
-      child: _isVerifyingEmail
-          ? SizedBox(height: 14.h, width: 14.h, child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent))
-          : Text('Verify', style: GoogleFonts.playfairDisplay(fontSize: 13.sp, fontWeight: FontWeight.w600, color: Colors.orangeAccent, decoration: TextDecoration.underline)),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 4.w),
+        child: _isVerifyingEmail
+            ? SizedBox(height: 14.h, width: 14.h, child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent))
+            : Text('Verify', style: GoogleFonts.playfairDisplay(fontSize: 13.sp, fontWeight: FontWeight.w600, color: Colors.orangeAccent, decoration: TextDecoration.underline)),
+      ),
     );
   }
 
@@ -488,6 +554,14 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     int maxLines = 1,
     TextInputType keyboardType = TextInputType.text,
     String? actionLabel,
+    /// Renders instead of [actionLabel] when set — for actions better shown as
+    /// a glyph than a word (the DOB calendar).
+    IconData? actionIcon,
+    /// An arbitrary widget rendered INSIDE the value box (unlike [labelAction],
+    /// which sits beside the label). Not gated on [isEditable] — the widget
+    /// itself decides what to show per state, e.g. the e-mail Verify link vs
+    /// its Verified badge.
+    Widget? actionWidget,
     VoidCallback? onAction,
     bool isActionLoading = false,
     TextCapitalization textCapitalization = TextCapitalization.none,
@@ -504,15 +578,21 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     String displayValue = controller?.text ?? hint ?? '';
     if (label.contains('DOB')) displayValue = _formatDate(displayValue);
 
+    // Playfair Display ships OLDSTYLE figures by default — digits are drawn at
+    // varying heights, which is why an e-mail like "sankarguru.8750@..." looked
+    // like the numbers were bouncing up and down. liningFigures forces uniform
+    // cap-height digits; tabularFigures keeps them evenly spaced.
+    const digitFeatures = [FontFeature.liningFigures(), FontFeature.tabularFigures()];
+
     final valueStyle = isNumeric
         ? GoogleFonts.lora(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white54 : const Color(0xFF333333))
-        : GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white54 : const Color(0xFF333333));
+        : GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white54 : const Color(0xFF333333), fontFeatures: digitFeatures);
     final inputStyle = isNumeric
         ? GoogleFonts.lora(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white : const Color(0xFF333333))
-        : GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white : const Color(0xFF333333));
+        : GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.white : const Color(0xFF333333), fontFeatures: digitFeatures);
     final hintStyle = isNumeric
         ? GoogleFonts.lora(fontSize: 16.sp, color: Colors.grey)
-        : GoogleFonts.playfairDisplay(fontSize: 16.sp, color: Colors.grey);
+        : GoogleFonts.playfairDisplay(fontSize: 16.sp, color: Colors.grey, fontFeatures: digitFeatures);
 
     return Padding(
       padding: EdgeInsets.only(bottom: 16.h),
@@ -558,14 +638,18 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                           child: Text(displayValue, style: valueStyle),
                         ),
                 ),
-                if (actionLabel != null && isEditable)
+                if (actionWidget != null)
+                  Padding(padding: EdgeInsets.only(left: 12.w), child: actionWidget),
+                if ((actionLabel != null || actionIcon != null) && isEditable)
                   GestureDetector(
                     onTap: isActionLoading ? null : onAction,
                     child: Padding(
                       padding: EdgeInsets.only(left: 12.w),
                       child: isActionLoading
                         ? SizedBox(height: 16.h, width: 16.h, child: const CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0E5723)))
-                        : Text(actionLabel, style: GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.bold, color: const Color(0xFF0E5723))),
+                        : actionIcon != null
+                            ? Icon(actionIcon, size: 20.sp, color: const Color(0xFF0E5723))
+                            : Text(actionLabel!, style: GoogleFonts.playfairDisplay(fontSize: 16.sp, fontWeight: FontWeight.bold, color: const Color(0xFF0E5723))),
                     ),
                   ),
               ],

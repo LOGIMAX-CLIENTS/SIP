@@ -36,6 +36,20 @@ class AppTextStyles {
   // ─── 1. Display Large ────────────────────────────────────────────────────
   // Hero titles on success/failure screens, MPIN title
   // Example: "Redemption Initiated!", "AUTHORIZE WITHDRAWAL"
+  /// Playfair Display ships OLDSTYLE figures by default: digits are drawn at
+  /// varying heights and depths, so a value mixing letters and numbers — an
+  /// e-mail like "sankarguru.8750@..." — reads as if the digits are bouncing
+  /// up and down rather than sitting on one line. `liningFigures` forces
+  /// uniform cap-height digits; `tabularFigures` keeps them evenly spaced so
+  /// the text doesn't reflow as numbers are typed.
+  ///
+  /// Applied to the Playfair styles used by TEXT INPUTS. Lora (the numeric
+  /// style) already renders lining figures and needs nothing.
+  static const List<FontFeature> digitFeatures = [
+    FontFeature.liningFigures(),
+    FontFeature.tabularFigures(),
+  ];
+
   static TextStyle displayLarge(bool isDark) => GoogleFonts.playfairDisplay(
         fontSize: 28.sp,
         fontWeight: FontWeight.w800,
@@ -67,6 +81,7 @@ class AppTextStyles {
         fontSize: 16.sp,
         fontWeight: FontWeight.w500,
         color: _primary(isDark),
+        fontFeatures: digitFeatures,
       );
 
   // ─── 5. Body Medium ──────────────────────────────────────────────────────
@@ -165,6 +180,7 @@ class AppTextStyles {
         fontSize: 16.sp,
         fontWeight: FontWeight.w400,
         color: _muted(isDark),
+        fontFeatures: digitFeatures,
       );
 
   /// Button text style (Playfair Display — used inside CustomButton or ElevatedButton)
