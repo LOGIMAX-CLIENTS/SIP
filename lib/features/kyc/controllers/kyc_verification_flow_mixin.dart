@@ -518,15 +518,15 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     await _showSuccessAnimation();
     if (!mounted) return;
 
-    if (!await _profileAlreadyMatches(aadhaarName)) {
+    if (!await profileAlreadyMatches(aadhaarName)) {
       if (!mounted) return;
-      final saved = await _showVerifiedDetailsDialog(source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob);
+      final saved = await showVerifiedDetailsDialog(source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob);
       if (!mounted || !saved) return;
     }
 
-    if (!await _profileAlreadyMatches(panName)) {
+    if (!await profileAlreadyMatches(panName)) {
       if (!mounted) return;
-      final saved = await _showVerifiedDetailsDialog(source: 'PAN', verifiedName: panName, verifiedDob: panDob);
+      final saved = await showVerifiedDetailsDialog(source: 'PAN', verifiedName: panName, verifiedDob: panDob);
       if (!mounted || !saved) return;
     }
 
@@ -537,7 +537,7 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   // on why this exists and why a single mismatched read gets one retry
   // before conceding "genuinely different" (replica-lag race right after
   // the OTHER document's mismatch-confirm write, not a real difference).
-  Future<bool> _profileAlreadyMatches(String? verifiedName) async {
+  Future<bool> profileAlreadyMatches(String? verifiedName) async {
     // A blank/absent verified name means there is nothing to confirm — skip
     // the popup rather than showing an unfillable one. Returning false here
     // (the old behaviour) opened KycVerifiedDetailsDialog with
@@ -562,6 +562,31 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     if (!mounted) return false;
     final retriedName = ref.read(pc.profileProvider).user.name;
     return retriedName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
+  }
+
+  /// Checklist's "Name & DOB Match" step Retry — offers the SAME profile
+  /// name/DOB confirm dialog [_runCompletionSequence] shows right after
+  /// PAN+Aadhaar first verify, for a customer whose profile still doesn't
+  /// match either verified document (the usual reason this step stays
+  /// stuck on Pending/In Progress instead of Matched — a plain refetch
+  /// alone can't fix a genuine mismatch, only a stale-read race).
+  Future<void> retryNameDobConfirm({
+    String? aadhaarName,
+    String? aadhaarDob,
+    String? panName,
+    String? panDob,
+  }) async {
+    if (!await profileAlreadyMatches(aadhaarName)) {
+      if (!mounted) return;
+      final saved = await showVerifiedDetailsDialog(source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob);
+      if (!mounted || !saved) return;
+    }
+    if (!await profileAlreadyMatches(panName)) {
+      if (!mounted) return;
+      await showVerifiedDetailsDialog(source: 'PAN', verifiedName: panName, verifiedDob: panDob);
+      if (!mounted) return;
+    }
+    ref.read(pc.profileProvider.notifier).fetchProfileDetails();
   }
 
   Future<void> _showSuccessAnimation() async {
@@ -600,7 +625,7 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     if (mounted) Navigator.pop(context);
   }
 
-  Future<bool> _showVerifiedDetailsDialog({required String source, String? verifiedName, String? verifiedDob}) async {
+  Future<bool> showVerifiedDetailsDialog({required String source, String? verifiedName, String? verifiedDob}) async {
     final saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,

@@ -377,7 +377,13 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                       expanded: _expanded.contains('name_dob'),
                       onToggle: () => setState(() => _toggle('name_dob')),
                       lockedHint: nameDobStatus == KycStepStatus.locked ? nameDobSubtitle : null,
-                      detail: _buildNameDobDetail(isDark, nameDobStatus, nameDobSubtitle),
+                      detail: _buildNameDobDetail(
+                        isDark, nameDobStatus, nameDobSubtitle,
+                        aadhaarName: docsResult.aadhaarName,
+                        aadhaarDob: docsResult.aadhaarDob,
+                        panName: panDocValue?.verifiedName,
+                        panDob: panDocValue?.verifiedDob,
+                      ),
                     ),
                     if (aadhaarPanLinkActive)
                       KycStepRow(
@@ -503,13 +509,20 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     }
   }
 
-  /// Name & DOB Match's own Retry — this status is recomputed fresh from
-  /// CustomerPan/CustomerAadhaar on every fetch (KYCService.is_kyc_complete,
-  /// not a separate mirror row), so a stuck "Pending" here is almost always
-  /// a stale read shortly after DigiLocker approval (see kyc_screen.dart's
-  /// `_checkCompletionRecoveryOnLoad` docstring for the exact race) —
-  /// simply refetching resolves it, no write/confirm call needed.
-  Widget _buildNameDobDetail(bool isDark, KycStepStatus status, String message) {
+  /// Name & DOB Match's own Retry — a stuck "Pending" here is either a
+  /// stale read shortly after DigiLocker approval (see kyc_screen.dart's
+  /// `_checkCompletionRecoveryOnLoad` docstring for the exact race), which
+  /// a plain refetch resolves, or a genuine mismatch between the profile
+  /// and the verified PAN/Aadhaar name — which instead needs the customer
+  /// to confirm/update their profile via the same dialog shown right after
+  /// first verifying (see [retryNameDobConfirm]).
+  Widget _buildNameDobDetail(
+    bool isDark, KycStepStatus status, String message, {
+    required String? aadhaarName,
+    required String? aadhaarDob,
+    required String? panName,
+    required String? panDob,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -520,7 +533,9 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
             text: 'Retry',
             svgIconPath: 'assets/buttons/tick.svg',
             isLoading: _refreshingNameDob,
-            onPressed: () => _retryNameDobMatch(),
+            onPressed: () => _retryNameDobMatch(
+              aadhaarName: aadhaarName, aadhaarDob: aadhaarDob, panName: panName, panDob: panDob,
+            ),
             gradient: AppTheme.greenGradient,
           ),
         ],
@@ -528,12 +543,19 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     );
   }
 
-  Future<void> _retryNameDobMatch() async {
+  Future<void> _retryNameDobMatch({
+    String? aadhaarName,
+    String? aadhaarDob,
+    String? panName,
+    String? panDob,
+  }) async {
     setState(() => _refreshingNameDob = true);
     try {
       ref.invalidate(kycDocumentsProvider(widget.requestFrom));
       ref.invalidate(verificationStatusProvider);
       await ref.read(kycDocumentsProvider(widget.requestFrom).future);
+      if (!mounted) return;
+      await retryNameDobConfirm(aadhaarName: aadhaarName, aadhaarDob: aadhaarDob, panName: panName, panDob: panDob);
       if (mounted) AppToast.show(context, 'Validation status refreshed.', type: ToastType.info);
     } catch (e) {
       if (mounted) AppToast.show(context, 'Could not refresh status. Please try again.', type: ToastType.error);
