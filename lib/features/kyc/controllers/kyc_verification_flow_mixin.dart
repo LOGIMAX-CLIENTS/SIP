@@ -488,19 +488,9 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
       return;
     }
 
-    final panDoc = result.documents.isEmpty
-        ? null
-        : result.documents.firstWhere(
-            (d) => d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'),
-            orElse: () => result.documents.first,
-          );
-
-    await _runCompletionSequence(
-      panName: panDoc?.verifiedName,
-      panDob: panDoc?.verifiedDob,
-      aadhaarName: result.aadhaarName,
-      aadhaarDob: result.aadhaarDob,
-    );
+    // The PAN document's verified name/DOB used to be looked up here to feed
+    // the removed per-document confirmation popup — nothing consumes them now.
+    await _runCompletionSequence();
     if (mounted) onKycStepCompleted();
   }
 
@@ -509,83 +499,31 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   /// bank verification (steps 5-7). Backward-compat for existing blocked-
   /// action callers (SIP/Withdraw/Investment) is preserved separately: this
   /// screen isn't wired into `KycVerificationFlow.start` yet (see plan).
-  Future<void> _runCompletionSequence({
-    String? panName,
-    String? panDob,
-    String? aadhaarName,
-    String? aadhaarDob,
-  }) async {
+  /// Success animation, then done — the customer is finished.
+  ///
+  /// The per-document "PAN Verified"/"Aadhaar Verified" confirmation popup
+  /// (`KycVerifiedDetailsDialog`) that used to run here was **removed**
+  /// (2026-09-07, product decision — see `BUSINESS_RULES.md` RULE-KYC-007).
+  /// A verification that already matched has nothing for the customer to
+  /// confirm; the only case where their name/DOB genuinely needs re-entry is
+  /// a mismatch, and `NameMismatchDialog` already handles that earlier in the
+  /// flow. The popup's parameters are gone with it — this no longer needs the
+  /// verified name/DOB at all.
+  ///
+  /// **Safe to drop the popup's server call.** Its Save was the only client
+  /// trigger for `update_profile_name_from_kyc` → `confirm_and_sync()`, but
+  /// that call is idempotent: `_check_aadhaar_kyc`'s and
+  /// `_try_persist_digilocker_pan`'s APPROVED branches each already run
+  /// `sync_from_kyc_log()` for their own document at verification time, which
+  /// is what `is_kyc_complete()` actually reads. The mismatch path keeps its
+  /// own `confirm_and_sync()` inside `_finalize_name_mismatch_confirmation`.
+  /// Consequence to be aware of: the profile name/DOB is no longer overwritten
+  /// with the document's version on a clean match — it keeps whatever the
+  /// customer already had, which is exactly what "it matched" means.
+  Future<void> _runCompletionSequence() async {
     await _showSuccessAnimation();
     if (!mounted) return;
 
-    if (!await profileAlreadyMatches(aadhaarName)) {
-      if (!mounted) return;
-      final saved = await showVerifiedDetailsDialog(source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob);
-      if (!mounted || !saved) return;
-    }
-
-    if (!await profileAlreadyMatches(panName)) {
-      if (!mounted) return;
-      final saved = await showVerifiedDetailsDialog(source: 'PAN', verifiedName: panName, verifiedDob: panDob);
-      if (!mounted || !saved) return;
-    }
-
-    ref.read(pc.profileProvider.notifier).fetchProfileDetails();
-  }
-
-  // See kyc_screen.dart's identically-named method for the full doc comment
-  // on why this exists and why a single mismatched read gets one retry
-  // before conceding "genuinely different" (replica-lag race right after
-  // the OTHER document's mismatch-confirm write, not a real difference).
-  Future<bool> profileAlreadyMatches(String? verifiedName) async {
-    // A blank/absent verified name means there is nothing to confirm — skip
-    // the popup rather than showing an unfillable one. Returning false here
-    // (the old behaviour) opened KycVerifiedDetailsDialog with
-    // "Verified PAN Name: —" and an empty name field whose Save could only
-    // fail, since updateProfileName reads the very same missing value
-    // server-side; the customer's only exit was "Do this later", which
-    // aborts _runCompletionSequence before confirm_and_sync() and so brought
-    // the identical popup straight back on the next status check.
-    // The backend gap that produced the blank name is fixed in
-    // KYCService._finalize_name_mismatch_confirmation (it now writes
-    // payload.name / entered_name on the mismatch-confirm path), but this
-    // guard stays: no verified name to compare against can never be a
-    // reason to demand the customer confirm one.
-    if (verifiedName == null || verifiedName.trim().isEmpty) return true;
-    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
-    if (!mounted) return false;
-    final currentName = ref.read(pc.profileProvider).user.name;
-    if (currentName.trim().toUpperCase() == verifiedName.trim().toUpperCase()) return true;
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return false;
-    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
-    if (!mounted) return false;
-    final retriedName = ref.read(pc.profileProvider).user.name;
-    return retriedName.trim().toUpperCase() == verifiedName.trim().toUpperCase();
-  }
-
-  /// Checklist's "Name & DOB Match" step Retry — offers the SAME profile
-  /// name/DOB confirm dialog [_runCompletionSequence] shows right after
-  /// PAN+Aadhaar first verify, for a customer whose profile still doesn't
-  /// match either verified document (the usual reason this step stays
-  /// stuck on Pending/In Progress instead of Matched — a plain refetch
-  /// alone can't fix a genuine mismatch, only a stale-read race).
-  Future<void> retryNameDobConfirm({
-    String? aadhaarName,
-    String? aadhaarDob,
-    String? panName,
-    String? panDob,
-  }) async {
-    if (!await profileAlreadyMatches(aadhaarName)) {
-      if (!mounted) return;
-      final saved = await showVerifiedDetailsDialog(source: 'AADHAAR', verifiedName: aadhaarName, verifiedDob: aadhaarDob);
-      if (!mounted || !saved) return;
-    }
-    if (!await profileAlreadyMatches(panName)) {
-      if (!mounted) return;
-      await showVerifiedDetailsDialog(source: 'PAN', verifiedName: panName, verifiedDob: panDob);
-      if (!mounted) return;
-    }
     ref.read(pc.profileProvider.notifier).fetchProfileDetails();
   }
 
@@ -623,20 +561,6 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
     );
     await Future.delayed(const Duration(seconds: 2));
     if (mounted) Navigator.pop(context);
-  }
-
-  Future<bool> showVerifiedDetailsDialog({required String source, String? verifiedName, String? verifiedDob}) async {
-    final saved = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => KycVerifiedDetailsDialog(
-        source: source,
-        verifiedName: verifiedName,
-        verifiedDob: verifiedDob,
-        repository: ref.read(kycRepositoryProvider),
-      ),
-    );
-    return saved ?? false;
   }
 
   Future<void> openManualUpload(String docType, String requestFrom) async {
@@ -862,177 +786,6 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
               },
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Public reimplementation of `_VerifiedDetailsDialog` (kyc_screen.dart) —
-/// the mandatory post-verification "confirm your profile Name/DOB" dialog.
-/// Kept as a standalone class (not private) so it can live outside the live
-/// screen file per the "don't touch the live /kyc screen" plan constraint.
-class KycVerifiedDetailsDialog extends StatefulWidget {
-  final String source; // 'PAN' | 'AADHAAR'
-  final String? verifiedName;
-  final String? verifiedDob;
-  final KycRepository repository;
-
-  const KycVerifiedDetailsDialog({
-    super.key,
-    required this.source,
-    required this.verifiedName,
-    required this.verifiedDob,
-    required this.repository,
-  });
-
-  @override
-  State<KycVerifiedDetailsDialog> createState() => _KycVerifiedDetailsDialogState();
-}
-
-class _KycVerifiedDetailsDialogState extends State<KycVerifiedDetailsDialog> {
-  late final TextEditingController _nameController;
-  DateTime? _selectedDob;
-  bool _saving = false;
-  String? _errorText;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.verifiedName ?? '');
-    _selectedDob = _parseKycDob(widget.verifiedDob);
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDob() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDob ?? DateTime(now.year - 25, now.month, now.day),
-      firstDate: DateTime(now.year - 100),
-      lastDate: DateTime(now.year - 18, now.month, now.day),
-    );
-    if (picked != null) setState(() => _selectedDob = picked);
-  }
-
-  Future<void> _save() async {
-    final typedName = _nameController.text.trim();
-    if (typedName.isEmpty) {
-      setState(() => _errorText = 'Name cannot be empty.');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _errorText = null;
-    });
-    try {
-      await widget.repository.updateProfileName(source: widget.source, name: typedName);
-      if (_selectedDob != null) {
-        try {
-          await widget.repository.updateProfileDob(source: widget.source, dob: _formatKycDob(_selectedDob!));
-        } catch (_) {}
-      }
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      var msg = e.toString();
-      if (msg.startsWith('Exception: ')) msg = msg.substring('Exception: '.length);
-      setState(() {
-        _saving = false;
-        _errorText = msg;
-      });
-    }
-  }
-
-  Widget _buildVerifiedRow(String label, String? value, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('$label:', style: AppTextStyles.fieldLabel(isDark)),
-        SizedBox(height: 2.h),
-        Text((value == null || value.isEmpty) ? '—' : value,
-            style: AppTextStyles.kycFieldInput(isDark).copyWith(fontWeight: FontWeight.w700)),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sourceLabel = widget.source == 'PAN' ? 'PAN' : 'Aadhaar';
-    final borderColor = isDark ? Colors.white24 : Colors.black12;
-
-    return PopScope(
-      canPop: false,
-      child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24.r)),
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(24.r),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('$sourceLabel Verified', style: AppTextStyles.titleMedium(isDark).copyWith(color: const Color(0xFF643D41))),
-              SizedBox(height: 16.h),
-              _buildVerifiedRow('Verified $sourceLabel Name', widget.verifiedName, isDark),
-              SizedBox(height: 12.h),
-              _buildVerifiedRow('Verified $sourceLabel Date of Birth', widget.verifiedDob, isDark),
-              SizedBox(height: 20.h),
-              Text('Profile Name', style: AppTextStyles.fieldLabel(isDark)),
-              SizedBox(height: 6.h),
-              TextField(
-                controller: _nameController,
-                textCapitalization: TextCapitalization.words,
-                inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(60)],
-                style: AppTextStyles.kycFieldInput(isDark),
-                decoration: _kycInputBoxDecoration(isDark),
-              ),
-              SizedBox(height: 16.h),
-              Text('Date of Birth', style: AppTextStyles.fieldLabel(isDark)),
-              SizedBox(height: 6.h),
-              InkWell(
-                onTap: _pickDob,
-                borderRadius: BorderRadius.circular(12.r),
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withOpacity(0.06) : Colors.white,
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _selectedDob == null ? 'Select date of birth' : _formatKycDob(_selectedDob!),
-                        style: AppTextStyles.kycFieldInput(isDark)
-                            .copyWith(color: _selectedDob == null ? (isDark ? Colors.white38 : Colors.black38) : null),
-                      ),
-                      Icon(Icons.calendar_today, size: 18.sp, color: isDark ? Colors.white54 : Colors.black45),
-                    ],
-                  ),
-                ),
-              ),
-              if (_errorText != null) ...[
-                SizedBox(height: 10.h),
-                Text(_errorText!, style: TextStyle(color: Colors.red, fontSize: 12.sp)),
-              ],
-              SizedBox(height: 20.h),
-              CustomButton(text: 'Save', isLoading: _saving, onPressed: _saving ? null : _save, gradient: AppTheme.greenGradient),
-              if (!_saving) ...[
-                SizedBox(height: 8.h),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text('Do this later', style: AppTextStyles.fieldLabel(isDark)),
-                ),
-              ],
-            ],
-          ),
         ),
       ),
     );

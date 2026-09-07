@@ -509,13 +509,17 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     }
   }
 
-  /// Name & DOB Match's own Retry — a stuck "Pending" here is either a
+  /// Name & DOB Match's own Retry — resolves a stuck "Pending" caused by a
   /// stale read shortly after DigiLocker approval (see kyc_screen.dart's
-  /// `_checkCompletionRecoveryOnLoad` docstring for the exact race), which
-  /// a plain refetch resolves, or a genuine mismatch between the profile
-  /// and the verified PAN/Aadhaar name — which instead needs the customer
-  /// to confirm/update their profile via the same dialog shown right after
-  /// first verifying (see [retryNameDobConfirm]).
+  /// `_checkCompletionRecoveryOnLoad` docstring for the exact race) by
+  /// refetching.
+  ///
+  /// It deliberately does NOT re-open a profile confirm dialog for a genuine
+  /// profile-vs-document mismatch: that popup was removed (RULE-KYC-007), and
+  /// a real mismatch is now caught at verification time by the backend's name
+  /// gate, which raises NameMismatchDialog and writes the corrected name
+  /// (RULE-KYC-015). If a stuck Pending is ever seen here again, the fix
+  /// belongs in that gate, not in a second confirmation surface.
   Widget _buildNameDobDetail(
     bool isDark, KycStepStatus status, String message, {
     required String? aadhaarName,
@@ -555,7 +559,14 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
       ref.invalidate(verificationStatusProvider);
       await ref.read(kycDocumentsProvider(widget.requestFrom).future);
       if (!mounted) return;
-      await retryNameDobConfirm(aadhaarName: aadhaarName, aadhaarDob: aadhaarDob, panName: panName, panDob: panDob);
+      // Refetch only. The profile name/DOB confirm dialog this used to open
+      // (retryNameDobConfirm) was removed along with the rest of the
+      // post-verification confirmation popup — see BUSINESS_RULES.md
+      // RULE-KYC-007. A genuine profile-vs-document mismatch is now caught at
+      // verification time by the backend's name gate, which raises
+      // NameMismatchDialog and writes the corrected name to the profile
+      // (RULE-KYC-015), so there is no longer a stuck state for this button
+      // to unstick by re-showing a confirm dialog.
       if (mounted) AppToast.show(context, 'Validation status refreshed.', type: ToastType.info);
     } catch (e) {
       if (mounted) AppToast.show(context, 'Could not refresh status. Please try again.', type: ToastType.error);
