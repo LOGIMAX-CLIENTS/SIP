@@ -702,22 +702,65 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
 
     setState(() => verifyingPanDirect = true);
     try {
-      await ref.read(kycRepositoryProvider).uploadKyc(
-            customerId: '',
+      final data = await ref.read(kycRepositoryProvider).uploadKycDetailed(
             requestFrom: requestFrom,
             documentId: '1', // PAN
             fields: {
               'pan_number': panNumber,
               'name': panName,
-              // Only when re-verifying an already-approved PAN. The backend
-              // skips its "already approved" short-circuit on this flag and
-              // invalidates the PAN mirror up front, so the customer is not
-              // treated as KYC-complete while this attempt is in flight
-              // (RULE-KYC-005).
-              if (panEditing) 'allow_reverify': true,
+              // ALWAYS set, not only when editing (RULE-KYC-021).
+              //
+              // "Verify PAN" is an explicit, deliberate action taken on a card
+              // the UI is showing as NOT verified — short-circuiting it is
+              // never what the customer wants. Sending it only in edit mode
+              // wedged accounts permanently: `invalidate_for_reverify` had set
+              // the CustomerPan mirror to RE_VERIFICATION_REQUIRED (so the
+              // checklist showed "Retry"), while the kyc_verification_log row
+              // was still APPROVED (so the backend answered "Already approved
+              // this document" and never called verify_pan again). The two
+              // never reconciled and every tap was a no-op.
+              //
+              // The flag makes the backend skip that idempotency check and
+              // re-invalidate the mirror before verifying, so the attempt
+              // actually runs and its real outcome lands (RULE-KYC-005).
+              'allow_reverify': true,
             },
           );
       if (!mounted) return;
+
+      // `success: true` does NOT mean approved. A profile name/DOB divergence
+      // comes back as CONFIRM_NAME_UPDATE — an HTTP success carrying a prompt
+      // the customer still has to resolve (RULE-KYC-020). Reading only the
+      // bool reported "PAN verified successfully" for a PAN that was still
+      // PENDING, and the checklist then showed it as Retry.
+      final status = (data['status'] ?? '').toString().toUpperCase();
+
+      // The backend's idempotency short-circuit. Should be unreachable now
+      // that allow_reverify is always sent, but if it ever fires again the
+      // customer must not be told "verified" while the mirror still says
+      // otherwise — refresh and let the checklist show the real state.
+      if (data['is_already_approved'] == true || status == 'ALREADY APPROVED') {
+        setState(() => panEditing = false);
+        ref.invalidate(kycDocumentsProvider(requestFrom));
+        ref.invalidate(verificationStatusProvider);
+        await checkAndHandleCompletion(requestFrom, expectDocumentApproved: 'PAN');
+        return;
+      }
+
+      if (status == 'CONFIRM_NAME_UPDATE') {
+        setState(() {
+          panEditing = false;
+          verifyingPanDirect = false;
+        });
+        // Same dialog the DigiLocker path raises, so a mismatch is resolved
+        // identically however PAN was verified.
+        await _maybeShowPanMismatchDialog(
+          requestFrom,
+          NameMismatchPrompt.fromJson(Map<String, dynamic>.from(data)),
+        );
+        return;
+      }
+
       AppToast.show(context, 'PAN verified successfully', type: ToastType.success);
       setState(() => panEditing = false);
       ref.invalidate(kycDocumentsProvider(requestFrom));
