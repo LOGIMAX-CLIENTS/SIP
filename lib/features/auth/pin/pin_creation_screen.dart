@@ -189,15 +189,19 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
                     ),
                     SizedBox(height: 24.h),
 
-                    // Title
+                    // Title — always on one line (FittedBox shrinks the font
+                    // just enough to fit instead of wrapping to a 2nd line).
                     FadeInAnimation(
                       delay: const Duration(milliseconds: 100),
-                      child: Text(
-                        _isConfirming
-                            ? 'Confirm\nYour PIN'
-                            : 'Set Your\nSecurity PIN',
-                        style: AppTextStyles.displayLarge(isDark)
-                            .copyWith(color: textColor, height: 1.15),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _isConfirming ? 'Confirm Your PIN' : 'Set Your Security PIN',
+                          maxLines: 1,
+                          style: AppTextStyles.displayLarge(isDark)
+                              .copyWith(color: textColor, height: 1.15),
+                        ),
                       ),
                     ),
                     SizedBox(height: 8.h),
