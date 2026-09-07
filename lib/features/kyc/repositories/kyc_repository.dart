@@ -98,6 +98,47 @@ class KycRepository {
     throw Exception(serverMessage);
   }
 
+  /// Same call as [uploadKyc] but returns the response `data` map instead of a
+  /// bare bool.
+  ///
+  /// Needed because a `success: true` response does NOT always mean the
+  /// document was approved: standalone PAN verification answers
+  /// `{status: CONFIRM_NAME_UPDATE, ...}` — an HTTP success carrying a prompt
+  /// the customer still has to resolve — and the backend's view layer only
+  /// turns a `False` service result into an error response. A caller reading
+  /// just the bool would report "verified" for a PAN that is still PENDING.
+  /// Callers MUST branch on `data['status']`.
+  Future<Map<String, dynamic>> uploadKycDetailed({
+    required String requestFrom,
+    required String documentId,
+    required Map<String, dynamic> fields,
+  }) async {
+    final Map<String, dynamic> postData = {
+      'id_document': documentId,
+      'request_from': requestFrom,
+      // Same double-pass the bool variant uses — see uploadKyc.
+      'fields': EncryptionService.encryptJson(fields),
+    };
+
+    final response = await _apiClient.post('kyc/upload', data: postData);
+    SecureLogger.d(
+        'KYC Upload (detailed) — success: ${response.data['success']} '
+        'status: ${(response.data['data'] is Map) ? response.data['data']['status'] : null}');
+
+    if (response.data['success'] == true) {
+      final data = response.data['data'];
+      return data is Map<String, dynamic> ? data : <String, dynamic>{};
+    }
+
+    final errorObj = response.data['error'];
+    final dataObj = response.data['data'];
+    final String serverMessage = (errorObj is Map ? errorObj['message'] : null) ??
+        (dataObj is Map ? dataObj['message'] : null) ??
+        response.data['message'] ??
+        'KYC verification failed. Please try again.';
+    throw Exception(serverMessage);
+  }
+
   /// "Upload manually instead" — an alternative to DigiLocker for PAN
   /// (docType "1") or Aadhaar (docType "2"). Puts the document UNDER_REVIEW
   /// rather than verifying instantly; an admin approves it later from the

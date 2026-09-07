@@ -386,6 +386,46 @@ a status-surface write must never fail an already-approved verification.
 `_finalize_name_mismatch_confirmation` as well** — or it silently will not run for any customer who resolved
 a name/DOB mismatch.
 
+## RULE-KYC-020 — Standalone PAN verification must apply the same profile gate as DigiLocker (fixed 2026-09-07)
+
+**Symptom:** a customer changed their profile name to something wrong, re-verified PAN through the
+standalone route, and it approved without ever raising the name/DOB mismatch dialog. "Name & DOB Match"
+then sat on Pending.
+
+**Cause.** `upload_document(id_document="1")` and `_try_persist_digilocker_pan()` are two entirely separate
+code paths, and only the DigiLocker one had been kept current:
+
+| | DigiLocker path | Standalone path (before this fix) |
+|---|---|---|
+| Name compared against | **profile name** (`cus_name`) — RULE-KYC-015 | **the name the customer typed** |
+| DOB check | profile `cus_dob` vs PAN DOB | none |
+| On mismatch | `CONFIRM_NAME_UPDATE` dialog | hard reject |
+| Records match statuses | yes (tail) | no |
+
+The standalone branch is legacy manual-PAN code from before PAN moved to DigiLocker-only. It never gained
+the profile-name gating, the DOB check, the confirm dialog, or the status writes. Re-opening it for
+standalone verification (RULE-KYC-019) made that gap reachable again — so a valid PAN could be APPROVED
+while the profile name said something else entirely, which is precisely what RULE-KYC-015 exists to prevent.
+
+**Fix.** The standalone branch now:
+- compares the **profile** name/DOB against the PAN-verified values (the typed-name check stays as a
+  first gate — a wrong typed name still hard-rejects, unchanged);
+- routes a genuine profile divergence to `_offer_pan_name_mismatch_confirmation()`, the same dialog the
+  DigiLocker path raises, instead of rejecting;
+- records `PROFILE_NAME_PAN_NAME_MATCH` / `PROFILE_DOB_PAN_DOB_MATCH` on approval (RULE-KYC-016), so the
+  "Name & DOB Match" step resolves instead of reading NOT_STARTED forever.
+
+Only a provable DOB disagreement blocks — a missing DOB on either side is skipped, never treated as a
+mismatch, mirroring `_try_persist_digilocker_pan`'s own DOB gate.
+
+❌ Re-opening a legacy verification branch without checking which gates were added to its sibling since.
+✅ Every path that can APPROVE a document applies the same profile gate and writes the same statuses.
+
+**This is the fifth instance of the same shape** (013, 016, 018, 020 — plus the AADHAAR_PAN_LINK case):
+a rule added to one verification path and not the others. When adding ANY gate or status write to
+`_try_persist_digilocker_pan`, check `upload_document(id_document="1")` and
+`_finalize_name_mismatch_confirmation` for the same thing.
+
 ## Unconfirmed / needs a fresh backend-contract check
 
 - Exact `id_document` value the backend assigns to the PAN document type (the app never hardcodes it — it's
