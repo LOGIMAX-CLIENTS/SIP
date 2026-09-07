@@ -34,6 +34,11 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
     if (mounted) Navigator.pop(context, true);
   }
 
+  Future<void> _handleRefresh() async {
+    ref.invalidate(kycDocumentsProvider(widget.requestFrom));
+    if (mounted) AppToast.show(context, 'Refreshing verification status…', type: ToastType.info);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -135,7 +140,13 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
 
     return Column(
       children: [
-        KycProgressHeader(title: headline, subtitle: subtitle, completed: completed, total: 2),
+        KycProgressHeader(
+          title: headline,
+          subtitle: subtitle,
+          completed: completed,
+          total: 2,
+          onRefresh: _handleRefresh,
+        ),
         Expanded(
           child: Stack(
             children: [
@@ -260,29 +271,6 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
             maskedValue: panDocValue?.maskedValue,
             nameLabel: 'Name as on PAN',
             verifiedName: panDocValue?.verifiedName,
-          ),
-          SizedBox(height: 8.h),
-          // Refreshes the PAN-Aadhaar Link result (checklist Step 3) —
-          // there's no narrower provider call for just the link, so this
-          // reuses the same allow_reverify DigiLocker resume retryPan()
-          // already runs for a skipped-PAN retry, which re-fetches PAN "on
-          // its own merits" (see KYCService's allow_reverify docstring) and
-          // refreshes aadhaar_linked as a side effect, regardless of PAN's
-          // current approval state. A plain text button, not the page's
-          // main CTA — PAN is already verified, this is an optional extra
-          // check, not the primary action on this page.
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: verifyingAadhaar ? null : () => retryPan(widget.requestFrom),
-              child: Text(
-                'Refresh PAN-Aadhaar Link Status',
-                style: AppTextStyles.fieldHelper(isDark).copyWith(
-                  color: AppTheme.primaryGreen,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
           ),
         ],
       );

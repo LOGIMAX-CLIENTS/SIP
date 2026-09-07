@@ -119,6 +119,14 @@ bool _isMandatory(Map<String, dynamic>? verificationStatus, String key) {
   return false;
 }
 
+/// Turns a backend status enum string ("LINKED", "NOT_LINKED") into display
+/// text ("Linked", "Not Linked") — the label itself comes from the backend's
+/// own value, not a second hardcoded copy in the frontend, so the two can
+/// never drift the way `panAadhaarLinkPill`/`panBankLinkPill` used to.
+String _formatBackendStatusLabel(String raw) {
+  return raw.split('_').where((w) => w.isNotEmpty).map((w) => '${w[0]}${w.substring(1).toLowerCase()}').join(' ');
+}
+
 /// Pure derivation of every checklist step's status from the same data
 /// [KycVerificationScreen] already watches. [verifyingAadhaar]/[aadhaarEditing]/
 /// [retryingPanOnly] default to false for callers (like the Profile page's
@@ -226,11 +234,15 @@ KycStepStatuses computeKycStepStatuses({
     panAadhaarLinkSubtitle = 'Unlocks once PAN and Aadhaar are verified';
   } else if (aadhaarState.aadhaarPanLinked == true || persistedPanAadhaarLink == 'LINKED') {
     panAadhaarLinkStatus = KycStepStatus.verified;
-    panAadhaarLinkPill = 'Verified';
+    // Label comes from the backend's own status string when we have one —
+    // matches admin's ledger_personal.py ("LINKED") without a second
+    // hardcoded copy here; falls back only when this came from the live
+    // Aadhaar poll bool, which carries no status string of its own.
+    panAadhaarLinkPill = persistedPanAadhaarLink != null ? _formatBackendStatusLabel(persistedPanAadhaarLink) : 'Linked';
     panAadhaarLinkSubtitle = 'Linked as per Income Tax records';
   } else if (aadhaarState.aadhaarPanLinked == false || persistedPanAadhaarLink == 'NOT_LINKED') {
     panAadhaarLinkStatus = KycStepStatus.failed;
-    panAadhaarLinkPill = 'Not Linked';
+    panAadhaarLinkPill = persistedPanAadhaarLink != null ? _formatBackendStatusLabel(persistedPanAadhaarLink) : 'Not Linked';
     panAadhaarLinkSubtitle = 'Not linked as per Income Tax records. You can retry to refresh this.';
   } else if (!panAadhaarLinkMandatory) {
     panAadhaarLinkStatus = KycStepStatus.underReview;
@@ -289,11 +301,13 @@ KycStepStatuses computeKycStepStatuses({
   String panBankLinkSubtitle;
   if (persistedPanBankLink == 'LINKED') {
     panBankLinkStatus = KycStepStatus.verified;
-    panBankLinkPill = 'Verified';
+    // Label comes straight from the backend's own status string — same
+    // reasoning as PAN-Aadhaar Link above.
+    panBankLinkPill = _formatBackendStatusLabel(persistedPanBankLink!);
     panBankLinkSubtitle = 'Your PAN is linked to this bank account';
   } else if (persistedPanBankLink == 'NOT_LINKED') {
     panBankLinkStatus = KycStepStatus.failed;
-    panBankLinkPill = 'Not Linked';
+    panBankLinkPill = _formatBackendStatusLabel(persistedPanBankLink!);
     panBankLinkSubtitle = panBankLinkMandatory
         ? 'Your PAN does not appear to be linked to this bank account'
         : 'Your PAN does not appear to be linked to this bank account. (Optional — this won\'t affect your account.)';

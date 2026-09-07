@@ -205,70 +205,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     .fetchProfileDetails();
                               }
                             },
-                            trailing: user.kycStatus == 1
-                                ? Container(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 10.w, vertical: 4.h),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0E5723)
-                                          .withOpacity(0.08),
-                                      borderRadius:
-                                          BorderRadius.circular(100.r),
-                                      border: Border.all(
-                                          color: const Color(0xFF0E5723)
-                                              .withOpacity(0.15)),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.verified_user_rounded,
-                                            color: const Color(0xFF0E5723),
-                                            size: 14.sp),
-                                        SizedBox(width: 4.w),
-                                        Text(
-                                          'Verified',
-                                          style: GoogleFonts.playfairDisplay(
-                                            fontSize: 10.sp,
-                                            fontWeight: FontWeight.w900,
-                                            color: const Color(0xFF0E5723),
-                                            letterSpacing: 0.3,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                            // Prefer the LIVE per-step count (kycProgressProvider,
+                            // same computeKycStepStatuses the checklist itself
+                            // uses) over the legacy binary user.kycStatus flag
+                            // whenever it's available — shows "N/total" always,
+                            // complete or not, instead of collapsing a fully
+                            // verified customer down to a wordy "Verified" badge
+                            // that hides the actual count. user.kycStatus is
+                            // only the fallback while kycProgressProvider's
+                            // underlying fetch hasn't resolved yet (e.g. first
+                            // paint), so the badge isn't just blank meanwhile.
+                            trailing: kycProgress != null && kycProgress.total > 0
+                                ? _buildKycBadge(
+                                    label: '${kycProgress.completed}/${kycProgress.total}',
+                                    complete: kycProgress.completed == kycProgress.total,
                                   )
-                                : (kycProgress != null && kycProgress.total > 0)
-                                    ? Container(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 10.w, vertical: 4.h),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFB45309)
-                                              .withOpacity(0.08),
-                                          borderRadius:
-                                              BorderRadius.circular(100.r),
-                                          border: Border.all(
-                                              color: const Color(0xFFB45309)
-                                                  .withOpacity(0.15)),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.pending_actions_rounded,
-                                                color: const Color(0xFFB45309),
-                                                size: 14.sp),
-                                            SizedBox(width: 4.w),
-                                            Text(
-                                              '${kycProgress.completed}/${kycProgress.total}',
-                                              style: GoogleFonts.playfairDisplay(
-                                                fontSize: 10.sp,
-                                                fontWeight: FontWeight.w900,
-                                                color: const Color(0xFFB45309),
-                                                letterSpacing: 0.3,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      )
+                                : user.kycStatus == 1
+                                    ? _buildKycBadge(label: 'Verified', complete: true)
                                     : null,
                           ),
                           // Nominee Details - Commented as requested
@@ -839,6 +792,42 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         ...items,
       ],
+    );
+  }
+
+  /// Small pill badge for the KYC Validation menu item's trailing slot —
+  /// green when [complete] (fully verified / "Verified"), amber otherwise
+  /// (an "N/total" in-progress count). Shared so the always-show-the-count
+  /// and legacy-fallback branches above render identically.
+  Widget _buildKycBadge({required String label, required bool complete}) {
+    final color = complete ? const Color(0xFF0E5723) : const Color(0xFFB45309);
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(100.r),
+        border: Border.all(color: color.withOpacity(0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            complete ? Icons.verified_user_rounded : Icons.pending_actions_rounded,
+            color: color,
+            size: 14.sp,
+          ),
+          SizedBox(width: 4.w),
+          Text(
+            label,
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 10.sp,
+              fontWeight: FontWeight.w900,
+              color: color,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
