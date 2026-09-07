@@ -538,7 +538,20 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
   // before conceding "genuinely different" (replica-lag race right after
   // the OTHER document's mismatch-confirm write, not a real difference).
   Future<bool> _profileAlreadyMatches(String? verifiedName) async {
-    if (verifiedName == null || verifiedName.trim().isEmpty) return false;
+    // A blank/absent verified name means there is nothing to confirm — skip
+    // the popup rather than showing an unfillable one. Returning false here
+    // (the old behaviour) opened KycVerifiedDetailsDialog with
+    // "Verified PAN Name: —" and an empty name field whose Save could only
+    // fail, since updateProfileName reads the very same missing value
+    // server-side; the customer's only exit was "Do this later", which
+    // aborts _runCompletionSequence before confirm_and_sync() and so brought
+    // the identical popup straight back on the next status check.
+    // The backend gap that produced the blank name is fixed in
+    // KYCService._finalize_name_mismatch_confirmation (it now writes
+    // payload.name / entered_name on the mismatch-confirm path), but this
+    // guard stays: no verified name to compare against can never be a
+    // reason to demand the customer confirm one.
+    if (verifiedName == null || verifiedName.trim().isEmpty) return true;
     await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
     if (!mounted) return false;
     final currentName = ref.read(pc.profileProvider).user.name;

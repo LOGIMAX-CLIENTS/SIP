@@ -913,7 +913,20 @@ class _KycScreenState extends ConsumerState<KycScreen> {
   /// that response). Asking the customer to "Save" a name that's already
   /// saved is pure redundancy, not a genuine confirmation of anything new.
   Future<bool> _profileAlreadyMatches(String? verifiedName) async {
-    if (verifiedName == null || verifiedName.trim().isEmpty) return false;
+    // A blank/absent verified name means there is nothing to confirm — skip
+    // the popup rather than showing an unfillable one. Returning false here
+    // (the old behaviour) opened KycVerifiedDetailsDialog with
+    // "Verified PAN Name: —" and an empty name field whose Save could only
+    // fail, since updateProfileName reads the very same missing value
+    // server-side; the customer's only exit was "Do this later", which
+    // aborts _runCompletionSequence before confirm_and_sync() and so brought
+    // the identical popup straight back on the next status check.
+    // The backend gap that produced the blank name is fixed in
+    // KYCService._finalize_name_mismatch_confirmation (it now writes
+    // payload.name / entered_name on the mismatch-confirm path), but this
+    // guard stays: no verified name to compare against can never be a
+    // reason to demand the customer confirm one.
+    if (verifiedName == null || verifiedName.trim().isEmpty) return true;
     // ProfileNotifier starts with an EMPTY name and fetches the real one
     // asynchronously in its constructor (see profile_controller.dart) — a
     // synchronous ref.read() here can race that fetch and see '' instead
@@ -2611,8 +2624,33 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
   // carried one (KYCService._validate_mismatch_resubmission's dob_ok
   // short-circuits otherwise) — mirror that here instead of demanding a
   // value the customer was never shown.
-  bool get _needsDob => widget.prompt.verifiedDob != null && widget.prompt.verifiedDob!.isNotEmpty;
+  bool get _hasDob => widget.prompt.verifiedDob != null && widget.prompt.verifiedDob!.isNotEmpty;
+
+  // Only ask for the field that actually failed. The server decides which
+  // (prompt.nameMismatch/dobMismatch — the name check is fuzzy and scored, so
+  // it can't be re-derived here); the other field is still submitted, just
+  // pre-filled from the verified value rather than re-typed. Both flags false
+  // shouldn't happen — the prompt only exists because something mismatched —
+  // but if it ever did, showing both beats showing an empty dialog with no
+  // way forward.
+  bool get _bothOrNeither =>
+      widget.prompt.nameMismatch == widget.prompt.dobMismatch;
+  bool get _showName => _bothOrNeither || widget.prompt.nameMismatch;
+  bool get _showDob => (_bothOrNeither || widget.prompt.dobMismatch) && _hasDob;
+
   String get _documentLabel => widget.prompt.document == 'PAN' ? 'PAN' : 'Aadhaar';
+
+  String get _title {
+    if (_showName && _showDob) return 'Name / DOB Mismatch';
+    return _showDob ? 'Date of Birth Mismatch' : 'Name Mismatch';
+  }
+
+  /// Names the field(s) in the fallback body copy. The server normally sends
+  /// its own already-tailored `message`; this only fills in when it doesn't.
+  String get _mismatchedFieldLabel {
+    if (_showName && _showDob) return 'name and date of birth';
+    return _showDob ? 'date of birth' : 'name';
+  }
 
   @override
   void initState() {
@@ -2639,12 +2677,16 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
   }
 
   Future<void> _submit() async {
+    // Validate only what the customer was actually asked for. Both values are
+    // still sent below — a hidden field carries the verified value initState
+    // pre-filled it with, which is exactly what the server re-checks it
+    // against, so it passes without the customer retyping it.
     final typedName = _nameController.text.trim();
-    if (typedName.isEmpty) {
+    if (_showName && typedName.isEmpty) {
       setState(() => _errorText = 'Name cannot be empty.');
       return;
     }
-    if (_needsDob && _selectedDob == null) {
+    if (_showDob && _selectedDob == null) {
       setState(() => _errorText = 'Please select your date of birth.');
       return;
     }
@@ -2667,10 +2709,19 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
     }
     setState(() {
       _saving = false;
-      _errorText = msg ??
-          "The name/DOB you entered still doesn't match your $_documentLabel record. "
-              'Please re-enter them exactly as on your $_documentLabel.';
+      _errorText = msg ?? _stillMismatchedFallback;
     });
+  }
+
+  /// Only used when the server sends no message of its own — named for the
+  /// field the customer was actually asked to correct, so a name-only prompt
+  /// never tells them their DOB is wrong.
+  String get _stillMismatchedFallback {
+    final what = _showName && _showDob
+        ? 'name and date of birth'
+        : (_showDob ? 'date of birth' : 'name');
+    return "The $what you entered still doesn't match your $_documentLabel "
+        'record. Please re-enter exactly as on your $_documentLabel.';
   }
 
   Widget _buildVerifiedRow(String label, String? value, bool isDark) {
@@ -2701,14 +2752,14 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Name / DOB Mismatch',
+              _title,
               style: AppTextStyles.titleMedium(isDark).copyWith(color: const Color(0xFF643D41)),
             ),
             SizedBox(height: 8.h),
             Text(
               widget.prompt.message ??
-                  "The name on your $_documentLabel record doesn't match your profile name. "
-                      'Please re-enter your name and date of birth exactly as on your $_documentLabel record.',
+                  "The $_mismatchedFieldLabel on your $_documentLabel record doesn't match your "
+                      'profile details. Please re-enter exactly as on your $_documentLabel record.',
               style: AppTextStyles.fieldHelper(isDark),
             ),
             SizedBox(height: 16.h),
@@ -2717,10 +2768,13 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
             // initState) — dropped so the customer isn't shown the exact
             // same values twice for no reason. Only what's actually
             // DIFFERENT (the current, about-to-be-replaced profile values)
-            // is worth a read-only row here.
-            _buildVerifiedRow('Current Profile Name', widget.prompt.profileName, isDark),
-            if (widget.prompt.profileDob != null && widget.prompt.profileDob!.isNotEmpty) ...[
-              SizedBox(height: 12.h),
+            // is worth a read-only row here — and only for the field being
+            // corrected, so a name-only prompt doesn't display a DOB the
+            // customer isn't being asked about.
+            if (_showName)
+              _buildVerifiedRow('Current Profile Name', widget.prompt.profileName, isDark),
+            if (_showDob && widget.prompt.profileDob != null && widget.prompt.profileDob!.isNotEmpty) ...[
+              if (_showName) SizedBox(height: 12.h),
               _buildVerifiedRow(
                 'Current Profile Date of Birth',
                 _formatDisplayDob(widget.prompt.profileDob),
@@ -2728,21 +2782,23 @@ class NameMismatchDialogState extends State<NameMismatchDialog> {
               ),
             ],
             SizedBox(height: 20.h),
-            Text('Your Name', style: AppTextStyles.fieldLabel(isDark)),
-            SizedBox(height: 6.h),
-            TextField(
-              controller: _nameController,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
-                _UpperCaseNameFormatter(),
-                LengthLimitingTextInputFormatter(60),
-              ],
-              style: AppTextStyles.kycFieldInput(isDark),
-              decoration: _kycInputBoxDecoration(isDark),
-            ),
-            if (_needsDob) ...[
-              SizedBox(height: 16.h),
+            if (_showName) ...[
+              Text('Your Name', style: AppTextStyles.fieldLabel(isDark)),
+              SizedBox(height: 6.h),
+              TextField(
+                controller: _nameController,
+                textCapitalization: TextCapitalization.characters,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+                  _UpperCaseNameFormatter(),
+                  LengthLimitingTextInputFormatter(60),
+                ],
+                style: AppTextStyles.kycFieldInput(isDark),
+                decoration: _kycInputBoxDecoration(isDark),
+              ),
+            ],
+            if (_showDob) ...[
+              if (_showName) SizedBox(height: 16.h),
               Text('Date of Birth', style: AppTextStyles.fieldLabel(isDark)),
               SizedBox(height: 6.h),
               InkWell(
