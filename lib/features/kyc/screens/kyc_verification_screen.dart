@@ -184,7 +184,15 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     final panDocValue = statuses.panDocValue;
     final panSkippedInConsent = statuses.panSkippedInConsent;
 
-    if (widget.popWhenIdVerified && panDone && aadhaarDone && !_poppedForIdVerified) {
+    // Gates on the FULL checklist (every active step, including bank
+    // verification) — not just PAN+Aadhaar or even idKycComplete (PAN +
+    // Aadhaar + Mandatory PAN-Aadhaar Link). A gated caller (Auto Savings/
+    // Withdrawal/Investment) separately re-checks the backend's kycStatus
+    // flag after this pops; popping early on a narrower condition sent the
+    // customer right back into this same screen (re-prompted for Aadhaar)
+    // on their very next tap whenever anything past that narrower
+    // condition was still outstanding.
+    if (widget.popWhenIdVerified && statuses.completed == statuses.total && !_poppedForIdVerified) {
       _poppedForIdVerified = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.pop(context, true);

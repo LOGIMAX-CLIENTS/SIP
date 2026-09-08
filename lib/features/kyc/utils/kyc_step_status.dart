@@ -16,6 +16,17 @@ class KycStepStatuses {
   final bool panDone;
   final bool aadhaarDone;
   final bool bothIdVerified;
+  // PAN + Aadhaar + a Mandatory PAN-Aadhaar Link (when active) — exactly
+  // what the backend's is_kyc_complete()/kyc_status flag requires (see
+  // BUSINESS_RULES.md: is_kyc_complete() covers PAN + Aadhaar + the
+  // PAN-Aadhaar link). [KycVerificationScreen]'s popWhenIdVerified gate
+  // MUST key off this, not bothIdVerified alone — a gated caller like
+  // Auto Savings separately re-checks the backend's kycStatus after this
+  // screen pops, and if that check requires the link too while this pop
+  // fired on PAN+Aadhaar alone, the customer lands right back in the same
+  // gate on their very next tap (see PM-STG bug: KYC gate re-triggers
+  // Aadhaar verification in a loop after it was just completed).
+  final bool idKycComplete;
   final KycDocumentType? panDocValue;
   final bool panSkippedInConsent;
 
@@ -66,6 +77,7 @@ class KycStepStatuses {
     required this.panDone,
     required this.aadhaarDone,
     required this.bothIdVerified,
+    required this.idKycComplete,
     required this.panDocValue,
     required this.panSkippedInConsent,
     required this.panStatus,
@@ -302,6 +314,7 @@ KycStepStatuses computeKycStepStatuses({
   // with PAN-Aadhaar Link still unresolved even while it was Mandatory.
   final panAadhaarLinkSatisfiedForBav =
       !aadhaarPanLinkActive || !panAadhaarLinkMandatory || panAadhaarLinkStatus == KycStepStatus.verified;
+  final idKycComplete = bothIdVerified && panAadhaarLinkSatisfiedForBav;
   KycStepStatus pennylessBavStatus;
   String pennylessBavPill;
   String pennylessBavSubtitle;
@@ -428,6 +441,7 @@ KycStepStatuses computeKycStepStatuses({
     panDone: panDone,
     aadhaarDone: aadhaarDone,
     bothIdVerified: bothIdVerified,
+    idKycComplete: idKycComplete,
     panDocValue: panDocValue,
     panSkippedInConsent: panSkippedInConsent,
     panStatus: panStatus,
