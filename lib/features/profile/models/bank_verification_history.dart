@@ -263,7 +263,7 @@ class BankVerificationCard {
       if (item == null) return null;
       return BankTimelineEntry(
         kind: BankTimelineKind.reversePennyDrop,
-        title: 'Additional Verification',
+        title: 'Verify Bank Account',
         status: item.status,
         dateTime: item.createdOn,
         cbankId: item.cbankId,
@@ -273,7 +273,7 @@ class BankVerificationCard {
 
     BankTimelineEntry bavEntry(BavHistoryItem item) => BankTimelineEntry(
           kind: BankTimelineKind.bav,
-          title: 'Bank Account Validation',
+          title: 'Add Bank Account',
           status: item.status,
           provider: item.provider,
           dateTime: item.attemptedOn,
