@@ -158,6 +158,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     if (state.panMismatchPrompt != null) {
       _maybeShowPanMismatchDialog(state.panMismatchPrompt!);
     }
+    if (state.panRejectionMessage != null) {
+      AppToast.show(context, state.panRejectionMessage!, type: ToastType.error);
+    }
     if (state.phase == AadhaarPhase.expired ||
         state.phase == AadhaarPhase.rejected ||
         state.phase == AadhaarPhase.failed) {
@@ -646,6 +649,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         await _maybeShowPanMismatchDialog(finalState.panMismatchPrompt!);
         if (!mounted) return;
         finalState = ref.read(aadhaarProvider);
+      }
+      if (finalState.panRejectionMessage != null) {
+        AppToast.show(context, finalState.panRejectionMessage!, type: ToastType.error);
       }
 
       if (finalState.phase == AadhaarPhase.expired ||
@@ -1161,6 +1167,10 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       // doc comment), independent of [phase], so it's checked unconditionally.
       if (next.panMismatchPrompt != null) {
         _maybeShowPanMismatchDialog(next.panMismatchPrompt!);
+      }
+      if (next.panRejectionMessage != null &&
+          next.panRejectionMessage != previous?.panRejectionMessage) {
+        AppToast.show(context, next.panRejectionMessage!, type: ToastType.error);
       }
       if (next.phase == AadhaarPhase.expired ||
           next.phase == AadhaarPhase.rejected ||

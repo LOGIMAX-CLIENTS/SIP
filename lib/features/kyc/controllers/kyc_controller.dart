@@ -188,6 +188,13 @@ class AadhaarState {
   // PAN mismatches are resolved through entirely separate requests (see
   // NameMismatchPrompt's doc comment) and can occur together or alone.
   final NameMismatchPrompt? panMismatchPrompt;
+  // Populated whenever an Aadhaar poll response carries pan_status:
+  // "REJECTED" alongside pan_message (e.g. a cross-account PAN duplicate) —
+  // same independent-of-[phase] shape as panMismatchPrompt above, since
+  // Aadhaar itself can succeed while PAN is rejected. Shown as a toast, not
+  // a dialog — unlike a mismatch, there's nothing for the customer to
+  // confirm/correct here, just something to be told.
+  final String? panRejectionMessage;
   // PAN–Aadhaar link result — backend field `aadhaar_pan_linked` (nullable
   // bool: true/false once the provider's PAN check resolved it, null if not
   // yet known/unavailable). Sourced from the SAME pan-comprehensive /
@@ -215,6 +222,7 @@ class AadhaarState {
     this.verifiedDob,
     this.aadhaarMismatchPrompt,
     this.panMismatchPrompt,
+    this.panRejectionMessage,
     this.aadhaarPanLinked,
   });
 
@@ -232,6 +240,7 @@ class AadhaarState {
     String? verifiedDob,
     NameMismatchPrompt? aadhaarMismatchPrompt,
     NameMismatchPrompt? panMismatchPrompt,
+    String? panRejectionMessage,
     bool? aadhaarPanLinked,
   }) {
     return AadhaarState(
@@ -245,6 +254,7 @@ class AadhaarState {
       message: message ?? this.message,
       aadhaarMismatchPrompt: aadhaarMismatchPrompt ?? this.aadhaarMismatchPrompt,
       panMismatchPrompt: panMismatchPrompt ?? this.panMismatchPrompt,
+      panRejectionMessage: panRejectionMessage ?? this.panRejectionMessage,
       maskedNumber: maskedNumber ?? this.maskedNumber,
       verifiedName: verifiedName ?? this.verifiedName,
       verifiedDob: verifiedDob ?? this.verifiedDob,
@@ -382,6 +392,16 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
     return NameMismatchPrompt.fromJson(Map<String, dynamic>.from(raw));
   }
 
+  /// `pan_message` (e.g. "This PAN is already linked to another account.")
+  /// is only meaningful when `data['pan_status'] == 'REJECTED'` — the
+  /// top-level `message`/`data['message']` at this point describes Aadhaar's
+  /// own outcome (which succeeded), not PAN's, so without this the customer
+  /// never sees why PAN specifically failed.
+  static String? _extractPanRejectionMessage(Map<String, dynamic> data) {
+    if (data['pan_status'] != 'REJECTED') return null;
+    return data['pan_message']?.toString();
+  }
+
   /// Step 1: request a DigiLocker consent session. If Aadhaar was already
   /// approved in a prior attempt, short-circuits straight to `approved`
   /// without ever calling Cashfree (see backend idempotency check).
@@ -513,15 +533,18 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
         SecureLogger.d('[KYC DEBUG] pollUntilTerminal response received, mounted=$mounted, status=${data['status']}');
         if (!mounted) return;
         final status = (data['status'] ?? '').toString();
-        // Piggybacked PAN mismatch — independent of Aadhaar's own status
-        // below (see panMismatchPrompt's doc comment); extracted once here
-        // so every branch that can carry it picks it up the same way.
+        // Piggybacked PAN mismatch/rejection — independent of Aadhaar's own
+        // status below (see panMismatchPrompt's/panRejectionMessage's doc
+        // comments); extracted once here so every branch that can carry
+        // either picks it up the same way.
         final panMismatchPrompt = _extractPanMismatchPrompt(data);
+        final panRejectionMessage = _extractPanRejectionMessage(data);
 
         if (data['is_already_approved'] == true || status == 'already approved') {
           state = state.copyWith(
             phase: AadhaarPhase.approved,
             panMismatchPrompt: panMismatchPrompt,
+            panRejectionMessage: panRejectionMessage,
             aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
           );
           return;
@@ -532,6 +555,7 @@ class AadhaarNotifier extends StateNotifier<AadhaarState> {
             state = state.copyWith(
               phase: AadhaarPhase.approved,
               panMismatchPrompt: panMismatchPrompt,
+              panRejectionMessage: panRejectionMessage,
               aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
             );
             return;
