@@ -68,13 +68,10 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     _pollTimer = null;
   }
 
-  /// Resets back to the initial "Pay ₹1 & Verify" state after a terminal
-  /// failure (ACCOUNT_MISMATCH/FAILED) — previously the UI stayed stuck on
-  /// "I've Paid — Verify Now" forever after a failure, which just re-checks
-  /// the SAME already-failed client_id/session and returns the same error
-  /// every time. The customer had no way to actually pay again from the
-  /// correct account.
-  void _retryAfterFailure() {
+  /// Resets back to the initial "Proceed to Verify" state after a terminal
+  /// failure (ACCOUNT_MISMATCH/FAILED) — the previous session is dead, so a
+  /// fresh payment link is needed to retry.
+  void _resetToStart() {
     _stopPolling();
     setState(() {
       _paymentLaunched = false;
@@ -214,7 +211,16 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          const GradientHeader(title: 'Additional Verification'),
+          GradientHeader(
+            title: 'Verify Bank Account',
+            trailing: (_paymentLaunched && _errorMessage == null)
+                ? IconButton(
+                    icon: Icon(Icons.refresh_rounded, color: Colors.white, size: 22.sp),
+                    onPressed: _isProcessing ? null : _checkStatus,
+                    tooltip: 'Refresh status',
+                  )
+                : null,
+          ),
           Expanded(
             child: Padding(
               padding: EdgeInsets.all(24.w),
@@ -224,8 +230,9 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                   Icon(Icons.currency_rupee_rounded, size: 48.sp, color: _accentGreen),
                   SizedBox(height: 16.h),
                   Text(
-                    'Pay ₹1 from the bank account you want to additionally verify. '
-                    'We\'ll match the payer details against this account.',
+                    'Our KYC partners will securely verify your bank account by '
+                    'charging ₹1. This amount is refunded instantly once the '
+                    'verification is completed.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.playfairDisplay(
                       fontSize: 14.sp,
@@ -261,7 +268,19 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                     ),
                   ],
                   SizedBox(height: 32.h),
-                  if (!_paymentLaunched)
+                  if (_errorMessage != null) ...[
+                    Text(
+                      'Please retry with the correct bank account.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
+                    ),
+                    SizedBox(height: 16.h),
+                    ElevatedButton(
+                      onPressed: _resetToStart,
+                      style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
+                      child: const Text('Try Again', style: TextStyle(color: Colors.white)),
+                    ),
+                  ] else ...[
                     ElevatedButton(
                       onPressed: _isProcessing ? null : _startVerification,
                       style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
@@ -270,37 +289,22 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                               width: 20, height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
-                          : const Text('Pay ₹1 & Verify', style: TextStyle(color: Colors.white)),
-                    )
-                  else if (_errorMessage != null) ...[
-                    Text(
-                      'Please retry with the correct bank account.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
+                          : const Text('Proceed to Verify', style: TextStyle(color: Colors.white)),
                     ),
-                    SizedBox(height: 16.h),
-                    ElevatedButton(
-                      onPressed: _retryAfterFailure,
-                      style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
-                      child: const Text('Try Again', style: TextStyle(color: Colors.white)),
-                    ),
-                  ] else ...[
-                    Text(
-                      'Complete the ₹1 payment in your UPI app, then tap below to confirm.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
-                    ),
-                    SizedBox(height: 16.h),
-                    ElevatedButton(
-                      onPressed: _isProcessing ? null : _checkStatus,
-                      style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
-                      child: _isProcessing
-                          ? const SizedBox(
-                              width: 20, height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Text('I\'ve Paid — Verify Now', style: TextStyle(color: Colors.white)),
-                    ),
+                    // A pending session's payment link stays live in the UPI
+                    // app even if re-launching it here doesn't visibly bring
+                    // that app to the foreground (some UPI apps silently
+                    // no-op a repeat intent for a request they've already
+                    // shown once). Point the customer at their UPI app
+                    // directly rather than leaving them stuck re-tapping.
+                    if (_paymentLaunched) ...[
+                      SizedBox(height: 12.h),
+                      Text(
+                        'Already have a ₹1 payment request pending — open your UPI app to complete it, or tap Proceed to Verify to try reopening it.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.playfairDisplay(fontSize: 12.sp, color: isDark ? Colors.white54 : Colors.black54),
+                      ),
+                    ],
                   ],
                 ],
               ),
