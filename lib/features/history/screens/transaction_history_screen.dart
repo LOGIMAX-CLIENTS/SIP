@@ -38,6 +38,25 @@ class _TransactionHistoryScreenState
   void initState() {
     super.initState();
     _scrollController = ScrollController()..addListener(_onScroll);
+    // historyProvider isn't autoDispose (see its docstring), so when this
+    // screen is reached as a PUSHED route (AppRouter.transactionHistory,
+    // e.g. from Profile) rather than the bottom-nav tab, it was showing
+    // whatever page 1 was cached from earlier in the session — a
+    // transaction completed elsewhere (Instant Saving, SIP, Withdrawal)
+    // since then only appeared after a manual pull-to-refresh. The
+    // bottom-nav path already re-fetches on every tab switch
+    // (main_screen.dart's _onItemTapped), but a pushed instance's
+    // initState only runs once per push, so refresh here too. Skipped when
+    // the provider has no page loaded yet (page == 0) — that means this is
+    // the very first-ever creation of historyProvider, whose own
+    // constructor already fetches page 1; refreshing again would just be a
+    // duplicate request.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (ref.read(historyProvider).page > 0) {
+        ref.read(historyProvider.notifier).refresh();
+      }
+    });
   }
 
   @override
