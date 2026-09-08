@@ -54,4 +54,20 @@ post_install do |installer|
     if system("ruby", fuse_path.to_s, clean_assets.to_s)
     end
   end
+
+  # Generate missing dSYMs for vendored xcframeworks (e.g. Airborne, HyperSDK) to satisfy App Store Connect symbol upload
+  Dir.glob("Pods/**/*.xcframework/ios-arm64*/*.framework").each do |fw_path|
+    fw_name = File.basename(fw_path, ".framework")
+    binary_path = File.join(fw_path, fw_name)
+    next unless File.file?(binary_path) && File.executable?(binary_path)
+
+    slice_dir = File.dirname(fw_path)
+    dsyms_dir = File.join(slice_dir, "dSYMs")
+    dsym_file = File.join(dsyms_dir, "#{fw_name}.framework.dSYM")
+
+    unless File.exist?(dsym_file)
+      system("mkdir", "-p", dsyms_dir)
+      system("dsymutil", binary_path, "-o", dsym_file)
+    end
+  end
 end

@@ -215,6 +215,7 @@
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				AB210814B276C419A2E911C8 /* [CP] Embed Pods Frameworks */,
 				C8674F7D96147537983BBA14 /* [CP] Copy Pods Resources */,
+				FA0000072C12345600000001 /* [CP] Copy Pods dSYMs */,
 			);
 			buildRules = (
 			);
@@ -406,6 +407,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		FA0000072C12345600000001 /* [CP] Copy Pods dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "[CP] Copy Pods dSYMs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -n \"${DWARF_DSYM_FOLDER_PATH}\" ] && [ -d \"${DWARF_DSYM_FOLDER_PATH}\" ]; then\n  echo \"Copying vendored xcframework dSYMs to ${DWARF_DSYM_FOLDER_PATH}...\"\n  find \"${PODS_ROOT}\" -name \"*.dSYM\" -type d | while read -r dsym; do\n    echo \"Copying $dsym to ${DWARF_DSYM_FOLDER_PATH}\"\n    cp -R \"$dsym\" \"${DWARF_DSYM_FOLDER_PATH}/\"\n  done\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */

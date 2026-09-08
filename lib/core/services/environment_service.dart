@@ -20,13 +20,13 @@ class EnvironmentService {
   // No dedicated VAPT rates socket — reuses the staging WebSocket endpoint.
   static const String vaptWsUrl = stagingWsUrl;
 
-  static String _currentEnv = envStaging;
-  static String _baseUrl = stagingBaseUrl;
-  static String _wsUrl = stagingWsUrl;
+  // static String _currentEnv = envStaging;
+  // static String _baseUrl = stagingBaseUrl;
+  // static String _wsUrl = stagingWsUrl;
 
-  // static String _currentEnv = envProduction;
-  // static String _baseUrl = productionBaseUrl;
-  // static String _wsUrl = productionWsUrl;
+  static String _currentEnv = envProduction;
+  static String _baseUrl = productionBaseUrl;
+  static String _wsUrl = productionWsUrl;
 
   // static String _currentEnv = envVapt;
   // static String _baseUrl = vaptBaseUrl;
