@@ -707,6 +707,18 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                             controller: _amountController,
                             keyboardType: TextInputType.number,
                             contextMenuBuilder: SecureClipboard.none,
+                            // Locked once a withdrawal is in flight — the
+                            // amount typed here is what the Withdrawal
+                            // button's tap validated against the policy/
+                            // eligibility checks. Leaving this editable
+                            // during that async gap let a customer keep
+                            // typing (e.g. "5" -> "50") after tapping and
+                            // land on the confirmation screen with an
+                            // amount that was never actually validated,
+                            // since downstream screens re-read the live
+                            // amount off withdrawalProvider rather than the
+                            // value _handleWithdraw checked.
+                            enabled: !state.isProcessing,
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
                               const NoLeadingZerosFormatter(allowDecimal: false),
