@@ -232,7 +232,6 @@ class HdfcPaymentHandler {
                 'isSuccess': false,
                 'orderId': purchase.orderId,
                 'message': message,
-                'amount': confirmedAmountInr,
                 'amount': _confirmedAmountInr,
               },
             ),
