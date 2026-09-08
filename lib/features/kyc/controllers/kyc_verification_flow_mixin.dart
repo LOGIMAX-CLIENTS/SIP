@@ -840,6 +840,7 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
             SizedBox(height: 8.h),
             TextFormField(
               controller: panNameController,
+              scrollPadding: EdgeInsets.only(bottom: 140.h),
               textCapitalization: TextCapitalization.characters,
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
@@ -864,6 +865,7 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
             SizedBox(height: 8.h),
             TextFormField(
               controller: panNumberController,
+              scrollPadding: EdgeInsets.only(bottom: 140.h),
               textCapitalization: TextCapitalization.characters,
               keyboardType: TextInputType.text,
               inputFormatters: [
@@ -931,6 +933,7 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
             SizedBox(height: 8.h),
             TextFormField(
               controller: aadhaarNameController,
+              scrollPadding: EdgeInsets.only(bottom: 140.h),
               textCapitalization: TextCapitalization.characters,
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
@@ -955,6 +958,7 @@ mixin KycVerificationFlowMixin<T extends ConsumerStatefulWidget> on ConsumerStat
             SizedBox(height: 8.h),
             TextFormField(
               controller: aadhaarNumberController,
+              scrollPadding: EdgeInsets.only(bottom: 140.h),
               keyboardType: TextInputType.number,
               inputFormatters: [AadhaarInputFormatter()],
               contextMenuBuilder: SecureClipboard.none,

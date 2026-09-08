@@ -55,13 +55,17 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
         decoration: BoxDecoration(gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient),
         child: Scaffold(
           backgroundColor: Colors.transparent,
-          body: docsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
-            data: (docsResult) {
-              syncAadhaarWithBackend(docsResult);
-              return _buildBody(isDark: isDark, docsResult: docsResult, aadhaarState: aadhaarState);
-            },
+          body: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: docsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Error: $e')),
+              data: (docsResult) {
+                syncAadhaarWithBackend(docsResult);
+                return _buildBody(isDark: isDark, docsResult: docsResult, aadhaarState: aadhaarState);
+              },
+            ),
           ),
         ),
       ),
@@ -151,12 +155,12 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
           child: Stack(
             children: [
               SingleChildScrollView(
-                // The 100.h tail is clearance for the floating footer CTA —
-                // drop it to normal padding when that button isn't rendered
-                // (bothDone, or panSkippedInConsent), or the page ends in a
-                // block of dead space.
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                // Generous bottom clearance for the floating footer CTA and plenty
+                // of scroll headroom when the keyboard is open so input fields can
+                // be scrolled comfortably clear into view.
                 padding: EdgeInsets.fromLTRB(
-                    20.w, 20.h, 20.w, (bothDone || panSkippedInConsent) ? 24.h : 100.h),
+                    20.w, 20.h, 20.w, (bothDone || panSkippedInConsent) ? 60.h : 260.h),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

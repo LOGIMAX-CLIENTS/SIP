@@ -1214,53 +1214,57 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         ),
         child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Stack(
-          children: [
-            Column(
-              children: [
-                const GradientHeader(title: 'Verification'),
-              Expanded(
-                child: docsAsync.when(
-              data: (result) {
-                _initControllers(result.documents);
-                _seedAadhaarIfApproved(
-                  result.aadhaarApproved,
-                  maskedNumber: result.aadhaarMaskedNumber,
-                  name: result.aadhaarName,
-                  dob: result.aadhaarDob,
-                );
-                _reconcileAadhaarWithBackend(result.aadhaarApproved);
-                _checkCompletionRecoveryOnLoad(result);
-                // "Upload manually instead" is offered for a NOT-YET-verified
-                // document once ANY of:
-                //   (a) DigiLocker has genuinely been tried at least once
-                //       (result.digilockerAttempted — the original "not on
-                //       the very first visit" gate).
-                //   (b) the OTHER document is already verified (by any means
-                //       — DigiLocker or a prior manual-upload approval) — an
-                //       already-verified PAN/Aadhaar is itself proof the
-                //       customer has been through this screen's verification
-                //       flow before, so the remaining side shouldn't be
-                //       gated behind a SEPARATE DigiLocker attempt of its own.
-                //   (c) THIS document's own latest attempt was REJECTED —
-                //       most relevant for a manual upload that was refused
-                //       without DigiLocker ever having been tried, which (a)
-                //       alone would never unlock; the customer needs both
-                //       retry paths offered right when a rejection happens.
-                // A verified document's OWN card never reaches this — isDone
-                // always shows the Verified banner instead, on both cards,
-                // regardless of these flags.
-                final panDoc = result.documents.where((d) =>
-                    d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'));
-                final panApproved = panDoc.any((d) => d.alreadyUploaded);
-                final panRejected = panDoc.any((d) => d.status.toUpperCase() == 'REJECTED');
-                final panAllowManualUpload =
-                    result.digilockerAttempted || result.aadhaarApproved || panRejected;
-                final aadhaarAllowManualUpload =
-                    result.digilockerAttempted || panApproved || result.aadhaarRejected;
-                return SingleChildScrollView(
-                  padding: EdgeInsets.all(24.w),
-                  child: Column(
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  const GradientHeader(title: 'Verification'),
+                Expanded(
+                  child: docsAsync.when(
+                data: (result) {
+                  _initControllers(result.documents);
+                  _seedAadhaarIfApproved(
+                    result.aadhaarApproved,
+                    maskedNumber: result.aadhaarMaskedNumber,
+                    name: result.aadhaarName,
+                    dob: result.aadhaarDob,
+                  );
+                  _reconcileAadhaarWithBackend(result.aadhaarApproved);
+                  _checkCompletionRecoveryOnLoad(result);
+                  // "Upload manually instead" is offered for a NOT-YET-verified
+                  // document once ANY of:
+                  //   (a) DigiLocker has genuinely been tried at least once
+                  //       (result.digilockerAttempted — the original "not on
+                  //       the very first visit" gate).
+                  //   (b) the OTHER document is already verified (by any means
+                  //       — DigiLocker or a prior manual-upload approval) — an
+                  //       already-verified PAN/Aadhaar is itself proof the
+                  //       customer has been through this screen's verification
+                  //       flow before, so the remaining side shouldn't be
+                  //       gated behind a SEPARATE DigiLocker attempt of its own.
+                  //   (c) THIS document's own latest attempt was REJECTED —
+                  //       most relevant for a manual upload that was refused
+                  //       without DigiLocker ever having been tried, which (a)
+                  //       alone would never unlock; the customer needs both
+                  //       retry paths offered right when a rejection happens.
+                  // A verified document's OWN card never reaches this — isDone
+                  // always shows the Verified banner instead, on both cards,
+                  // regardless of these flags.
+                  final panDoc = result.documents.where((d) =>
+                      d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'));
+                  final panApproved = panDoc.any((d) => d.alreadyUploaded);
+                  final panRejected = panDoc.any((d) => d.status.toUpperCase() == 'REJECTED');
+                  final panAllowManualUpload =
+                      result.digilockerAttempted || result.aadhaarApproved || panRejected;
+                  final aadhaarAllowManualUpload =
+                      result.digilockerAttempted || panApproved || result.aadhaarRejected;
+                  return SingleChildScrollView(
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.fromLTRB(24.w, 24.w, 24.w, 260.h),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Complete your KYC',
@@ -1301,6 +1305,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             if (_completingKyc) _buildCompletingOverlay(isDark),
           ],
         ),
+      ),
       ),
       ),
     );
@@ -1576,6 +1581,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 SizedBox(height: 8.h),
                 TextFormField(
                   controller: _panNameController,
+                  scrollPadding: EdgeInsets.only(bottom: 140.h),
                   textCapitalization: TextCapitalization.characters,
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
@@ -1605,6 +1611,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                 SizedBox(height: 8.h),
                 TextFormField(
                   controller: _panNumberController,
+                  scrollPadding: EdgeInsets.only(bottom: 140.h),
                   textCapitalization: TextCapitalization.characters,
                   keyboardType: TextInputType.text,
                   inputFormatters: [PanInputFormatter()],
@@ -1852,6 +1859,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     SizedBox(height: 8.h),
                     TextFormField(
                       controller: _aadhaarNameController,
+                      scrollPadding: EdgeInsets.only(bottom: 140.h),
                       textCapitalization: TextCapitalization.characters,
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
@@ -1882,6 +1890,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     SizedBox(height: 8.h),
                     TextFormField(
                       controller: _aadhaarNumberController,
+                      scrollPadding: EdgeInsets.only(bottom: 140.h),
                       keyboardType: TextInputType.number,
                       inputFormatters: [AadhaarInputFormatter()],
                       contextMenuBuilder: SecureClipboard.none,

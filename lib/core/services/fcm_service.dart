@@ -119,7 +119,7 @@ class FcmService {
       if (token != null) {
         final preview = token.length > 10 ? token.substring(0, 10) : token;
         debugPrint('[FCM] ──── Device Token ────');
-        debugPrint('[FCM] $preview...');
+        debugPrint('[FCM] FULL_DEVICE_TOKEN: $token');
         debugPrint('[FCM] ─────────────────────');
       }
     }

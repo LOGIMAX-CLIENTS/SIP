@@ -369,58 +369,64 @@ class _ManualKycUploadScreenState extends ConsumerState<ManualKycUploadScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Column(
-          children: [
-            GradientHeader(title: _isPan ? 'Upload PAN Manually' : 'Upload Aadhaar Manually'),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(24.w),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _isPan
-                            ? 'Upload a clear photo of your PAN card. An admin will '
-                              'review and verify it — this takes a little longer than DigiLocker.'
-                            : 'Upload clear photos of the front and back of your Aadhaar '
-                              'card. An admin will review and verify it — this takes a '
-                              'little longer than DigiLocker.',
-                        style: AppTextStyles.fieldHelper(isDark),
-                      ),
-                      SizedBox(height: 24.h),
-                      Text(_isPan ? 'Full Name (as on PAN)' : 'Full Name (as on Aadhaar)',
-                          style: AppTextStyles.fieldLabel(isDark)),
-                      SizedBox(height: 8.h),
-                      TextFormField(
-                        controller: _nameController,
-                        textCapitalization: TextCapitalization.characters,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
-                          LengthLimitingTextInputFormatter(60),
-                        ],
-                        contextMenuBuilder: SecureClipboard.none,
-                        style: AppTextStyles.kycFieldInput(isDark),
-                        decoration: _decoration(isDark, 'Full name'),
-                        validator: _validateName,
-                      ),
-                      SizedBox(height: 16.h),
-                      Text(_isPan ? 'PAN Number' : 'Aadhaar Number', style: AppTextStyles.fieldLabel(isDark)),
-                      SizedBox(height: 8.h),
-                      TextFormField(
-                        controller: _numberController,
-                        keyboardType: _isPan ? TextInputType.text : TextInputType.number,
-                        textCapitalization:
-                            _isPan ? TextCapitalization.characters : TextCapitalization.none,
-                        inputFormatters: _isPan
-                            ? [UpperCaseFormatter(), LengthLimitingTextInputFormatter(10)]
-                            : [AadhaarInputFormatter()],
-                        contextMenuBuilder: SecureClipboard.none,
-                        style: AppTextStyles.kycFieldInput(isDark),
-                        decoration: _decoration(isDark, _isPan ? 'ABCDE1234F' : 'XXXX XXXX XXXX'),
-                        validator: _validateNumber,
-                      ),
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Column(
+            children: [
+              GradientHeader(title: _isPan ? 'Upload PAN Manually' : 'Upload Aadhaar Manually'),
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: EdgeInsets.fromLTRB(24.w, 24.w, 24.w, 200.h),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isPan
+                              ? 'Upload a clear photo of your PAN card. An admin will '
+                                'review and verify it — this takes a little longer than DigiLocker.'
+                              : 'Upload clear photos of the front and back of your Aadhaar '
+                                'card. An admin will review and verify it — this takes a '
+                                'little longer than DigiLocker.',
+                          style: AppTextStyles.fieldHelper(isDark),
+                        ),
+                        SizedBox(height: 24.h),
+                        Text(_isPan ? 'Full Name (as on PAN)' : 'Full Name (as on Aadhaar)',
+                            style: AppTextStyles.fieldLabel(isDark)),
+                        SizedBox(height: 8.h),
+                        TextFormField(
+                          controller: _nameController,
+                          scrollPadding: EdgeInsets.only(bottom: 140.h),
+                          textCapitalization: TextCapitalization.characters,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+                            LengthLimitingTextInputFormatter(60),
+                          ],
+                          contextMenuBuilder: SecureClipboard.none,
+                          style: AppTextStyles.kycFieldInput(isDark),
+                          decoration: _decoration(isDark, 'Full name'),
+                          validator: _validateName,
+                        ),
+                        SizedBox(height: 16.h),
+                        Text(_isPan ? 'PAN Number' : 'Aadhaar Number', style: AppTextStyles.fieldLabel(isDark)),
+                        SizedBox(height: 8.h),
+                        TextFormField(
+                          controller: _numberController,
+                          scrollPadding: EdgeInsets.only(bottom: 140.h),
+                          keyboardType: _isPan ? TextInputType.text : TextInputType.number,
+                          textCapitalization:
+                              _isPan ? TextCapitalization.characters : TextCapitalization.none,
+                          inputFormatters: _isPan
+                              ? [UpperCaseFormatter(), LengthLimitingTextInputFormatter(10)]
+                              : [AadhaarInputFormatter()],
+                          contextMenuBuilder: SecureClipboard.none,
+                          style: AppTextStyles.kycFieldInput(isDark),
+                          decoration: _decoration(isDark, _isPan ? 'ABCDE1234F' : 'XXXX XXXX XXXX'),
+                          validator: _validateNumber,
+                        ),
                       SizedBox(height: 24.h),
                       if (_isPan)
                         _buildPicker(
@@ -453,6 +459,7 @@ class _ManualKycUploadScreenState extends ConsumerState<ManualKycUploadScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
