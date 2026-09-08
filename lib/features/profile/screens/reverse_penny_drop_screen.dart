@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -121,8 +122,10 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
         _paymentLink = result['payment_link']?.toString();
       });
       if (_paymentLink != null) {
-        final uri = Uri.parse(_paymentLink!);
-        final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        final launched = await _launchPaymentLink(
+          genericUpiLink: _paymentLink!,
+          iosLinks: (result['ios_links'] as Map?)?.cast<String, dynamic>(),
+        );
         if (mounted) setState(() => _paymentLaunched = launched);
         if (launched) {
           _startPolling();
@@ -137,6 +140,34 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  /// Android resolves a generic "upi://" scheme against every installed UPI
+  /// app itself (showing its own chooser if more than one can handle it) —
+  /// [genericUpiLink] alone is enough there. iOS has no such shared "upi"
+  /// scheme resolution: each app only registers its OWN custom scheme
+  /// (gpay://, phonepe://, ...), so launching the generic link there matches
+  /// no installed app at all. [iosLinks] (backend-provided per-app URLs)
+  /// covers that — try each in turn via canLaunchUrl and launch whichever
+  /// app is actually installed, falling back to the generic link only if
+  /// none of them resolve (e.g. a UPI app not in this known list).
+  static const _iosAppPriority = ['gpay', 'phonepe', 'paytm', 'bhim', 'whatsapp'];
+
+  Future<bool> _launchPaymentLink({
+    required String genericUpiLink,
+    Map<String, dynamic>? iosLinks,
+  }) async {
+    if (Platform.isIOS && iosLinks != null) {
+      for (final app in _iosAppPriority) {
+        final link = iosLinks[app]?.toString();
+        if (link == null || link.isEmpty) continue;
+        final uri = Uri.parse(link);
+        if (await canLaunchUrl(uri)) {
+          return launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      }
+    }
+    return launchUrl(Uri.parse(genericUpiLink), mode: LaunchMode.externalApplication);
   }
 
   /// [silent] = true for background auto-polls: suppresses the "still
