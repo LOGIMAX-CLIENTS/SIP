@@ -10,9 +10,10 @@ import '../services/bank_verification_history_service.dart';
 import '../services/bank_details_service.dart';
 import '../../../routes/app_router.dart';
 
-/// Profile > "Bank Account Validation" — one card per verification
-/// attempt, each card holding up to 3 lines: BAV / Rs.1 Payment / Rs.1
-/// Refund. Replaces the previous 3-card nav hub with a single page.
+/// Bank Details > "Bank Account Validation History" — one card per
+/// verification attempt, each card holding up to 3 lines: BAV / Rs.1
+/// Payment / Rs.1 Refund. Replaces the previous 3-card nav hub with a
+/// single page.
 class BankVerificationHubScreen extends ConsumerWidget {
   const BankVerificationHubScreen({super.key});
 
@@ -58,7 +59,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          GradientHeader(title: 'Bank Account Validation'),
+          GradientHeader(title: 'Bank Account Validation History'),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
@@ -217,7 +218,7 @@ class BankVerificationHubScreen extends ConsumerWidget {
                 },
                 icon: Icon(Icons.verified_user_outlined, size: 16.sp, color: _accentGreen),
                 label: Text(
-                  'Additional Verification',
+                  'Verify Bank Account',
                   style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w700,

@@ -227,7 +227,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.currency_rupee_rounded, size: 48.sp, color: _accentGreen),
+                  Image.asset('assets/home/rpd.png', width: 180.w, height: 180.w),
                   SizedBox(height: 16.h),
                   Text(
                     'Our KYC partners will securely verify your bank account by '
@@ -289,7 +289,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                               width: 20, height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
-                          : const Text('Proceed to Verify', style: TextStyle(color: Colors.white)),
+                          : Text('Proceed to Verify', style: TextStyle(color: Colors.white, fontSize: 17.sp)),
                     ),
                     // A pending session's payment link stays live in the UPI
                     // app even if re-launching it here doesn't visibly bring

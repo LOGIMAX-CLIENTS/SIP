@@ -407,7 +407,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                       ),
                     KycStepRow(
                       index: bavIndex,
-                      title: 'Bank Account Validation',
+                      title: 'Add Bank Account',
                       subtitle: bavSubtitle,
                       status: bavStatus,
                       pillLabel: bavPill,
@@ -696,12 +696,12 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
           SizedBox(height: 16.h),
           _buildBavSubItem(
             isDark: isDark,
-            title: 'Additional Verification',
+            title: 'Verify Bank Account',
             status: rpdStatus,
             pillLabel: rpdPill,
             subtitle: rpdSubtitle,
             // Kept short — the card's own title right above already says
-            // "Additional Verification"; repeating it here was too long to
+            // "Verify Bank Account"; repeating it here was too long to
             // fit this narrow sub-item button and overflowed.
             actionLabel: rpdStatus == KycStepStatus.verified || rpdStatus == KycStepStatus.locked
                 ? null

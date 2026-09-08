@@ -162,24 +162,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.accountDetails),
                           ),
                           _buildMenuItem(
-                            'Bank Details',
-                            'assets/withdraw/bank.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.bankDetails),
-                          ),
-                          _buildMenuItem(
-                            'Bank Account Validation',
-                            'assets/withdraw/bank.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.bankVerificationHub),
-                          ),
-                          _buildMenuItem(
-                            'Transaction History',
-                            'assets/sidemenu/transhistory.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.transactionHistory),
-                          ),
-                          _buildMenuItem(
                             'KYC Validation',
                             'assets/sidemenu/kyc.svg',
                             onTap: () async {
@@ -237,6 +219,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 : user.kycStatus == 1
                                     ? _buildKycBadge(label: 'Verified', complete: true)
                                     : null,
+                          ),
+                          _buildMenuItem(
+                            'Bank Details',
+                            'assets/withdraw/bank.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.bankDetails),
+                          ),
+                          _buildMenuItem(
+                            'Transaction History',
+                            'assets/sidemenu/transhistory.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.transactionHistory),
                           ),
                           // Nominee Details - Commented as requested
 

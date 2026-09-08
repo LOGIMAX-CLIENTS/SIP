@@ -191,6 +191,26 @@ class BankDetailsScreen extends ConsumerWidget {
                       ),
                     for (final account in accounts)
                       _buildBankCard(context, ref, account, isDark),
+                    if (accounts.any((a) => a.isVerified)) ...[
+                      SizedBox(height: 8.h),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: InkWell(
+                          onTap: () => Navigator.pushNamed(
+                              context, AppRouter.bankVerificationHub),
+                          child: Text(
+                            'Bank Account Validation History',
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.w600,
+                              color: _accentGreen,
+                              decoration: TextDecoration.underline,
+                              decorationColor: _accentGreen,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     SizedBox(height: 12.h),
                     _buildAddButton(context, ref, isDark),
                     SizedBox(height: 100.h),
