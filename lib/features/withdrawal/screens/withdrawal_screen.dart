@@ -786,8 +786,13 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
         ? market.valueOrNull?.goldBuy ?? 0.0
         : market.valueOrNull?.silverBuy ?? 0.0;
     final maxInr = withdrawableQty * liveRate;
-    final exceedsBalance =
-        withdrawalState.amount > 0 && maxInr > 0 && withdrawalState.amount > maxInr;
+    // Balance/market not loaded yet (maxInr <= 0) must NOT be treated as "no
+    // limit" — that silently let a large amount typed before this data
+    // arrived through to the server-side check with the button still
+    // enabled. Block submission until we actually know the real limit.
+    final balanceKnown = balanceAsync.hasValue && market.hasValue && maxInr > 0;
+    final exceedsBalance = withdrawalState.amount > 0 &&
+        (!balanceKnown || withdrawalState.amount > maxInr);
 
     // Button enabled when: amount > 0, not processing, market open,
     // no balance exceeded, and no pending policy error.
@@ -1117,7 +1122,12 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       if (!mounted) return;
 
       if (!policy.validation.isValid) {
+        // setProcessing(false) MUST come before updateAmount(0) — the
+        // notifier no-ops updateAmount while isProcessing is true (see its
+        // doc comment), so clearing in the wrong order would silently fail.
         notifier.setProcessing(false);
+        notifier.updateAmount(0);
+        _amountController.clear();
         final errorMsg = policy.validation.message ??
             'Invalid withdrawal amount. Please check the limits.';
         setState(() => _policyError = errorMsg);
