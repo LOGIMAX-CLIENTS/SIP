@@ -165,7 +165,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   }
 
   Future<void> fetchProfileDetails() async {
-    if (!mounted) return;
+    if (!mounted || _customerId.isEmpty) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final data = await _profileService.getProfileDetails(_customerId);

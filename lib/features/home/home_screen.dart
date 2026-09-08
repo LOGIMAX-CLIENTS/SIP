@@ -1474,7 +1474,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildCommodityToggle(CommodityType selected, bool isMarketClosed) {
     final isGold = selected == CommodityType.gold;
-    final referralMsg = ref.watch(profileProvider).user.referralMessage.trim();
+    final referralMsg = ref.read(profileProvider).user.referralMessage.trim();
 
     return Column(
       mainAxisSize: MainAxisSize.min,

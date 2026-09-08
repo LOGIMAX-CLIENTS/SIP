@@ -37,6 +37,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   late TextEditingController _stateController;
   late TextEditingController _cityController;
   late TextEditingController _addressController;
+  ProfileNotifier? _profileNotifier;
   bool _isPincodeChecking = false;
   bool _isVerifyingEmail = false;
   String? _emailError;
@@ -82,6 +83,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    _profileNotifier = ref.read(profileProvider.notifier);
     final user = ref.read(profileProvider).user;
     _firstNameController = TextEditingController(text: user.firstName);
     _lastNameController = TextEditingController(text: user.lastName);
@@ -105,8 +107,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     // so its constructor only runs once; we must manually refresh each visit.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Always start in view mode — reset any stale editing state
-      ref.read(profileProvider.notifier).setEditing(false);
-      ref.read(profileProvider.notifier).fetchProfileDetails().then((_) {
+      _profileNotifier?.setEditing(false);
+      _profileNotifier?.fetchProfileDetails().then((_) {
         if (!mounted) return;
         // Sync controllers with freshly loaded data
         final updated = ref.read(profileProvider).user;
@@ -126,10 +128,11 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   @override
   void dispose() {
     // Reset editing state so it doesn't persist when navigating away.
-    // Resolve the notifier NOW: `ref` belongs to this widget and must not be
-    // touched from the microtask, which runs after dispose() has returned.
-    final profile = ref.read(profileProvider.notifier);
-    Future.microtask(() => profile.setEditing(false));
+    // Use the notifier reference captured in initState. Never touch `ref`
+    // inside dispose() because `context.mounted` is false and Riverpod throws
+    // StateError, which causes ConsumerStatefulElement.unmount() to abort and
+    // leak subscriptions onto defunct elements.
+    _profileNotifier?.setEditing(false);
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
