@@ -69,6 +69,34 @@ class PaymentHandler {
 
   PaymentHandler({required this.ref, required this.context});
 
+  /// Navigates to the full-screen PurchaseSuccessScreen with isSuccess: false
+  /// (red circle X, Order ID card, message, and Try Again button).
+  void _navigateToFailureScreen({
+    required String orderId,
+    required String errorMessage,
+    double? amount,
+  }) {
+    AppLifecycleObserver.suppressAppLock = false;
+    _onLoadingEnd?.call();
+    AppToast.dismiss();
+    if (!context.mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PurchaseSuccessScreen(
+          data: {
+            'isSuccess': false,
+            'orderId': orderId,
+            'message': errorMessage,
+            'amount':
+                (amount != null && amount > 0) ? amount : _confirmedAmountInr,
+          },
+        ),
+      ),
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // PUBLIC API
   // ─────────────────────────────────────────────────────────────────────────
@@ -114,14 +142,14 @@ class PaymentHandler {
         paymentMethod: paymentMethod,
       );
     } catch (e) {
-      AppLifecycleObserver.suppressAppLock = false;
-      _onLoadingEnd?.call();
-      if (context.mounted) {
-        final message = (e is Failure)
-            ? e.message
-            : 'Payment initiation failed. Please try again.';
-        AppToast.show(context, message, type: ToastType.error);
-      }
+      final message = (e is Failure)
+          ? e.message
+          : 'Payment initiation failed. Please try again.';
+      _navigateToFailureScreen(
+        orderId: '',
+        errorMessage: message,
+        amount: amount,
+      );
     }
   }
 
@@ -189,28 +217,71 @@ class PaymentHandler {
     _confirmedAmountInr = confirmedAmount;
 
     SecureLogger.d(
-        '[PaymentHandler] initiate OK → orderId=${purchase.orderId}, gateway=${purchase.paymentGateway}');
+        '[PaymentHandler] initiate OK → orderId=${purchase.orderId}, gateway=${purchase.paymentGateway}, sessionId=${purchase.sessionId}, env=${purchase.environment}, isMock=${purchase.isMock}, pgError=${purchase.pgError}');
+
+    if (purchase.pgError != null &&
+        purchase.pgError!.isNotEmpty &&
+        (purchase.sessionId == null || purchase.sessionId!.isEmpty)) {
+      _navigateToFailureScreen(
+        orderId: purchase.orderId ?? '',
+        errorMessage: purchase.pgError!,
+        amount: confirmedAmount,
+      );
+      return;
+    }
 
     // ── STEP 2: Route to the correct payment gateway ────────────────────────
     if (context.mounted) {
-      // Trust the gateway returned by the backend initiate API first because it matches
-      // the order's specific payment provider and payload (e.g. sdkPayload or sessionId).
-      // Fall back to config-resolved gateway only if the API returned gateway is empty or unrecognized.
-      String gateway = purchase.paymentGateway;
-      if (gateway.isEmpty || (gateway != 'hdfc' && gateway != 'cashfree' && gateway != 'razorpay')) {
+      final gwRaw = purchase.paymentGateway.toLowerCase().trim();
+
+      // Check explicit signatures first to prevent mismatched routing:
+      // 1. Razorpay orders: keyId is present, or rzOrderId starts with 'order_', or sessionId starts with 'order_'
+      final isRazorpayPayload = (purchase.keyId != null && purchase.keyId!.isNotEmpty) ||
+          (purchase.rzOrderId != null && purchase.rzOrderId!.startsWith('order_')) ||
+          (purchase.sessionId != null && purchase.sessionId!.startsWith('order_'));
+
+      // 2. HDFC orders: sdkPayload is present or merchantId is present
+      final isHdfcPayload = purchase.sdkPayload != null ||
+          (purchase.merchantId != null && purchase.merchantId!.isNotEmpty);
+
+      String gateway;
+      if (gwRaw.contains('razorpay') || isRazorpayPayload) {
+        gateway = 'razorpay';
+      } else if (gwRaw.contains('hdfc') || isHdfcPayload) {
+        gateway = 'hdfc';
+      } else if (gwRaw.contains('cashfree')) {
+        gateway = 'cashfree';
+      } else {
+        // Fall back to config-resolved gateway only if gateway cannot be deduced from payload
         final config = ref.read(savingConfigProvider).valueOrNull;
-        if (paymentMethod != null && config != null && config.paymentMethods.containsKey(paymentMethod)) {
-          gateway = config.paymentMethods[paymentMethod]!;
-          SecureLogger.d('[PaymentHandler] Gateway resolved from config fallback: $paymentMethod -> $gateway');
+        if (paymentMethod != null &&
+            config != null &&
+            config.paymentMethods.containsKey(paymentMethod)) {
+          final cfgGw = config.paymentMethods[paymentMethod]!.toLowerCase().trim();
+          if (cfgGw.contains('razorpay')) {
+            gateway = 'razorpay';
+          } else if (cfgGw.contains('hdfc')) {
+            gateway = 'hdfc';
+          } else {
+            gateway = 'cashfree';
+          }
+          SecureLogger.d(
+              '[PaymentHandler] Gateway resolved from config fallback: $paymentMethod -> $gateway');
+        } else {
+          gateway = 'cashfree';
         }
       }
+
+      SecureLogger.d(
+          '[PaymentHandler] Routing decision -> gateway: $gateway (gwRaw: $gwRaw, isRazorpay: $isRazorpayPayload, isHdfc: $isHdfcPayload)');
 
       if (gateway == 'hdfc') {
         _launchHdfc(purchase, confirmedAmount, paymentMethod);
       } else if (gateway == 'razorpay') {
         _launchRazorpay(purchase, confirmedAmount, paymentMethod);
       } else {
-        _launchCashfree(purchase);
+        _launchCashfree(purchase,
+            confirmedAmount: confirmedAmount, paymentMethod: paymentMethod);
       }
     }
   }
@@ -219,7 +290,8 @@ class PaymentHandler {
   // STEP 2a — Launch HDFC SmartGateway (Juspay HyperSDK)
   // ─────────────────────────────────────────────────────────────────────────
 
-  void _launchHdfc(PurchaseInitiateResponse purchase, double confirmedAmount, String? paymentMethod) {
+  void _launchHdfc(PurchaseInitiateResponse purchase, double confirmedAmount,
+      String? paymentMethod) {
     SecureLogger.d('[PaymentHandler] Routing to HDFC gateway...');
 
     final hdfc = HdfcPaymentHandler(ref: ref, context: context);
@@ -236,7 +308,8 @@ class PaymentHandler {
   // STEP 2b — Launch Razorpay Checkout
   // ─────────────────────────────────────────────────────────────────────────
 
-  void _launchRazorpay(PurchaseInitiateResponse purchase, double confirmedAmount, String? paymentMethod) {
+  void _launchRazorpay(PurchaseInitiateResponse purchase, double confirmedAmount,
+      String? paymentMethod) {
     SecureLogger.d('[PaymentHandler] Routing to Razorpay gateway...');
 
     final razorpay = RazorpayPaymentHandler(ref: ref, context: context);
@@ -250,17 +323,55 @@ class PaymentHandler {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STEP 2b — Launch Cashfree Web Checkout
+  // STEP 2c — Launch Cashfree Web Checkout
   // ─────────────────────────────────────────────────────────────────────────
 
-  void _launchCashfree(PurchaseInitiateResponse purchase) {
-    if (purchase.orderId == null || purchase.sessionId == null) {
-      _onLoadingEnd?.call();
-      if (context.mounted) {
-        AppToast.show(
-            context, 'Failed to initiate payment session. Please try again.',
-            type: ToastType.error);
-      }
+  void _launchCashfree(PurchaseInitiateResponse purchase,
+      {double confirmedAmount = 0.0, String? paymentMethod}) {
+    final orderId = purchase.orderId;
+    final sessionId = purchase.sessionId;
+
+    if (orderId == null ||
+        orderId.trim().isEmpty ||
+        sessionId == null ||
+        sessionId.trim().isEmpty) {
+      _navigateToFailureScreen(
+        orderId: orderId ?? '',
+        errorMessage: 'Failed to initiate payment session. Please try again.',
+        amount: confirmedAmount,
+      );
+      return;
+    }
+
+    // Safety guard: if sessionId starts with order_, this is definitely Razorpay, NEVER send to Cashfree!
+    if (sessionId.startsWith('order_')) {
+      SecureLogger.d(
+          '[PaymentHandler] Session ID starts with "order_" ($sessionId). This is a Razorpay order, NOT Cashfree! Redirecting to Razorpay checkout...');
+      _launchRazorpay(purchase, confirmedAmount, paymentMethod);
+      return;
+    }
+
+    if (purchase.isMock || sessionId.startsWith('MOCK_')) {
+      SecureLogger.e(
+          '[PaymentHandler] Backend returned mock session ID ($sessionId). Live Cashfree SDK cannot process mock sessions.');
+      _navigateToFailureScreen(
+        orderId: orderId,
+        errorMessage:
+            'Payment gateway is in mock mode on the server. Live payment is unavailable.',
+        amount: confirmedAmount,
+      );
+      return;
+    }
+
+    if (!sessionId.startsWith('session_')) {
+      SecureLogger.e(
+          '[PaymentHandler] Invalid Cashfree session ID: $sessionId (expected to start with "session_")');
+      _navigateToFailureScreen(
+        orderId: orderId,
+        errorMessage:
+            'Invalid payment session received from gateway. Please try again.',
+        amount: confirmedAmount,
+      );
       return;
     }
 
@@ -271,25 +382,27 @@ class PaymentHandler {
 
       final session = CFSessionBuilder()
           .setEnvironment(env)
-          .setOrderId(purchase.orderId!)
-          .setPaymentSessionId(purchase.sessionId!)
+          .setOrderId(orderId)
+          .setPaymentSessionId(sessionId)
           .build();
 
       final cfWebCheckoutPayment =
           CFWebCheckoutPaymentBuilder().setSession(session).build();
 
-      SecureLogger.d('[PaymentHandler] Launching Cashfree SDK...');
+      SecureLogger.d(
+          '[PaymentHandler] Launching Cashfree SDK: orderId=$orderId, env=$env, sessionId=$sessionId');
       _cfPaymentGatewayService.doPayment(cfWebCheckoutPayment);
 
       // Loading stays active — it is cleared inside the Cashfree callbacks.
     } catch (e) {
-      _onLoadingEnd?.call();
-      if (context.mounted) {
-        final message = (e is Failure)
-            ? e.message
-            : 'Payment gateway error. Please try again.';
-        AppToast.show(context, message, type: ToastType.error);
-      }
+      final message = (e is Failure)
+          ? e.message
+          : 'Payment gateway error. Please try again.';
+      _navigateToFailureScreen(
+        orderId: orderId,
+        errorMessage: message,
+        amount: confirmedAmount,
+      );
     }
   }
 

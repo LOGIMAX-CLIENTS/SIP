@@ -61,9 +61,14 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   String? _error;
 
   /// Which checkout to launch: 'cashfree' (default) or 'razorpay'.
-  String get _gateway =>
-      (widget.paymentData['payment_gateway'] as String?)?.toLowerCase() ??
-      'cashfree';
+  String get _gateway {
+    final gw = (widget.paymentData['payment_gateway'] as String?)?.toLowerCase().trim() ?? '';
+    final subId = widget.paymentData['subscription_id']?.toString() ?? '';
+    if (gw.contains('razorpay') || subId.startsWith('sub_')) {
+      return 'razorpay';
+    }
+    return 'cashfree';
+  }
 
   @override
   void initState() {

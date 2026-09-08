@@ -20,6 +20,9 @@ import 'package:startgold/shared/widgets/gradient_header.dart';
 import 'package:startgold/features/market/models/market_rates.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/numeric_styled_text.dart';
+import '../../../core/security/secure_logger.dart';
+import '../hdfc_payment_handler.dart';
+import '../razorpay_payment_handler.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // [LEGACY] PaymentMethodsScreen
@@ -261,9 +264,9 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
         setState(() => _confirmedAmountInr = confirmedAmount);
       }
 
-      // 4. Launch Cashfree — session_id already encodes the correct amount.
+      // 4. Launch Payment Gateway
       if (mounted) {
-        _startCashfreePayment(purchase, confirmedAmount);
+        _routePayment(purchase, confirmedAmount);
       }
     } catch (e) {
       if (mounted) {
@@ -274,8 +277,7 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
         AppToast.show(context, message, type: ToastType.error);
       }
     } finally {
-      // Only reset _isLoading if Cashfree was NOT launched.
-      // _startCashfreePayment handles its own error cases.
+      // Only reset _isLoading if gateway launch failed.
     }
   }
 
@@ -283,31 +285,121 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
   // Used in success/failure screen data when confirm API doesn’t return amount.
   double _confirmedAmountInr = 0;
 
+  void _routePayment(
+      PurchaseInitiateResponse purchase, double confirmedAmount) {
+    _confirmedAmountInr = confirmedAmount;
+
+    final gwRaw = purchase.paymentGateway.toLowerCase().trim();
+    final isRazorpayPayload = (purchase.keyId != null && purchase.keyId!.isNotEmpty) ||
+        (purchase.rzOrderId != null && purchase.rzOrderId!.startsWith('order_')) ||
+        (purchase.sessionId != null && purchase.sessionId!.startsWith('order_'));
+    final isHdfcPayload = purchase.sdkPayload != null ||
+        (purchase.merchantId != null && purchase.merchantId!.isNotEmpty);
+
+    if (gwRaw.contains('razorpay') || isRazorpayPayload) {
+      final razorpay = RazorpayPaymentHandler(ref: ref, context: context);
+      razorpay.launchPayment(
+        purchase: purchase,
+        confirmedAmountInr: confirmedAmount,
+        paymentMethod: _selectedMethodId,
+        onLoadingStart: () {
+          if (mounted) setState(() => _isLoading = true);
+        },
+        onLoadingEnd: () {
+          if (mounted) setState(() => _isLoading = false);
+        },
+      );
+    } else if (gwRaw.contains('hdfc') || isHdfcPayload) {
+      final hdfc = HdfcPaymentHandler(ref: ref, context: context);
+      hdfc.launchPayment(
+        purchase: purchase,
+        confirmedAmountInr: confirmedAmount,
+        paymentMethod: _selectedMethodId,
+        onLoadingStart: () {
+          if (mounted) setState(() => _isLoading = true);
+        },
+        onLoadingEnd: () {
+          if (mounted) setState(() => _isLoading = false);
+        },
+      );
+    } else {
+      _startCashfreePayment(purchase, confirmedAmount);
+    }
+  }
+
   void _startCashfreePayment(
       PurchaseInitiateResponse purchase, double confirmedAmount) {
     // Store server-confirmed amount so callbacks can reference it.
     _confirmedAmountInr = confirmedAmount;
 
-    try {
-      if (purchase.orderId == null || purchase.sessionId == null) {
-        throw Exception('Failed to initiate purchase session');
-      }
+    final orderId = purchase.orderId;
+    final sessionId = purchase.sessionId;
 
-      // Cashfree SDK reads the amount from the server-side order automatically.
-      // The session_id already encodes the order; no amount param needed here.
+    if (orderId == null ||
+        orderId.trim().isEmpty ||
+        sessionId == null ||
+        sessionId.trim().isEmpty) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        AppToast.show(
+            context, 'Failed to initiate payment session. Please try again.',
+            type: ToastType.error);
+      }
+      return;
+    }
+
+    // Safety guard: if sessionId starts with order_, this is Razorpay, NEVER send to Cashfree!
+    if (sessionId.startsWith('order_')) {
+      SecureLogger.d(
+          '[PaymentMethods] Session ID starts with "order_" ($sessionId). Redirecting to Razorpay checkout...');
+      _routePayment(purchase, confirmedAmount);
+      return;
+    }
+
+    if (purchase.isMock || sessionId.startsWith('MOCK_')) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        SecureLogger.e(
+            '[PaymentMethods] Backend returned mock session ID ($sessionId). Live Cashfree SDK cannot process mock sessions.');
+        AppToast.show(
+          context,
+          'Payment gateway is in mock mode on the server. Live payment is unavailable.',
+          type: ToastType.error,
+        );
+      }
+      return;
+    }
+
+    if (!sessionId.startsWith('session_')) {
+      SecureLogger.e(
+          '[PaymentMethods] Cashfree session ID does not start with "session_": $sessionId');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        AppToast.show(
+          context,
+          'Invalid payment session received from gateway. Please try again.',
+          type: ToastType.error,
+        );
+      }
+      return;
+    }
+
+    try {
       final env = purchase.environment?.toUpperCase() == 'PRODUCTION'
           ? CFEnvironment.PRODUCTION
           : CFEnvironment.SANDBOX;
 
       var session = CFSessionBuilder()
           .setEnvironment(env)
-          .setOrderId(purchase.orderId!)
-          .setPaymentSessionId(purchase.sessionId!)
+          .setOrderId(orderId)
+          .setPaymentSessionId(sessionId)
           .build();
 
       var cfWebCheckoutPayment =
           CFWebCheckoutPaymentBuilder().setSession(session).build();
 
+      SecureLogger.d(
+          '[PaymentMethods] Launching Cashfree SDK: orderId=$orderId, env=$env, sessionId=$sessionId');
       _cfPaymentGatewayService.doPayment(cfWebCheckoutPayment);
     } catch (e) {
       if (mounted) {

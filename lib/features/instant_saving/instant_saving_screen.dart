@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -55,6 +56,43 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
   // also briefly true for the local check-eligibility call. Used to scope
   // the didChangeAppLifecycleState fallback below to the gateway leg only.
   bool _awaitingPaymentCallback = false;
+  Timer? _paymentWatchdogTimer;
+
+  void _startPaymentLoading() {
+    _paymentWatchdogTimer?.cancel();
+    setState(() {
+      _isProcessing = true;
+      _awaitingPaymentCallback = true;
+    });
+    // Safety watchdog: after 45 seconds, if the gateway SDK hasn't called back, auto-clear
+    _paymentWatchdogTimer = Timer(const Duration(seconds: 45), () {
+      if (mounted && (_isProcessing || _awaitingPaymentCallback)) {
+        SecureLogger.d(
+            'INSTANT SAVING: Payment watchdog timer expired — clearing stuck loading state');
+        AppLifecycleObserver.suppressAppLock = false;
+        setState(() {
+          _isProcessing = false;
+          _awaitingPaymentCallback = false;
+        });
+        AppToast.show(
+          context,
+          'Payment status could not be verified automatically. Please check your order history.',
+          type: ToastType.warning,
+          position: ToastPosition.center,
+        );
+      }
+    });
+  }
+
+  void _stopPaymentLoading() {
+    _paymentWatchdogTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _isProcessing = false;
+        _awaitingPaymentCallback = false;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -104,6 +142,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _paymentWatchdogTimer?.cancel();
     _pulseController.dispose();
     _amountController.dispose();
     super.dispose();
@@ -132,10 +171,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       // sure app-lock suppression (set before launching the gateway) doesn't
       // stay stuck on too.
       AppLifecycleObserver.suppressAppLock = false;
-      setState(() {
-        _isProcessing = false;
-        _awaitingPaymentCallback = false;
-      });
+      _stopPaymentLoading();
       AppToast.show(
         context,
         'We could not confirm your payment status. Please check Order History before retrying.',
@@ -346,15 +382,28 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(24.w, 16.h, 24.w, 16.h),
-                  child: Text(
-                    ref.tr('Secure Payment'),
-                    textAlign: TextAlign.left,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
+                  padding: EdgeInsets.fromLTRB(24.w, 12.h, 16.w, 12.h),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        ref.tr('Secure Payment'),
+                        textAlign: TextAlign.left,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        tooltip: 'Cancel',
+                        onPressed: () {
+                          AppLifecycleObserver.suppressAppLock = false;
+                          _stopPaymentLoading();
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -391,6 +440,29 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                           fontSize: 13.sp,
                           color: Colors.black45,
                           height: 1.4,
+                        ),
+                      ),
+                      SizedBox(height: 24.h),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          AppLifecycleObserver.suppressAppLock = false;
+                          _stopPaymentLoading();
+                        },
+                        icon: const Icon(Icons.close, size: 16, color: Color(0xFF91411D)),
+                        label: Text(
+                          ref.tr('Cancel Payment'),
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 13.sp,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF91411D),
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF91411D), width: 1.2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                          ),
+                          padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 8.h),
                         ),
                       ),
                     ],
@@ -1682,18 +1754,8 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
             buyType: _isAmountMode ? 1 : 2,
             weight: grams,
             paymentMethod: paymentMethod,
-            onLoadingStart: () => setState(() {
-              _isProcessing = true;
-              _awaitingPaymentCallback = true;
-            }),
-            onLoadingEnd: () {
-              if (mounted) {
-                setState(() {
-                  _isProcessing = false;
-                  _awaitingPaymentCallback = false;
-                });
-              }
-            },
+            onLoadingStart: _startPaymentLoading,
+            onLoadingEnd: _stopPaymentLoading,
           );
         }
       } else if (eligibility.nextStep == 'BANK_VERIFICATION_REQUIRED') {
@@ -1714,18 +1776,8 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
             buyType: _isAmountMode ? 1 : 2,
             weight: grams,
             paymentMethod: paymentMethod,
-            onLoadingStart: () => setState(() {
-              _isProcessing = true;
-              _awaitingPaymentCallback = true;
-            }),
-            onLoadingEnd: () {
-              if (mounted) {
-                setState(() {
-                  _isProcessing = false;
-                  _awaitingPaymentCallback = false;
-                });
-              }
-            },
+            onLoadingStart: _startPaymentLoading,
+            onLoadingEnd: _stopPaymentLoading,
           );
         }
       } else if (eligibility.nextStep == 'PAYMENT') {
@@ -1743,18 +1795,8 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
           paymentMethod: paymentMethod,
-          onLoadingStart: () => setState(() {
-            _isProcessing = true;
-            _awaitingPaymentCallback = true;
-          }),
-          onLoadingEnd: () {
-            if (mounted) {
-              setState(() {
-                _isProcessing = false;
-                _awaitingPaymentCallback = false;
-              });
-            }
-          },
+          onLoadingStart: _startPaymentLoading,
+          onLoadingEnd: _stopPaymentLoading,
         );
       } else if (eligibility.nextStep == 'UPI_LIST') {
         // UPI selection flow — unchanged.
@@ -1780,18 +1822,8 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
           paymentMethod: paymentMethod,
-          onLoadingStart: () => setState(() {
-            _isProcessing = true;
-            _awaitingPaymentCallback = true;
-          }),
-          onLoadingEnd: () {
-            if (mounted) {
-              setState(() {
-                _isProcessing = false;
-                _awaitingPaymentCallback = false;
-              });
-            }
-          },
+          onLoadingStart: _startPaymentLoading,
+          onLoadingEnd: _stopPaymentLoading,
         );
       }
     } catch (e) {

@@ -219,11 +219,25 @@ class HdfcPaymentHandler {
       SecureLogger.e('[HdfcPaymentHandler] openPaymentPage error: $e');
       SecureLogger.e('[HdfcPaymentHandler] Stack: $stack');
       _onLoadingEnd?.call();
+      AppToast.dismiss();
       if (context.mounted) {
         final message = (e is Failure)
             ? e.message
             : 'Failed to open HDFC payment page. Please try again.';
-        AppToast.show(context, message, type: ToastType.error);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PurchaseSuccessScreen(
+              data: {
+                'isSuccess': false,
+                'orderId': purchase.orderId,
+                'message': message,
+                'amount': confirmedAmountInr,
+                'amount': _confirmedAmountInr,
+              },
+            ),
+          ),
+        );
       }
     }
   }

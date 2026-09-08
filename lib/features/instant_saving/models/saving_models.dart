@@ -126,6 +126,9 @@ class PurchaseInitiateResponse {
   // ── Razorpay fields ──────────────────────────────────────────────────────
   final String? rzOrderId;
   final String? keyId;
+  // ── Error & Diagnostic fields ────────────────────────────────────────────
+  final String? pgError;
+  final bool isMock;
 
   PurchaseInitiateResponse({
     this.orderId,
@@ -142,26 +145,42 @@ class PurchaseInitiateResponse {
     this.hdfcEnvironment,
     this.rzOrderId,
     this.keyId,
+    this.pgError,
+    this.isMock = false,
   });
 
   factory PurchaseInitiateResponse.fromJson(Map<String, dynamic> json) {
+    final rawSessionId =
+        (json['session_id'] ?? json['payment_session_id'] ?? json['pg_session_id'])
+            ?.toString();
+    final rawOrderId =
+        (json['order_id'] ?? json['cf_order_id'] ?? json['transaction_id'])
+            ?.toString();
+    final rawKeyId = json['key_id']?.toString() ??
+        json['rz_key_id']?.toString() ??
+        json['key']?.toString() ??
+        (json['sdk_payload'] is Map ? json['sdk_payload']['key']?.toString() : null);
+
     return PurchaseInitiateResponse(
-      orderId: json['order_id'],
-      sessionId: json['session_id'],
-      environment: json['environment'],
-      message: json['message'],
+      orderId: rawOrderId,
+      sessionId: rawSessionId,
+      environment: json['environment']?.toString(),
+      message: json['message']?.toString(),
       amountInr: json['amount_inr']?.toString(),
       weight: json['weight']?.toString(),
       ratePerGram: json['rate_per_gram']?.toString(),
-      paymentGateway: json['payment_gateway']?.toString() ?? 'cashfree',
+      paymentGateway: (json['payment_gateway']?.toString() ?? 'cashfree').toLowerCase().trim(),
       sdkPayload: json['sdk_payload'] is Map<String, dynamic>
           ? json['sdk_payload']
           : null,
       merchantId: json['merchant_id']?.toString(),
       clientId: json['client_id']?.toString(),
       hdfcEnvironment: json['hdfc_environment']?.toString(),
-      rzOrderId: json['rz_order_id']?.toString() ?? json['session_id']?.toString(),
-      keyId: json['key_id']?.toString(),
+      rzOrderId: json['rz_order_id']?.toString() ?? rawSessionId,
+      keyId: rawKeyId,
+      pgError: json['pg_error']?.toString(),
+      isMock: json['is_mock'] == true ||
+          (rawSessionId != null && rawSessionId.startsWith('MOCK_')),
     );
   }
 }

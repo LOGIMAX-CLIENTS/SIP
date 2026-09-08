@@ -127,11 +127,24 @@ class RazorpayPaymentHandler {
       AppLifecycleObserver.suppressAppLock = false;
       _onLoadingEnd?.call();
       _razorpay.clear();
+      AppToast.dismiss();
       if (context.mounted) {
         final message = (e is Failure)
             ? e.message
             : 'Razorpay payment initiation failed. Please try again.';
-        AppToast.show(context, message, type: ToastType.error);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PurchaseSuccessScreen(
+              data: {
+                'isSuccess': false,
+                'orderId': purchase.orderId,
+                'message': message,
+                'amount': confirmedAmountInr,
+              },
+            ),
+          ),
+        );
       }
     }
   }
