@@ -50,13 +50,13 @@ class ApiClient {
     }
   }
 
-  Future<Response> post(String path, {dynamic data}) async {
+  Future<Response> post(String path, {dynamic data, Options? options}) async {
     try {
-      // When sending FormData (file uploads), remove the JSON content-type
-      // so Dio can auto-set 'multipart/form-data' with the correct boundary.
-      Options? options;
+      // When sending FormData (file uploads), provide the multipart/form-data
+      // content type WITH the boundary string so backend multipart parsers succeed.
       if (data is FormData) {
-        options = Options(contentType: 'multipart/form-data');
+        options ??= Options();
+        options.contentType = 'multipart/form-data; boundary=${data.boundary}';
       }
       return await _dio.post(path, data: data, options: options);
     } on DioException catch (e) {

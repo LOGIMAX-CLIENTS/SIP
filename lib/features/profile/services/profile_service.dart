@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/api_client.dart';
 
@@ -105,18 +106,29 @@ class ProfileService {
           photo.path,
           filename: fileName,
         ),
-        'id_customer': customerId,
+        if (customerId.isNotEmpty) 'id_customer': customerId,
       });
-
-
 
       final response = await _apiClient.post(
         'customer/update-profile-photo',
         data: formData,
       );
 
-      return response.data['success'] == true;
+      final data = response.data;
+      if (kDebugMode) {
+        debugPrint('[ProfileService] updateProfilePhoto response: $data');
+      }
+      if (data is Map) {
+        return data['success'] == true ||
+            data['success'] == 1 ||
+            data['status'] == true ||
+            data['status'] == 'success';
+      }
+      return false;
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ProfileService] updateProfilePhoto error: $e');
+      }
       return false;
     }
   }

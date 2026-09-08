@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:screen_protector/screen_protector.dart';
 import '../config/app_config.dart';
 
 /// Centralized service to manage screenshot and screen recording protection.
@@ -16,23 +15,11 @@ class ScreenshotSecurityService {
 
     if (AppConfig.enableScreenshotProtection) {
       try {
-        await ScreenProtector.preventScreenshotOn();
-        await ScreenProtector.protectDataLeakageWithBlur();
         if (Platform.isAndroid) {
           await _channel.invokeMethod('setScreenshotProtection', {'enabled': true});
         }
       } catch (e) {
         debugPrint('ScreenshotSecurityService: failed to enable screen protection: $e');
-      }
-    } else {
-      try {
-        await ScreenProtector.preventScreenshotOff();
-        await ScreenProtector.protectDataLeakageWithBlurOff();
-        if (Platform.isAndroid) {
-          await _channel.invokeMethod('setScreenshotProtection', {'enabled': false});
-        }
-      } catch (e) {
-        debugPrint('ScreenshotSecurityService: failed to disable screen protection: $e');
       }
     }
   }
@@ -43,8 +30,9 @@ class ScreenshotSecurityService {
     if (!AppConfig.enableScreenshotProtection) return;
 
     try {
-      await ScreenProtector.preventScreenshotOn();
-      await ScreenProtector.protectDataLeakageWithBlur();
+      if (Platform.isAndroid) {
+        await _channel.invokeMethod('setScreenshotProtection', {'enabled': true});
+      }
     } catch (e) {
       debugPrint('ScreenshotSecurityService secureScreen error: $e');
     }
@@ -52,16 +40,8 @@ class ScreenshotSecurityService {
 
   /// Releases the screen blur/protection. Called in sensitive screens' dispose.
   static Future<void> releaseScreen() async {
-    if (kIsWeb) return;
-    if (!AppConfig.enableScreenshotProtection) return;
-
-    try {
-      // Only remove the iOS blur overlay on dispose.
-      // Do NOT call preventScreenshotOff() here as it removes FLAG_SECURE on
-      // Android, making app content visible in the recent-apps switcher.
-      await ScreenProtector.protectDataLeakageWithBlurOff();
-    } catch (e) {
-      debugPrint('ScreenshotSecurityService releaseScreen error: $e');
-    }
+    // Maintained for backward compatibility.
+    // Native FLAG_SECURE on Android and SceneDelegate black privacy overlay on iOS
+    // automatically secure recent apps screen thumbnails.
   }
 }

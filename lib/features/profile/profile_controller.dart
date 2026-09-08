@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/profile_service.dart';
 import '../../core/providers/user_provider.dart';
@@ -335,9 +336,10 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     state = state.copyWith(isPhotoLoading: true, error: null);
 
     try {
+      final customerId = state.user.id.isNotEmpty ? state.user.id : _customerId;
       final success = await _profileService.updateProfilePhoto(
         photo: photo,
-        customerId: state.user.id,
+        customerId: customerId,
       );
       if (!mounted) return success;
 
@@ -351,6 +353,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         throw Exception('Upload failed');
       }
     } catch (e) {
+      if (kDebugMode) debugPrint('[ProfileNotifier] Photo upload error: $e');
       if (!mounted) return false;
       state = state.copyWith(
         isPhotoLoading: false,

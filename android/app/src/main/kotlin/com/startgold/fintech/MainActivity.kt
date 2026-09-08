@@ -45,11 +45,8 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun setScreenshotProtection(enabled: Boolean) {
         runOnUiThread {
-            if (enabled) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-            } else {
-                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-            }
+            // Always keep FLAG_SECURE for banking & fintech app security compliance
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 

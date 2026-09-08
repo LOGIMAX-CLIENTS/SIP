@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'clipboard_security_service.dart';
 import '../providers/market_provider.dart';
@@ -107,6 +106,7 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     if (_isLockScreenShowing) return;
     if (suppressAppLock) {
       SecureLogger.d('APP LOCK: Suppressed (external flow active).');
+      _pausedAt = null;
       return;
     }
 

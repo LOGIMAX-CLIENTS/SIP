@@ -37,7 +37,7 @@ class AppConfig {
   static const String publicKeyEndpoint = 'crypto/public-key';
 
   // Security
-  static bool enableScreenshotProtection = false;
+  static bool enableScreenshotProtection = true;
 
   static const List<String> allowedCertFingerprints = [
     'F3:AB:FB:70:B3:D0:A7:F2:CB:EF:02:8A:2C:C4:95:62:55:D8:FC:35:71:E5:32:0E:7F:04:D7:00:47:10:86:AC', // cert fingerprint (changes on renewal)

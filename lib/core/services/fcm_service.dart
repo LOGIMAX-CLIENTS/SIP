@@ -65,7 +65,18 @@ class FcmService {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     // 2. Request permission (iOS mandatory, Android 13+)
-    await _messaging.requestPermission(
+    final settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+    if (kDebugMode) {
+      debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
+    }
+
+    // 2b. iOS foreground presentation options (displays banner while app is open)
+    await _messaging.setForegroundNotificationPresentationOptions(
       alert: true,
       badge: true,
       sound: true,
@@ -105,9 +116,12 @@ class FcmService {
     // 8. Log device token (debug only — NEVER log in production)
     if (kDebugMode) {
       final token = await getToken();
-      debugPrint('[FCM] ──── Device Token ────');
-      debugPrint('[FCM] ${token?.substring(0, 10)}...'); // partial only
-      debugPrint('[FCM] ─────────────────────');
+      if (token != null) {
+        final preview = token.length > 10 ? token.substring(0, 10) : token;
+        debugPrint('[FCM] ──── Device Token ────');
+        debugPrint('[FCM] $preview...');
+        debugPrint('[FCM] ─────────────────────');
+      }
     }
 
     // 9. Listen for token refresh — re-register with backend automatically
@@ -118,7 +132,38 @@ class FcmService {
 
   /// Returns the FCM device token for this device.
   /// Pass this to NotificationService.registerFcmToken() after login.
-  static Future<String?> getToken() => _messaging.getToken();
+  static Future<String?> getToken() async {
+    try {
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        String? apns = await _messaging.getAPNSToken();
+        if (apns == null) {
+          if (kDebugMode) {
+            debugPrint('[FCM] APNs token not yet available, retrying...');
+          }
+          for (int i = 0; i < 4; i++) {
+            await Future.delayed(const Duration(seconds: 1));
+            apns = await _messaging.getAPNSToken();
+            if (apns != null) break;
+          }
+        }
+        if (kDebugMode) {
+          debugPrint(
+              '[FCM] APNs Token status: ${apns != null ? "RECEIVED" : "NOT RECEIVED (Check APNs certs / physical device)"}');
+        }
+      }
+
+      return await _messaging.getToken().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          debugPrint('⚠️ [FCM] Token fetch timed out (APNs token pending)');
+          return null;
+        },
+      );
+    } catch (e) {
+      debugPrint('⚠️ [FCM] Error getting token: $e');
+      return null;
+    }
+  }
 
   /// Stream that emits whenever the FCM token is rotated by Firebase.
   static Stream<String> get onTokenRefresh => _messaging.onTokenRefresh;

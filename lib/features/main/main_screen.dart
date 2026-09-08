@@ -18,6 +18,7 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../features/auth/controller/auth_controller.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/fcm_service.dart';
 import '../../routes/app_router.dart';
 import '../../core/security/secure_logger.dart';
 import '../kyc/controllers/kyc_controller.dart';
@@ -83,6 +84,13 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       // has a valid token. HomeScreen.initState fires in parallel and
       // may race ahead of rehydration, so this is the authoritative call.
       ref.read(notificationProvider.notifier).refreshUnreadCount();
+
+      // Ensure FCM push notification token is registered with backend
+      FcmService.getToken().then((token) {
+        if (token != null && token.isNotEmpty) {
+          ref.read(notificationServiceProvider).registerFcmToken(token);
+        }
+      });
     });
   }
 
