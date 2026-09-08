@@ -195,8 +195,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     setState(() => _isVerifyingEmail = false);
     if (!success) return;
 
-    final otpReferenceId =
-        ref.read(authControllerProvider).data?['otp_reference_id'] as String?;
+    final otpResponseData = ref.read(authControllerProvider).data;
+    final otpReferenceId = otpResponseData?['otp_reference_id'] as String?;
     if (otpReferenceId == null) return;
 
     final verified = await showEmailOtpSheet(
@@ -204,6 +204,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       email: email,
       otpReferenceId: otpReferenceId,
       firstName: _firstNameController.text.trim(),
+      resendCooldownSeconds: otpResponseData?['resend_cooldown_seconds'] as int?,
     );
 
     if (verified == true && mounted) {

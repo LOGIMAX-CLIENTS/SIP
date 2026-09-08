@@ -567,7 +567,7 @@ class _CountdownOfferNewState extends State<CountdownOfferNew> {
                     ),
                     const TextSpan(
                       text:
-                          ' reward\nfrom Day 1 and enjoy the\nsame benefit every day. Till\nend of the offer.',
+                          ' reward\nfrom Day now and enjoy the\nsame benefit every day. Till\nend of the offer.',
                     ),
                   ],
                 ),

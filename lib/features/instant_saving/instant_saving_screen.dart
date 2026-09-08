@@ -852,7 +852,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Select savings type ──
-            Text('Select Savings Type',
+            Text('Select Purchase Type',
                 style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,

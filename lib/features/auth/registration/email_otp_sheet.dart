@@ -20,6 +20,7 @@ Future<bool?> showEmailOtpSheet(
   required String email,
   required String otpReferenceId,
   String? firstName,
+  int? resendCooldownSeconds,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -29,6 +30,7 @@ Future<bool?> showEmailOtpSheet(
       email: email,
       otpReferenceId: otpReferenceId,
       firstName: firstName,
+      resendCooldownSeconds: resendCooldownSeconds,
     ),
   );
 }
@@ -37,12 +39,22 @@ class EmailOtpSheet extends ConsumerStatefulWidget {
   final String email;
   final String otpReferenceId;
   final String? firstName;
+  // From generate-email-otp's own response (data['resend_cooldown_seconds'])
+  // — the SAME window the backend actually enforces before it'll accept
+  // another resend request. Previously this timer was a second, independent
+  // 30s constant that didn't match the server's real (60s) cooldown, so the
+  // "Resend Code" button unlocked early and every tap in that gap just hit
+  // the "please wait N more seconds" rejection. Falls back to 60 (the
+  // server's own default — see EMAIL_OTP_SECURITY config) only if the
+  // response is ever missing this field.
+  final int? resendCooldownSeconds;
 
   const EmailOtpSheet({
     super.key,
     required this.email,
     required this.otpReferenceId,
     this.firstName,
+    this.resendCooldownSeconds,
   });
 
   @override
@@ -50,21 +62,24 @@ class EmailOtpSheet extends ConsumerStatefulWidget {
 }
 
 class _EmailOtpSheetState extends ConsumerState<EmailOtpSheet> {
+  static const int _fallbackCooldownSeconds = 60; // mirrors the backend's own default
   final TextEditingController _otpController = TextEditingController();
   late String _otpReferenceId;
-  int _timerSeconds = 30;
+  late int _cooldownSeconds;
+  late int _timerSeconds;
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _otpReferenceId = widget.otpReferenceId;
+    _cooldownSeconds = widget.resendCooldownSeconds ?? _fallbackCooldownSeconds;
     _startTimer();
     _otpController.addListener(() => setState(() {}));
   }
 
   void _startTimer() {
-    setState(() => _timerSeconds = 30);
+    setState(() => _timerSeconds = _cooldownSeconds);
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_timerSeconds == 0) {
@@ -98,6 +113,7 @@ class _EmailOtpSheetState extends ConsumerState<EmailOtpSheet> {
     if (success) {
       final data = ref.read(authControllerProvider).data;
       _otpReferenceId = data?['otp_reference_id'] ?? _otpReferenceId;
+      _cooldownSeconds = (data?['resend_cooldown_seconds'] as int?) ?? _fallbackCooldownSeconds;
       _startTimer();
       AppToast.show(context, 'OTP resent successfully!', type: ToastType.success);
     }
