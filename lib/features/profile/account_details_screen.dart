@@ -348,7 +348,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         children: [
           // â”€â”€ Gradient Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           GradientHeader(
-            title: 'Account Details',
+            title: 'Personal Details',
             trailing: TextButton.icon(
               onPressed: () {
                 if (profileState.isEditing) {

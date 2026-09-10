@@ -9,18 +9,23 @@ import '../config/app_config.dart';
 class ScreenshotSecurityService {
   static const _channel = MethodChannel('com.startgold.app/security');
 
-  /// Initializes the screenshot protection state at app launch.
+  /// Initializes/syncs the screenshot protection state — called at app
+  /// launch (with the default AppConfig.enableScreenshotProtection) and
+  /// again whenever AppControlNotifier fetches a new value from the server.
+  /// Always calls through so a server-driven flip to `false` actually
+  /// clears native FLAG_SECURE, not just a flip to `true` that sets it.
   static Future<void> initialize() async {
     if (kIsWeb) return;
 
-    if (AppConfig.enableScreenshotProtection) {
-      try {
-        if (Platform.isAndroid) {
-          await _channel.invokeMethod('setScreenshotProtection', {'enabled': true});
-        }
-      } catch (e) {
-        debugPrint('ScreenshotSecurityService: failed to enable screen protection: $e');
+    try {
+      if (Platform.isAndroid) {
+        await _channel.invokeMethod(
+          'setScreenshotProtection',
+          {'enabled': AppConfig.enableScreenshotProtection},
+        );
       }
+    } catch (e) {
+      debugPrint('ScreenshotSecurityService: failed to set screen protection: $e');
     }
   }
 

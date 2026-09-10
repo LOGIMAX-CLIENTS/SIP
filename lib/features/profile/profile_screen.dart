@@ -156,7 +156,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         'Profile Settings',
                         [
                           _buildMenuItem(
-                            'Account Details',
+                            'Personal Details',
                             'assets/sidemenu/account.svg',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.accountDetails),

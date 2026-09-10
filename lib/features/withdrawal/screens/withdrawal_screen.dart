@@ -705,7 +705,9 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                         Expanded(
                           child: TextField(
                             controller: _amountController,
-                            keyboardType: TextInputType.number,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
                             contextMenuBuilder: SecureClipboard.none,
                             // Locked once a withdrawal is in flight — the
                             // amount typed here is what the Withdrawal
@@ -720,9 +722,10 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                             // value _handleWithdraw checked.
                             enabled: !state.isProcessing,
                             inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              const NoLeadingZerosFormatter(allowDecimal: false),
-                              LengthLimitingTextInputFormatter(8),
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d*\.?\d{0,2}')),
+                              const NoLeadingZerosFormatter(),
+                              LengthLimitingTextInputFormatter(11),
                             ],
                             onChanged: (val) {
                               final doubleValue = val.isEmpty
