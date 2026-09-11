@@ -95,6 +95,26 @@ class AuthService {
     return response.data;
   }
 
+  /// Verifies an OTP against an arbitrary mobile number with NO login/session
+  /// side effects — unlike [verifyOtp], this never saves tokens. For one-off
+  /// mobile-ownership checks (e.g. a nominee's contact number) where the
+  /// number does not belong to the logged-in customer's own account.
+  Future<Map<String, dynamic>> verifyMobileOtpOnly({
+    required String mobile,
+    required String otp,
+    required String otpReferenceId,
+  }) async {
+    final response = await _apiClient.post(
+      'users/auth/verify-mobile-otp',
+      data: {
+        'mobile': mobile,
+        'otp': otp,
+        'otp_reference_id': otpReferenceId,
+      },
+    );
+    return response.data;
+  }
+
   Future<Map<String, dynamic>> sendEmailOtp({
     required String email,
     String? firstName,

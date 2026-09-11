@@ -293,11 +293,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                           color: isDark ? Colors.white30 : Colors.black26,
                         ),
                         SizedBox(width: 4.w),
-                        Text(
-                          notif.createdAt,
-                          style: GoogleFonts.lora(
-                            fontSize: 10.sp,
-                            color: isDark ? Colors.white38 : Colors.black38,
+                        Flexible(
+                          child: Text(
+                            notif.createdAt,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.lora(
+                              fontSize: 10.sp,
+                              color: isDark ? Colors.white38 : Colors.black38,
+                            ),
                           ),
                         ),
                       ],
