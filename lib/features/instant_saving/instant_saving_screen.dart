@@ -1575,7 +1575,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '₹${totalPayable > 0 ? totalPayable.toStringAsFixed(0) : '0'}',
+                          '₹${totalPayable > 0 ? totalPayable.toStringAsFixed(2) : '0'}',
                           style: GoogleFonts.lora(
                             fontSize: 18.sp,
                             fontWeight: FontWeight.w700,
@@ -1964,7 +1964,7 @@ class _BreakdownSheet extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    _row('Total Amount', '₹${totalPayable.toStringAsFixed(0)}',
+                    _row('Total Amount', '₹${totalPayable.toStringAsFixed(2)}',
                         subtitle: 'Incl. GST', isBold: true),
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 10.h),

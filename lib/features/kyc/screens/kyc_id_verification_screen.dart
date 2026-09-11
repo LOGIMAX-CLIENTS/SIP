@@ -323,13 +323,6 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
             maskedValue: panDocValue?.maskedValue,
             nameLabel: 'Name as on PAN',
             verifiedName: panDocValue?.verifiedName,
-            // Edit is possible only because standalone PAN verification now
-            // exists (RULE-KYC-019). Previously PAN had no manual re-entry
-            // path — redoing it meant a full DigiLocker re-consent through
-            // Aadhaar's own Edit — which is why this card shipped without it.
-            // The verified name is prefilled so correcting just the number
-            // doesn't mean retyping the name.
-            onEdit: () => editPan(prefillName: panDocValue?.verifiedName),
           ),
         ],
       );
@@ -441,7 +434,6 @@ class _KycIdVerificationScreenState extends ConsumerState<KycIdVerificationScree
         maskedValue: aadhaarState.maskedNumber ?? docsResult.aadhaarMaskedNumber,
         nameLabel: 'Name as on Aadhaar',
         verifiedName: aadhaarState.verifiedName ?? docsResult.aadhaarName,
-        onEdit: () => editAadhaar(),
         linkedToAadhaar: aadhaarState.aadhaarPanLinked,
       );
     }

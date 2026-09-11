@@ -13,6 +13,7 @@ import '../../shared/widgets/numeric_styled_text.dart';
 
 import '../main/main_screen.dart';
 import '../../routes/app_router.dart';
+import '../../core/providers/app_control_provider.dart';
 import 'referral_service.dart';
 
 class ReferralScreen extends ConsumerStatefulWidget {
@@ -44,9 +45,16 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
     try {
       final reward =
           rewardAmount.startsWith('₹') ? rewardAmount : '₹$rewardAmount';
-      final link = (shareLink != null && shareLink.isNotEmpty)
-          ? shareLink
-          : 'https://startgold.com/download';
+      // Send the platform's app store link (from APP_CONTROL_VERSION config)
+      // instead of the generic referral/download URL, so the friend lands
+      // directly on the correct store listing for their device.
+      final storeUrl =
+          ref.read(appControlProvider).versionInfo?.current.storeUrl;
+      final link = (storeUrl != null && storeUrl.isNotEmpty)
+          ? storeUrl
+          : (shareLink != null && shareLink.isNotEmpty)
+              ? shareLink
+              : 'https://startgold.com/download';
       final text =
           '🌟 Join me on StartGold and earn $reward in free Pure Gold!\n\n'
           'Use my referral code: $code\n\n'

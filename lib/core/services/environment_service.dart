@@ -17,8 +17,7 @@ class EnvironmentService {
   static const String productionWsUrl = 'wss://sgbackoffice.startgold.com/ws/';
 
   static const String vaptBaseUrl = 'https://vaptapi.startgold.com/api/api/v1/';
-  // No dedicated VAPT rates socket — reuses the staging WebSocket endpoint.
-  static const String vaptWsUrl = stagingWsUrl;
+  static const String vaptWsUrl = 'wss://vaptbackoffice.startgold.com/ws/';
 
   static String _currentEnv = envStaging;
   static String _baseUrl = stagingBaseUrl;
