@@ -227,26 +227,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.bankDetails),
                           ),
                           _buildMenuItem(
+                            'Auto Savings',
+                            'assets/sidemenu/autosaving.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.sipOverview),
+                          ),
+                          _buildMenuItem(
                             'Transaction History',
                             'assets/sidemenu/transhistory.svg',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.transactionHistory),
                           ),
-                          // Nominee Details - Commented as requested
-
                           _buildMenuItem(
                             'Nominee Details',
                             'assets/sidemenu/nominee.svg',
                             onTap: () =>
                                 Navigator.pushNamed(context, AppRouter.nominee),
-                          ),
-
-                          // Auto Savings — commented: accessible via other nav paths
-                          _buildMenuItem(
-                            'Auto Savings',
-                            'assets/sidemenu/autosaving.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.sipOverview),
                           ),
                           // SIP Transactions — commented: accessible from Auto Savings Quick Actions
                           // _buildMenuItem(
@@ -307,12 +303,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         isDark),
                     SizedBox(height: 16.h),
                     _buildSection(
-                        'Account',
+                        'Security',
                         [
+                          _buildMenuItem(
+                            'Change MPIN',
+                            'assets/sidemenu/mpin.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.changeMpin),
+                          ),
+
                           // Biometrics Auth
                           if (_biometricAvailable)
                             _buildMenuItem(
-                              'Biometric Authentication',
+                              'Unlock using Biometric',
                               'assets/sidemenu/lock.svg',
                               onTap: () =>
                                   _onBiometricToggle(!_biometricEnabled),
@@ -322,16 +325,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 activeColor: const Color(0xFF0E5723),
                               ),
                             ),
-
-                          // Change MPIN
-
-                          _buildMenuItem(
-                            'Change MPIN',
-                            'assets/sidemenu/mpin.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.changeMpin),
-                          ),
-
+                        ],
+                        isDark),
+                    SizedBox(height: 16.h),
+                    _buildSection(
+                        'Account',
+                        [
                           _buildMenuItem(
                             'Logout',
                             'assets/sidemenu/logout.svg',

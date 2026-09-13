@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../shared/widgets/gradient_header.dart';
 import '../../shared/theme/app_theme.dart';
+import '../main/main_screen.dart';
 import 'jewellery_service.dart';
 
 // ── Provider ────────────────────────────────────────────────────────────
@@ -43,7 +44,16 @@ class JewelleryScreen extends ConsumerWidget {
             ],
           ),
           child: ElevatedButton.icon(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              // Jewellery is pushed as its own route on top of MainScreen,
+              // not a tab inside its IndexedStack (see
+              // MainScreen._onTabTapped) — switching selectedTabProvider
+              // alone would leave this screen on top, still covering Home.
+              // Set the tab index first, then pop, so MainScreen is showing
+              // Home the moment this route is gone.
+              ref.read(selectedTabProvider.notifier).state = 0;
+              Navigator.of(context).pop();
+            },
             icon: Icon(Icons.home_rounded, size: 20.sp),
             label: Text(
               'Back to Home',
@@ -70,7 +80,16 @@ class JewelleryScreen extends ConsumerWidget {
         child: Column(
           children: [
             // ── Header ──
-            GradientHeader(title: 'Jewellery'),
+            // Jewellery is always pushed on top of MainScreen (see
+            // MainScreen._onTabTapped), so there is always a previous
+            // screen to return to — explicit pop instead of relying on
+            // GradientHeader's default NavigationUtils.safePop(), whose
+            // canPop()-false fallback routes to Login/MPIN and is meant
+            // for screens that might be a navigation root, not this one.
+            GradientHeader(
+              title: 'Jewellery',
+              onBack: () => Navigator.of(context).pop(),
+            ),
 
             // ── Body ──
             Expanded(
