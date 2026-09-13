@@ -128,7 +128,7 @@ class ApiFailureMapper {
           );
         }
         return ServerFailure(
-          message: serverMessage ?? 'Server error code: $status',
+          message: serverMessage ?? 'Something went wrong. Please try again.',
           statusCode: status,
         );
       

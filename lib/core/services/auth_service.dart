@@ -349,13 +349,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
             }
           } else {
             errorMessage = respData['message'] ??
-                'Server unreachable [${e.response?.statusCode ?? 'No Connection'}]';
+                'Unable to reach the server. Please try again.';
           }
         } else {
-          errorMessage = 'Server unreachable [No Data]';
+          errorMessage = 'Unable to reach the server. Please try again.';
         }
       } else {
-        errorMessage = 'Internal Error: ${e.toString()}';
+        errorMessage = 'Something went wrong. Please try again.';
       }
       state = state.copyWith(isLoading: false, error: errorMessage);
       return false;
@@ -417,7 +417,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             }
           } else {
             errorMessage = respData['message'] ??
-                'Verification error [${e.response?.statusCode ?? 'No Connection'}]';
+                'Verification failed. Please try again.';
           }
         }
       }
@@ -471,10 +471,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
             }
           } else {
             errorMessage = respData['message'] ??
-                'Server unreachable [${e.response?.statusCode ?? 'No Connection'}]';
+                'Unable to reach the server. Please try again.';
           }
         } else {
-          errorMessage = 'Server unreachable [No Data]';
+          errorMessage = 'Unable to reach the server. Please try again.';
         }
       }
       state = state.copyWith(isLoading: false, error: errorMessage);
@@ -531,7 +531,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             }
           } else {
             errorMessage = respData['message'] ??
-                'Verification error [${e.response?.statusCode ?? 'No Connection'}]';
+                'Verification failed. Please try again.';
           }
         }
       }

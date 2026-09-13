@@ -144,7 +144,7 @@ class _TransactionHistoryScreenState
 
     Widget body;
     if (historyState.error != null && !hasData) {
-      body = Center(child: Text('Error: ${historyState.error}'));
+      body = Center(child: Text(historyState.error!));
     } else if (historyState.isLoading && !hasData) {
       body = const Center(child: CircularProgressIndicator());
     } else {

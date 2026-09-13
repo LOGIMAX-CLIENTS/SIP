@@ -115,7 +115,11 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
         page: 1,
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      state = state.copyWith(
+        isLoading: false,
+        error: msg.isNotEmpty ? msg : 'Failed to load transaction history. Please try again.',
+      );
     }
   }
 

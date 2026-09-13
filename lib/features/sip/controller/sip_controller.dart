@@ -303,7 +303,11 @@ class SipHistoryNotifier extends StateNotifier<SipHistoryPageState> {
         page: 1,
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      state = state.copyWith(
+        isLoading: false,
+        error: msg.isNotEmpty ? msg : 'Failed to load transactions. Please try again.',
+      );
     }
   }
 
