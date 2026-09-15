@@ -90,4 +90,26 @@ class HistoryService {
     }
     throw Exception('Failed to load transaction details');
   }
+
+  /// Turns a row's [invoiceNumber] into a downloadable PDF URL. The list
+  /// only ever carries the invoice_number (a plain column read); generating
+  /// the actual PDF is expensive (rebuilt + re-uploaded on every call), so
+  /// it only ever happens here, on demand, for the one row being opened.
+  Future<String> getInvoiceUrl({required String invoiceNumber}) async {
+    final response = await _apiClient.post('transactions/invoice/download/', data: {
+      'invoice_number': invoiceNumber,
+    });
+
+    if (response.data != null) {
+      if (response.data['success'] == false) {
+        final errorMsg = response.data['error']?['message'] ?? response.data['error']?['internal_message'] ?? 'Invoice not available';
+        throw Exception(errorMsg);
+      }
+      final url = response.data['data']?['url']?.toString();
+      if (url != null && url.isNotEmpty) {
+        return url;
+      }
+    }
+    throw Exception('Invoice not available');
+  }
 }

@@ -55,6 +55,7 @@ class TransactionItem {
   final String status;
   final String metalName;
   final String date; // Keep date key for grouping if needed
+  final String invoiceNumber;
 
   TransactionItem({
     required this.transactionId,
@@ -68,6 +69,7 @@ class TransactionItem {
     required this.status,
     required this.metalName,
     required this.date,
+    this.invoiceNumber = '',
   });
 
   factory TransactionItem.fromJson(Map<String, dynamic> json,
@@ -84,6 +86,7 @@ class TransactionItem {
       status: json['status'] ?? '',
       metalName: json['metal_name'] ?? 'Gold 24K',
       date: dateKey,
+      invoiceNumber: json['invoice_number']?.toString() ?? '',
     );
   }
 }
