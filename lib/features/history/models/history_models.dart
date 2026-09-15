@@ -188,14 +188,20 @@ class PriceBreakdown {
   final String quantity;
   final String rate;
   final String value;
-  final String gst;
+  final String cgstPercent;
+  final String cgst;
+  final String sgstPercent;
+  final String sgst;
   final String totalAmount;
 
   PriceBreakdown({
     required this.quantity,
     required this.rate,
     required this.value,
-    required this.gst,
+    required this.cgstPercent,
+    required this.cgst,
+    required this.sgstPercent,
+    required this.sgst,
     required this.totalAmount,
   });
 
@@ -205,13 +211,19 @@ class PriceBreakdown {
     final qtyNum = double.tryParse(qtyRaw.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0.0;
     final rate = json['rate']?.toString() ?? json['gold_rate']?.toString() ?? '0';
     final val = json['value']?.toString() ?? json['gold_value']?.toString() ?? '0';
-    final gst = json['gst']?.toString() ?? '0.00';
+    final cgstPercent = json['cgst_percent']?.toString() ?? '0.00';
+    final cgst = json['cgst_value']?.toString() ?? '0.00';
+    final sgstPercent = json['sgst_percent']?.toString() ?? '0.00';
+    final sgst = json['sgst_value']?.toString() ?? '0.00';
     final total = json['total_amount']?.toString() ?? '0';
     return PriceBreakdown(
       quantity: '${qtyNum.toStringAsFixed(6)} gm',
       rate: '₹$rate',
       value: '₹$val',
-      gst: '₹$gst',
+      cgstPercent: cgstPercent,
+      cgst: '₹$cgst',
+      sgstPercent: sgstPercent,
+      sgst: '₹$sgst',
       totalAmount: '₹$total',
     );
   }

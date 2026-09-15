@@ -1428,12 +1428,31 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     );
   }
 
+  /// Splits a combined GST amount into CGST/SGST using the config's own
+  /// cgst:sgst rate ratio (not necessarily an even half — mirrors the
+  /// backend's TaxSplitService). SGST is the residual (total - CGST) so the
+  /// two always sum back to exactly the total shown, the same guarantee the
+  /// backend's split makes on the invoice.
+  static Map<String, double> _splitGstAmount(
+      double totalGst, double cgstRate, double sgstRate) {
+    final double sumRate = cgstRate + sgstRate;
+    final double cgstRatio = sumRate > 0 ? cgstRate / sumRate : 0.5;
+    final double cgstAmount =
+        double.parse((totalGst * cgstRatio).toStringAsFixed(2));
+    final double sgstAmount =
+        double.parse((totalGst - cgstAmount).toStringAsFixed(2));
+    return {'cgst': cgstAmount, 'sgst': sgstAmount};
+  }
+
   // ── Breakdown helpers (used in bottom sheet) ────────────────────
   Map<String, double> _computeBreakdown(AsyncValue<dynamic> market,
       CommodityType type, AsyncValue<SavingConfig> configAsync) {
     final config = configAsync.valueOrNull;
     if (config == null || !market.hasValue) {
-      return {'total': 0, 'metalValue': 0, 'gst': 0, 'grams': 0, 'gstRate': 3};
+      return {
+        'total': 0, 'metalValue': 0, 'gst': 0, 'grams': 0, 'gstRate': 3,
+        'cgstRate': 1.5, 'sgstRate': 1.5, 'cgst': 0, 'sgst': 0,
+      };
     }
     final inputVal = double.tryParse(_selectedAmount) ?? 0.0;
     final double gstRate = config.gst / 100;
@@ -1455,12 +1474,17 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       // exact to the paisa, so sum them directly instead of re-flooring.
       totalPayable = metalValue + gstAmount;
     }
+    final gstSplit = _splitGstAmount(gstAmount, config.cgst, config.sgst);
     return {
       'total': totalPayable,
       'metalValue': metalValue,
       'gst': gstAmount,
       'grams': grams,
       'gstRate': config.gst,
+      'cgstRate': config.cgst,
+      'sgstRate': config.sgst,
+      'cgst': gstSplit['cgst']!,
+      'sgst': gstSplit['sgst']!,
     };
   }
 
@@ -1479,6 +1503,10 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         gstAmount: b['gst']!,
         grams: b['grams']!,
         gstRate: b['gstRate']!,
+        cgstRate: b['cgstRate']!,
+        sgstRate: b['sgstRate']!,
+        cgstAmount: b['cgst']!,
+        sgstAmount: b['sgst']!,
         metalLabel: metalLabel,
         isInvalid: b['total']! <= 0 ||
             b['total']! < (configAsync.valueOrNull?.minAmount ?? 0) ||
@@ -1890,6 +1918,10 @@ class _BreakdownSheet extends StatelessWidget {
   final double gstAmount;
   final double grams;
   final double gstRate;
+  final double cgstRate;
+  final double sgstRate;
+  final double cgstAmount;
+  final double sgstAmount;
   final String metalLabel;
   final bool isInvalid;
   final bool isProcessing;
@@ -1901,6 +1933,10 @@ class _BreakdownSheet extends StatelessWidget {
     required this.gstAmount,
     required this.grams,
     required this.gstRate,
+    required this.cgstRate,
+    required this.sgstRate,
+    required this.cgstAmount,
+    required this.sgstAmount,
     required this.metalLabel,
     required this.isInvalid,
     required this.isProcessing,
@@ -1973,8 +2009,11 @@ class _BreakdownSheet extends StatelessWidget {
                     ),
                     _row(metalLabel, '₹${metalValue.toStringAsFixed(2)}'),
                     SizedBox(height: 12.h),
-                    _row('GST (${gstRate.toStringAsFixed(0)}%)',
-                        '₹${gstAmount.toStringAsFixed(2)}'),
+                    _row('CGST', '₹${cgstAmount.toStringAsFixed(2)}',
+                        percentText: '(${cgstRate.toStringAsFixed(2)}%)'),
+                    SizedBox(height: 8.h),
+                    _row('SGST', '₹${sgstAmount.toStringAsFixed(2)}',
+                        percentText: '(${sgstRate.toStringAsFixed(2)}%)'),
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 10.h),
                       child: Divider(
@@ -2031,8 +2070,11 @@ class _BreakdownSheet extends StatelessWidget {
     );
   }
 
+  /// [percentText] (e.g. "(1.50%)") renders in the same font as [value] —
+  /// Playfair Display's stylized digits look mismatched next to Lora's
+  /// plain numerals when a rate is embedded in the label itself.
   Widget _row(String label, String value,
-      {String? subtitle, bool isBold = false}) {
+      {String? subtitle, bool isBold = false, String? percentText}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2040,12 +2082,27 @@ class _BreakdownSheet extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: isBold ? 16.sp : 14.sp,
-                  fontWeight: isBold ? FontWeight.w700 : FontWeight.w600,
-                  color: Colors.black,
-                )),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(label,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: isBold ? 16.sp : 14.sp,
+                      fontWeight: isBold ? FontWeight.w700 : FontWeight.w600,
+                      color: Colors.black,
+                    )),
+                if (percentText != null) ...[
+                  SizedBox(width: 4.w),
+                  Text(percentText,
+                      style: GoogleFonts.lora(
+                        fontSize: isBold ? 16.sp : 14.sp,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black54,
+                      )),
+                ],
+              ],
+            ),
             if (subtitle != null)
               Text(subtitle,
                   style: GoogleFonts.playfairDisplay(
