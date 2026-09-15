@@ -2,6 +2,10 @@ class SavingConfig {
   final double minAmount;
   final double maxAmount;
   final double gst;
+  /// Half of [gst] each, per the Taxes table's actual CGST/SGST rates
+  /// (not necessarily an exact even split — see backend TaxSplitService).
+  final double cgst;
+  final double sgst;
   final String type; // inclusive / exclusive
   final int sellRateLockSeconds;
   final int buyRateLockSeconds;
@@ -11,6 +15,8 @@ class SavingConfig {
     required this.minAmount,
     required this.maxAmount,
     required this.gst,
+    this.cgst = 0,
+    this.sgst = 0,
     required this.type,
     required this.sellRateLockSeconds,
     required this.buyRateLockSeconds,
@@ -29,6 +35,8 @@ class SavingConfig {
       minAmount: (json['min_amount'] ?? 0).toDouble(),
       maxAmount: (json['max_amount'] ?? 0).toDouble(),
       gst: double.tryParse(json['gst']?.toString() ?? '0') ?? 0.0,
+      cgst: double.tryParse(json['cgst']?.toString() ?? '0') ?? 0.0,
+      sgst: double.tryParse(json['sgst']?.toString() ?? '0') ?? 0.0,
       type: json['type'] ?? '',
       sellRateLockSeconds: json['sell_rate_lock_seconds'] ?? 0,
       buyRateLockSeconds: json['buy_rate_lock_seconds'] ?? 0,

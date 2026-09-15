@@ -748,8 +748,12 @@ class _TransactionDetailsScreenState
                 textColor, mutedTextColor),
             _buildDetailRow('$baseMetal Value', details.priceBreakdown.value,
                 textColor, mutedTextColor),
-            _buildDetailRow(
-                'GST', details.priceBreakdown.gst, textColor, mutedTextColor),
+            _buildDetailRow('CGST', details.priceBreakdown.cgst, textColor,
+                mutedTextColor,
+                percentText: '(${details.priceBreakdown.cgstPercent}%)'),
+            _buildDetailRow('SGST', details.priceBreakdown.sgst, textColor,
+                mutedTextColor,
+                percentText: '(${details.priceBreakdown.sgstPercent}%)'),
             Divider(color: borderColor, height: 16.h),
             _buildDetailRow(
                 isReferral ? 'Reward Amount' : 'Amount',
@@ -790,9 +794,13 @@ class _TransactionDetailsScreenState
     );
   }
 
+  /// [percentText] (e.g. "(1.50%)") renders in Lora, same as [value] —
+  /// Playfair/AppTextStyles' stylized digits look mismatched next to Lora's
+  /// plain numerals when a rate is embedded in the label itself.
   Widget _buildDetailRow(
       String label, String value, Color textColor, Color mutedTextColor,
-      {bool isBold = false, bool showCopy = false, bool isNumericValue = true}) {
+      {bool isBold = false, bool showCopy = false, bool isNumericValue = true,
+      String? percentText}) {
     // Hide row when server returns empty / placeholder data
     if (value.isEmpty || value == 'N/A' || value == 'null') {
       return const SizedBox.shrink();
@@ -803,16 +811,31 @@ class _TransactionDetailsScreenState
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: isBold
-                ? GoogleFonts.playfairDisplay(
-                    fontSize: 13.sp,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  )
-                : AppTextStyles.bodySmall(isDark)
-                    .copyWith(color: mutedTextColor),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                label,
+                style: isBold
+                    ? GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      )
+                    : AppTextStyles.bodySmall(isDark)
+                        .copyWith(color: mutedTextColor),
+              ),
+              if (percentText != null) ...[
+                SizedBox(width: 4.w),
+                Text(percentText,
+                    style: GoogleFonts.lora(
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                      color: mutedTextColor,
+                    )),
+              ],
+            ],
           ),
           Row(
             children: [
