@@ -11,6 +11,8 @@ class UserProfile {
   final String lastName;
   final String email;
   final bool isEmailVerified;
+  final bool isNameVerified;
+  final bool isDobVerified;
   final String phone;
   final String dob;
   final String pincode;
@@ -33,6 +35,8 @@ class UserProfile {
     this.lastName = '',
     this.email = '',
     this.isEmailVerified = false,
+    this.isNameVerified = false,
+    this.isDobVerified = false,
     required this.phone,
     required this.dob,
     required this.pincode,
@@ -55,6 +59,8 @@ class UserProfile {
     String? lastName,
     String? email,
     bool? isEmailVerified,
+    bool? isNameVerified,
+    bool? isDobVerified,
     String? phone,
     String? dob,
     String? pincode,
@@ -77,6 +83,8 @@ class UserProfile {
       lastName: lastName ?? this.lastName,
       email: email ?? this.email,
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,
+      isNameVerified: isNameVerified ?? this.isNameVerified,
+      isDobVerified: isDobVerified ?? this.isDobVerified,
       phone: phone ?? this.phone,
       dob: dob ?? this.dob,
       pincode: pincode ?? this.pincode,
@@ -183,6 +191,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
             lastName: data['last_name'] ?? '',
             email: data['email'] ?? '',
             isEmailVerified: data['email_verified'] == true,
+            isNameVerified: data['name_verified'] == true,
+            isDobVerified: data['dob_verified'] == true,
             phone: data['mobile'] ?? data['phone'] ?? '',
             dob: data['dob'] ?? '',
             pincode: data['pincode'] ?? '',
