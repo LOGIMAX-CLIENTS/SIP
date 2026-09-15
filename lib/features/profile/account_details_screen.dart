@@ -406,11 +406,11 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                           ),
                         ),
                         SizedBox(height: 32.h),
-                        _buildInputField(label: 'First Name as per PAN *', controller: _firstNameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)]),
-                        _buildInputField(label: 'Last Name as per PAN (Optional)', controller: _lastNameController, isEditable: profileState.isEditing, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)]),
+                        _buildInputField(label: 'First Name as per PAN *', controller: _firstNameController, isEditable: profileState.isEditing && !user.isNameVerified, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)], labelAction: user.isNameVerified ? _buildLockedBadge(isDark) : null),
+                        _buildInputField(label: 'Last Name as per PAN (Optional)', controller: _lastNameController, isEditable: profileState.isEditing && !user.isNameVerified, isDark: isDark, textCapitalization: TextCapitalization.words, inputFormatters: [UpperCaseWordsFormatter(), LengthLimitingTextInputFormatter(30)]),
                         _buildInputField(label: 'Phone Number *', hint: MaskingUtils.maskMobile(user.phone), isEditable: false, isDark: isDark, isNumeric: true),
-                        _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, actionWidget: _buildEmailVerifyBadge(user, isDark)),
-                        _buildInputField(label: 'DOB *', controller: _dobController, isEditable: profileState.isEditing, isDark: isDark, isNumeric: true, keyboardType: TextInputType.number, inputFormatters: [DobInputFormatter()], errorText: _dobError, onChanged: (_) { if (_dobError != null) setState(() => _dobError = null); }, actionIcon: Icons.calendar_today_rounded, onAction: profileState.isEditing ? _selectDob : null),
+                        _buildInputField(label: 'E-Mail *', controller: _emailController, isEditable: profileState.isEditing && !user.isEmailVerified, isDark: isDark, keyboardType: TextInputType.emailAddress, errorText: _emailError, onChanged: (_) { if (_emailError != null) setState(() => _emailError = null); }, actionWidget: _buildEmailVerifyBadge(user, isDark)),
+                        _buildInputField(label: 'DOB *', controller: _dobController, isEditable: profileState.isEditing && !user.isDobVerified, isDark: isDark, isNumeric: true, keyboardType: TextInputType.number, inputFormatters: [DobInputFormatter()], errorText: _dobError, onChanged: (_) { if (_dobError != null) setState(() => _dobError = null); }, actionIcon: Icons.calendar_today_rounded, onAction: (profileState.isEditing && !user.isDobVerified) ? _selectDob : null, labelAction: user.isDobVerified ? _buildLockedBadge(isDark) : null),
                         _buildInputField(label: 'Pincode *', controller: _pincodeController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)], actionLabel: 'Check', onAction: _handlePincodeCheck, isActionLoading: _isPincodeChecking, isNumeric: true),
                         if (_stateController.text.isNotEmpty)
                           _buildInputField(label: 'State', controller: _stateController, isEditable: false, isDark: isDark),
@@ -547,6 +547,21 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
             ? SizedBox(height: 14.h, width: 14.h, child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent))
             : Text('Verify', style: GoogleFonts.playfairDisplay(fontSize: 13.sp, fontWeight: FontWeight.w600, color: Colors.orangeAccent, decoration: TextDecoration.underline)),
       ),
+    );
+  }
+
+  /// Shown beside the label of a KYC-verified field (Name, DOB) that the
+  /// backend now refuses to change — see IdentityService.update_full_profile's
+  /// name/DOB locks. Read-only, unlike _buildEmailVerifyBadge which still
+  /// offers a re-verify action for an unverified address.
+  Widget _buildLockedBadge(bool isDark) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.lock_rounded, size: 12.sp, color: const Color(0xFF1B882C)),
+        SizedBox(width: 4.w),
+        Text('Verified', style: GoogleFonts.playfairDisplay(fontSize: 13.sp, fontWeight: FontWeight.w600, color: const Color(0xFF1B882C))),
+      ],
     );
   }
 
