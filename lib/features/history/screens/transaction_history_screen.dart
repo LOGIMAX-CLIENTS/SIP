@@ -624,7 +624,7 @@ class _TransactionHistoryScreenState
                 ),
               )
             : Icon(
-                Icons.receipt_long_rounded,
+                Icons.print_rounded,
                 size: 20.sp,
                 color: isDark ? Colors.white54 : _green,
               ),
@@ -752,10 +752,14 @@ class _TransactionHistoryScreenState
                 ],
               ),
             ),
-            // Right: amount + weight
+            // Right: invoice icon (if any) + amount + weight
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                if (tx.invoiceNumber.isNotEmpty) ...[
+                  _buildInvoiceDownloadButton(context, tx, isDark),
+                  SizedBox(height: 2.h),
+                ],
                 Text(
                   '₹${tx.amount.toStringAsFixed(2)}',
                   style: GoogleFonts.lora(
@@ -775,10 +779,6 @@ class _TransactionHistoryScreenState
                 ),
               ],
             ),
-            if (tx.invoiceNumber.isNotEmpty) ...[
-              SizedBox(width: 4.w),
-              _buildInvoiceDownloadButton(context, tx, isDark),
-            ],
           ],
         ),
       ),
