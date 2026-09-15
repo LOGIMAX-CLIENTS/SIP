@@ -12,6 +12,8 @@ import '../models/history_models.dart';
 import '../models/transaction_filter.dart';
 import '../models/history_filter_options_model.dart';
 import '../../../shared/widgets/gradient_header.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../invoice/invoice_service.dart';
 import './transaction_filter_sheet.dart';
 
 class TransactionHistoryScreen extends ConsumerStatefulWidget {
@@ -33,6 +35,12 @@ class _TransactionHistoryScreenState
 
   // ── Lazy-load scroll trigger ────────────────────────────────────────
   late final ScrollController _scrollController;
+
+  // Transaction ids currently fetching/opening their invoice — drives the
+  // per-row spinner without a full-screen loading overlay (the same request
+  // pattern the transaction/SIP details screens use for their Invoice
+  // button, just keyed per-row here since many rows can each have one).
+  final Set<String> _downloadingInvoiceIds = {};
 
   @override
   void initState() {
@@ -565,6 +573,65 @@ class _TransactionHistoryScreenState
     );
   }
 
+  /// Fetches the PDF for [tx]'s invoice_number and opens it in the same
+  /// preview screen (InvoiceViewerScreen) the transaction/SIP details
+  /// screens use — download/share happens from there via its own toolbar
+  /// icon, not from this row directly.
+  Future<void> _downloadInvoice(BuildContext context, TransactionItem tx) async {
+    setState(() => _downloadingInvoiceIds.add(tx.transactionId));
+    try {
+      final url = await ref
+          .read(historyServiceProvider)
+          .getInvoiceUrl(invoiceNumber: tx.invoiceNumber);
+      final file = await InvoiceService.downloadInvoice(url);
+      if (context.mounted) {
+        Navigator.pushNamed(
+          context,
+          AppRouter.invoiceViewer,
+          arguments: {'file_path': file.path, 'title': 'Invoice'},
+        );
+      }
+    } on InvoiceException catch (e) {
+      if (context.mounted) {
+        AppToast.show(context, e.message, type: ToastType.error);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        AppToast.show(context, 'Could not open invoice', type: ToastType.error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingInvoiceIds.remove(tx.transactionId));
+      }
+    }
+  }
+
+  Widget _buildInvoiceDownloadButton(
+      BuildContext context, TransactionItem tx, bool isDark) {
+    final isDownloading = _downloadingInvoiceIds.contains(tx.transactionId);
+    return GestureDetector(
+      onTap: isDownloading ? null : () => _downloadInvoice(context, tx),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: EdgeInsets.all(6.w),
+        child: isDownloading
+            ? SizedBox(
+                height: 18.h,
+                width: 18.h,
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(_green),
+                ),
+              )
+            : Icon(
+                Icons.receipt_long_rounded,
+                size: 20.sp,
+                color: isDark ? Colors.white54 : _green,
+              ),
+      ),
+    );
+  }
+
   // ── Transaction card ──────────────────────────────────────────────
   Widget _buildTransactionCard(BuildContext context, TransactionItem tx,
       List<FilterOption> statusOptions, bool isDark) {
@@ -708,6 +775,10 @@ class _TransactionHistoryScreenState
                 ),
               ],
             ),
+            if (tx.invoiceNumber.isNotEmpty) ...[
+              SizedBox(width: 4.w),
+              _buildInvoiceDownloadButton(context, tx, isDark),
+            ],
           ],
         ),
       ),
