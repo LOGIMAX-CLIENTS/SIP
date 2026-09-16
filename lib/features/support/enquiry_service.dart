@@ -45,6 +45,9 @@ class Enquiry {
   final String type;
   final String subject;
   final String content;
+  /// Admin's reply/resolution note (sr_comments on the backend) — empty
+  /// until an admin actually responds, never null.
+  final String comments;
   final String status;
   final String createdAt;
   final String lastUpdate;
@@ -54,6 +57,7 @@ class Enquiry {
     this.type = '',
     required this.subject,
     this.content = '',
+    this.comments = '',
     required this.status,
     required this.createdAt,
     this.lastUpdate = '',
@@ -66,6 +70,7 @@ class Enquiry {
         type: json['type'] ?? '',
         subject: json['subject'] ?? '',
         content: json['content'] ?? '',
+        comments: json['comments'] ?? '',
         status: json['status'] ?? 'pending',
         // "on" is the date field from create-ticket response
         createdAt: json['on'] ?? json['created_at'] ?? '',
