@@ -60,17 +60,34 @@ class EnquiryListScreen extends ConsumerWidget {
           // ── Gradient Header ─────────────────────────────────────────────
           GradientHeader(
             title: 'My Enquiries',
-            trailing: IconButton(
-              onPressed: () => Navigator.pushNamed(context, AppRouter.enquiryForm)
-                  .then((_) => ref.refresh(enquiriesProvider)),
-              icon: Container(
-                padding: EdgeInsets.all(8.w),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10.r),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: () => ref.refresh(enquiriesProvider),
+                  icon: Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                    child: Icon(Icons.refresh_rounded, color: Colors.white, size: 20.sp),
+                  ),
                 ),
-                child: Icon(Icons.add_comment_outlined, color: Colors.white, size: 20.sp),
-              ),
+                SizedBox(width: 4.w),
+                IconButton(
+                  onPressed: () => Navigator.pushNamed(context, AppRouter.enquiryForm)
+                      .then((_) => ref.refresh(enquiriesProvider)),
+                  icon: Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                    child: Icon(Icons.add_comment_outlined, color: Colors.white, size: 20.sp),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -276,6 +293,51 @@ class EnquiryListScreen extends ConsumerWidget {
                   ),
                 ),
               ],
+            ),
+          ],
+
+          // ── Admin response (sr_comments) ────────────────────────────
+          // Empty until an admin actually replies — see PM-STG-0526, the
+          // list API previously never sent this field to the app at all.
+          if (enquiry.comments.isNotEmpty) ...[
+            SizedBox(height: 12.h),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(12.w),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGreen.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12.r),
+                border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.support_agent_rounded,
+                          size: 14.sp, color: AppTheme.primaryGreen),
+                      SizedBox(width: 6.w),
+                      Text(
+                        'Response from support',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primaryGreen,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 6.h),
+                  Text(
+                    enquiry.comments,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 13.sp,
+                      color: isDark ? Colors.white70 : const Color(0xFF333333),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
 
