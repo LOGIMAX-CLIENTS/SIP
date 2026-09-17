@@ -6,16 +6,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:intl/intl.dart';
-import '../../core/services/biometric_service.dart';
 import '../../routes/app_router.dart';
-import '../../core/security/secure_storage_service.dart';
 import '../../core/utils/masking_utils.dart';
 import '../kyc/utils/kyc_step_status.dart';
 import '../auth/controller/auth_controller.dart';
 import '../main/main_screen.dart';
 import 'profile_controller.dart' as pc;
-import '../../shared/widgets/loaders.dart';
-import '../../shared/widgets/app_toast.dart';
 
 // ── App version provider ───────────────────────────────────────────────────
 final appVersionProvider = FutureProvider<String>((ref) async {
@@ -31,82 +27,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  bool _biometricEnabled = false;
-  bool _biometricAvailable = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadBiometricState();
-  }
-
-  Future<void> _loadBiometricState() async {
-    // deviceHasBiometric() uses getAvailableBiometrics() internally.
-    // canUseBiometric() also auto-disables storage if device biometrics
-    // were removed since last launch.
-    final hasDevice = await BiometricService.deviceHasBiometric();
-    final canUse = hasDevice && await BiometricService.canUseBiometric();
-    if (mounted) {
-      setState(() {
-        _biometricAvailable = hasDevice;
-        _biometricEnabled = canUse;
-      });
-    }
-  }
-
-  Future<void> _onBiometricToggle(bool newValue) async {
-    if (newValue) {
-      // ── Guard 1: confirm device has enrolled biometrics ──────────────
-      final check = await BiometricService.checkBeforeEnable();
-      if (check == BiometricCheckResult.noneEnrolled) {
-        if (mounted) {
-          AppToast.show(
-            context,
-            'No biometric found in device. Please enroll a fingerprint or face in your phone settings.',
-            type: ToastType.error,
-          );
-        }
-        return; // Keep toggle OFF
-      }
-      if (check == BiometricCheckResult.notSupported) {
-        if (mounted) {
-          AppToast.show(
-            context,
-            'Biometric authentication is not supported on this device.',
-            type: ToastType.error,
-          );
-        }
-        return;
-      }
-
-      // ── Guard 2: verify identity with existing MPIN ───────────────────
-      final verified = await Navigator.pushNamed(
-        context,
-        AppRouter.mpin,
-        arguments: {'type': 'verify_only'},
-      );
-      if (verified != true) return; // MPIN not verified — abort
-
-      // ── Guard 3: final biometric prompt to confirm enrollment ─────────
-      final enrolled = await BiometricService.authenticate(
-        reason: 'Confirm biometrics to enable this feature',
-      );
-      if (!enrolled) return; // User cancelled — abort
-    }
-
-    // Persist the new state
-    await SecureStorageService.setBiometricEnabled(newValue);
-    if (newValue) await SecureStorageService.setMpinEnabled(true);
-    if (mounted) setState(() => _biometricEnabled = newValue);
-
-    final msg = newValue
-        ? 'Biometric authentication enabled'
-        : 'Biometric authentication disabled';
-    if (mounted)
-      AppToast.show(context, msg,
-          type: newValue ? ToastType.success : ToastType.info);
-  }
-
   /// Formats ISO 8601 login timestamp to Indian format.
   /// e.g., "2026-06-13T10:04:09.000000Z" → "13/06/2026, 3:34 PM"
   String _formatLoginDate(String isoDate) {
@@ -311,20 +231,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.changeMpin),
                           ),
-
-                          // Biometrics Auth
-                          if (_biometricAvailable)
-                            _buildMenuItem(
-                              'Unlock using Biometric',
-                              'assets/sidemenu/lock.svg',
-                              onTap: () =>
-                                  _onBiometricToggle(!_biometricEnabled),
-                              trailing: Switch(
-                                value: _biometricEnabled,
-                                onChanged: _onBiometricToggle,
-                                activeColor: const Color(0xFF0E5723),
-                              ),
-                            ),
+                          _buildMenuItem(
+                            'MPIN & Biometric Timing',
+                            'assets/sidemenu/lock.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.mpinLockTiming),
+                          ),
                         ],
                         isDark),
                     SizedBox(height: 16.h),

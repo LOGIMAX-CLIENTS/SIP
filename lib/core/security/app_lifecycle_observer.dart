@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'clipboard_security_service.dart';
+import '../config/app_config.dart';
 import '../providers/market_provider.dart';
 import '../security/session_manager.dart';
 import '../security/secure_storage_service.dart';
@@ -14,7 +15,9 @@ import '../../routes/app_router.dart';
 ///
 /// App Lock triggers when:
 ///   - MPIN is enabled
-///   - App was in background (not just a brief app-switch)
+///   - App was in background for at least the configured lock-timeout
+///     (Profile > Security > "MPIN & Biometric Timing", server default via
+///     APP_CONTROL_MPIN_LOCK) — not just any brief app-switch
 ///   - User is authenticated
 ///   - No payment gateway / external flow is active
 class AppLifecycleObserver extends WidgetsBindingObserver {
@@ -43,6 +46,7 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
   bool _cachedIsAuth = false;
   bool _cachedMpinEnabled = false;
   bool _cachedBiometricEnabled = false;
+  int _cachedLockTimeoutSeconds = AppConfig.mpinLockDefaultTimeoutSeconds;
 
   // ── Lifecycle Handling ────────────────────────────────────────────────────
   @override
@@ -79,7 +83,10 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     try {
       _cachedIsAuth = await SessionManager.isAuthenticated();
       _cachedMpinEnabled = await SecureStorageService.isMpinEnabled();
-      _cachedBiometricEnabled = await BiometricService.canUseBiometric();
+      _cachedBiometricEnabled =
+          AppConfig.biometricLoginEnabled && await BiometricService.canUseBiometric();
+      _cachedLockTimeoutSeconds =
+          await SecureStorageService.getMpinLockTimeoutSeconds();
     } catch (_) {
       // If caching fails, the defaults (false) will prevent lock from
       // triggering — safe fallback.
@@ -98,9 +105,10 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
   ///   1. User is authenticated (cached)
   ///   2. MPIN is enabled (cached)
   ///   3. App was actually in the background
-  ///   4. No lock screen is already showing
-  ///   5. App lock is not suppressed (e.g. during payment flows)
-  ///   6. Session is not force-invalidated (409 dialog takes priority)
+  ///   4. Background duration met/exceeded the configured lock-timeout (cached)
+  ///   5. No lock screen is already showing
+  ///   6. App lock is not suppressed (e.g. during payment flows)
+  ///   7. Session is not force-invalidated (409 dialog takes priority)
   void _checkAppLockOnResume() {
     // ── Guard: already showing or suppressed ──
     if (_isLockScreenShowing) return;
@@ -123,13 +131,25 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     if (_pausedAt == null) return;
 
     final elapsed = DateTime.now().difference(_pausedAt!);
+    _pausedAt = null; // reset so we don't re-trigger
+
+    // ── Guard: background duration below the configured timeout ──
+    // Configurable via Profile > Security > "MPIN & Biometric Timing"
+    // (server default: APP_CONTROL_MPIN_LOCK.default_timeout_seconds).
+    // Without this, ANY brief backgrounding — an image picker, a share
+    // sheet, a system dialog — re-triggered the lock screen, which read to
+    // users as "it asks for PIN on every screen".
+    if (elapsed.inSeconds < _cachedLockTimeoutSeconds) {
+      SecureLogger.d(
+          'APP LOCK: Backgrounded for ${elapsed.inSeconds}s < ${_cachedLockTimeoutSeconds}s threshold — skipping.');
+      return;
+    }
 
     SecureLogger.d(
         'APP LOCK: App was backgrounded for ${elapsed.inSeconds}s → triggering lock.');
 
     // ── Show lock screen ──
     _isLockScreenShowing = true;
-    _pausedAt = null; // reset so we don't re-trigger
 
     final nav = navigatorKey.currentState;
     if (nav == null || !nav.mounted) {

@@ -95,6 +95,25 @@ class ProfileService {
     }
   }
 
+  /// Persists the customer's chosen app-lock idle timeout server-side
+  /// (Profile > Security > "MPIN & Biometric Timing") so it syncs across
+  /// their devices. Returns false on any failure — caller keeps the local
+  /// cache as the fallback in that case.
+  Future<bool> setMpinLockTimeout(int timeoutSeconds) async {
+    try {
+      final response = await _apiClient.post(
+        'profile/mpin-lock-timing',
+        data: {'timeout_seconds': timeoutSeconds},
+      );
+      return response.data?['success'] == true;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ProfileService] setMpinLockTimeout error: $e');
+      }
+      return false;
+    }
+  }
+
   Future<bool> updateProfilePhoto({
     required File photo,
     required String customerId,

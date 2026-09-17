@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/profile_service.dart';
 import '../../core/providers/user_provider.dart';
+import '../../core/security/secure_storage_service.dart';
 
 class UserProfile {
   final String id;
@@ -183,6 +184,18 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       // notifier throws, so bail out instead.
       if (!mounted) return;
       if (data != null) {
+        // ── Sync server-side MPIN lock timing preference ──────────────────
+        // cus_mpin_lock_timeout_seconds syncs across the customer's devices
+        // (Profile > Security > "MPIN & Biometric Timing"); null means the
+        // customer never set one, so the local cache keeps whatever it has
+        // (server default) rather than being overwritten with null.
+        final serverTimeout = data['mpin_lock_timeout_seconds'];
+        if (serverTimeout != null) {
+          final parsed = int.tryParse(serverTimeout.toString());
+          if (parsed != null) {
+            SecureStorageService.setMpinLockTimeoutSeconds(parsed);
+          }
+        }
         state = state.copyWith(
           user: UserProfile(
             id: _customerId,
