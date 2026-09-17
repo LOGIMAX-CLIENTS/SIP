@@ -43,6 +43,22 @@ class SecureStorageService {
         key: AppConfig.keyIsBiometricEnabled, value: enabled.toString());
   }
 
+  /// App-lock idle timeout — how long the app must have been backgrounded
+  /// before the MPIN/biometric lock screen shows on resume (see
+  /// AppLifecycleObserver). Falls back to the server-provided default
+  /// (AppConfig.mpinLockDefaultTimeoutSeconds) until the customer picks one
+  /// on Profile > Security > "MPIN & Biometric Timing".
+  static Future<int> getMpinLockTimeoutSeconds() async {
+    final value =
+        await _storage.read(key: AppConfig.keyMpinLockTimeoutSeconds);
+    return int.tryParse(value ?? '') ?? AppConfig.mpinLockDefaultTimeoutSeconds;
+  }
+
+  static Future<void> setMpinLockTimeoutSeconds(int seconds) async {
+    await _storage.write(
+        key: AppConfig.keyMpinLockTimeoutSeconds, value: seconds.toString());
+  }
+
   static Future<bool> getOnboardingSeen() async {
     final value = await _storage.read(key: AppConfig.keyHasSeenOnboarding);
     return value == 'true';

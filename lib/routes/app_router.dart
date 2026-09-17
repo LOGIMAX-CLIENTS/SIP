@@ -45,6 +45,7 @@ import '../features/support/screens/enquiry_list_screen.dart';
 import '../features/main/main_screen.dart';
 import '../core/services/content_service.dart';
 import '../features/mpin/change_mpin_screen.dart';
+import '../features/profile/screens/mpin_lock_timing_screen.dart';
 import '../features/maintenance/maintenance_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/notifications/notifications_screen.dart';
@@ -111,6 +112,7 @@ class AppRouter {
   static const String transactionHistory = '/transaction-history';
   static const String transactionDetails = '/transaction-details';
   static const String changeMpin = '/change-mpin';
+  static const String mpinLockTiming = '/mpin-lock-timing';
   static const String maintenance = '/maintenance';
   static const String notifications = '/notifications';
   static const String deleteAccount = '/delete-account';
@@ -151,6 +153,7 @@ class AppRouter {
         },
         mpin: (context) => const MpinScreen(),
         changeMpin: (context) => const ChangeMpinScreen(),
+        mpinLockTiming: (context) => const MpinLockTimingScreen(),
         kycVerification: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??

@@ -157,6 +157,41 @@ class MaintenanceInfo {
   );
 }
 
+/// MPIN lock idle-timeout options + biometric server kill-switch — backs
+/// Profile > Security > "MPIN & Biometric Timing".
+class MpinLockConfig {
+  final List<int> sessionTimeoutOptionsSeconds;
+  final int defaultTimeoutSeconds;
+  final bool biometricLoginEnabled;
+
+  const MpinLockConfig({
+    required this.sessionTimeoutOptionsSeconds,
+    required this.defaultTimeoutSeconds,
+    required this.biometricLoginEnabled,
+  });
+
+  factory MpinLockConfig.fromJson(Map<String, dynamic> json) {
+    final rawOptions = json['session_timeout_options_seconds'];
+    return MpinLockConfig(
+      sessionTimeoutOptionsSeconds: rawOptions is List
+          ? rawOptions.map((e) => int.tryParse(e.toString()) ?? 0).where((e) => e >= 0).toList()
+          : defaults.sessionTimeoutOptionsSeconds,
+      defaultTimeoutSeconds:
+          int.tryParse(json['default_timeout_seconds']?.toString() ?? '') ??
+              defaults.defaultTimeoutSeconds,
+      biometricLoginEnabled: json['biometric_login_enabled'] is bool
+          ? json['biometric_login_enabled']
+          : defaults.biometricLoginEnabled,
+    );
+  }
+
+  static const MpinLockConfig defaults = MpinLockConfig(
+    sessionTimeoutOptionsSeconds: [30, 60, 300, 900, 1800],
+    defaultTimeoutSeconds: 60,
+    biometricLoginEnabled: true,
+  );
+}
+
 /// Combined response from GET /app/control
 class AppControlData {
   final AppVersionInfo? versionInfo;
@@ -165,6 +200,7 @@ class AppControlData {
   final String responsePlatform; // platform field from API response
   final bool dynamicSwitching;
   final int? dynamicSwitchingPassword;
+  final MpinLockConfig mpinLock;
 
   const AppControlData({
     this.versionInfo,
@@ -173,6 +209,7 @@ class AppControlData {
     this.responsePlatform = '',
     this.dynamicSwitching = false,
     this.dynamicSwitchingPassword,
+    this.mpinLock = MpinLockConfig.defaults,
   });
 
   /// Whether the response platform matches the running device platform.
@@ -203,9 +240,13 @@ class AppControlData {
               : MaintenanceInfo.off,
       responsePlatform: (data['platform'] as String?) ?? '',
       dynamicSwitching: data['dynamic_switching'] == true,
-      dynamicSwitchingPassword: data['dynamic_switching_password'] != null 
-          ? int.tryParse(data['dynamic_switching_password'].toString()) 
+      dynamicSwitchingPassword: data['dynamic_switching_password'] != null
+          ? int.tryParse(data['dynamic_switching_password'].toString())
           : null,
+      mpinLock: data['mpin_lock'] is Map
+          ? MpinLockConfig.fromJson(
+              Map<String, dynamic>.from(data['mpin_lock'] as Map))
+          : MpinLockConfig.defaults,
     );
   }
 }
