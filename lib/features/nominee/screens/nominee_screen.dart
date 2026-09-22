@@ -14,12 +14,13 @@ import '../../../shared/utils/upper_case_words_formatter.dart';
 import '../../../shared/utils/address_input_formatter.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/security/secure_logger.dart';
+import '../../../core/error/failures.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/services/auth_service.dart';
 import '../../profile/profile_controller.dart' as pc;
 import '../controller/nominee_controller.dart';
 import '../models/nominee_model.dart';
-import '../widgets/nominee_mobile_otp_sheet.dart';
+import '../widgets/nominee_otp_sheet.dart';
 
 /// Nominee Details screen.
 ///
@@ -84,6 +85,20 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     return mobile.length == 10 && mobile == _verifiedMobile;
   }
 
+  bool _isEmailVerifying = false;
+
+  // The e-mail (lower-cased) confirmed via OTP — or the one already on file
+  // for an existing nominee. Typing away from it invalidates the
+  // verification. Empty = nothing verified.
+  String _verifiedEmail = '';
+
+  /// Email ID is mandatory and must be OTP-verified before the nominee can
+  /// be saved.
+  bool get _isEmailConfirmed {
+    final email = _emailCtrl.text.trim().toLowerCase();
+    return email.isNotEmpty && email == _verifiedEmail;
+  }
+
   // Location IDs from pincode check or existing data
   int? _idCity;
   int? _idState;
@@ -128,6 +143,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _mobileCtrl.text = nominee.mobile;
     _verifiedMobile = nominee.mobile.trim();
     _emailCtrl.text = nominee.email ?? '';
+    _verifiedEmail = (nominee.email ?? '').trim().toLowerCase();
     _idNumberCtrl.text = nominee.idNumber ?? '';
     _addressCtrl.text = nominee.address ?? '';
     _cityCtrl.text = nominee.city ?? '';
@@ -157,6 +173,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _mobileCtrl.clear();
     _verifiedMobile = '';
     _emailCtrl.clear();
+    _verifiedEmail = '';
     _idNumberCtrl.clear();
     _addressCtrl.clear();
     _cityCtrl.clear();
@@ -524,13 +541,16 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
 
               _buildTextField(
                 controller: _emailCtrl,
-                label: 'Email ID',
-                hint: 'Enter email (optional)',
+                label: 'Email ID *',
+                hint: 'Enter email address',
                 icon: Icons.email_rounded,
                 keyboardType: TextInputType.emailAddress,
-                isOptional: true,
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? null : Validators.validateEmail(v),
+                inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
+                validator: Validators.validateEmail,
+                onChanged: (_) => setState(() {}),
+                actionLabel: _isEmailConfirmed ? 'Verified' : 'Verify',
+                onAction: _isEmailConfirmed ? null : _handleEmailVerify,
+                isActionLoading: _isEmailVerifying,
               ),
 
               SizedBox(height: 20.h),
@@ -604,8 +624,10 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
               // taps it while still disabled — so the button is never a
               // silent dead end.
               Builder(builder: (context) {
-                final canSubmit =
-                    !_isSaving && _isMobileConfirmed && _isPincodeConfirmed;
+                final canSubmit = !_isSaving &&
+                    _isMobileConfirmed &&
+                    _isEmailConfirmed &&
+                    _isPincodeConfirmed;
                 return Stack(
                   children: [
                     CustomButton(
@@ -1126,14 +1148,16 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
       return;
     }
 
-    // Email is optional — only enforce format when the customer typed one.
     final email = _emailCtrl.text.trim();
-    if (email.isNotEmpty) {
-      final emailError = Validators.validateEmail(email);
-      if (emailError != null) {
-        AppToast.show(context, emailError, type: ToastType.error);
-        return;
-      }
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+    if (!_isEmailConfirmed) {
+      AppToast.show(context, 'Please verify the email ID via OTP',
+          type: ToastType.error);
+      return;
     }
 
     // Pincode is optional, but if the customer started typing one it must be
@@ -1161,8 +1185,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
         relationshipId: _selectedRelationshipId,
         dob: DateFormat('yyyy-MM-dd').format(_selectedDob!),
         mobile: _mobileCtrl.text.trim(),
-        email:
-            _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+        email: email,
         idType: _selectedIdType,
         idNumber: _idNumberCtrl.text.trim().isNotEmpty
             ? _idNumberCtrl.text.trim()
@@ -1289,6 +1312,11 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
           type: ToastType.error);
       return;
     }
+    if (!_isEmailConfirmed) {
+      AppToast.show(context, 'Please verify the email ID via OTP',
+          type: ToastType.error);
+      return;
+    }
     if (!_isPincodeConfirmed) {
       AppToast.show(context, 'Please tap Check to verify the pincode',
           type: ToastType.error);
@@ -1347,13 +1375,78 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
       }
     } catch (e) {
       SecureLogger.e('NOMINEE: Mobile OTP send failed: $e');
-      if (mounted) {
-        AppToast.show(context, 'Failed to send OTP. Please try again.',
-            type: ToastType.error);
-      }
+      _showOtpSendFailure(e);
     } finally {
       if (mounted) setState(() => _isMobileVerifying = false);
     }
+  }
+
+  // ─── Email OTP verification ─────────────────────────────────────────────
+  Future<void> _handleEmailVerify() async {
+    final email = _emailCtrl.text.trim();
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+
+    setState(() => _isEmailVerifying = true);
+    try {
+      final name = _nameCtrl.text.trim();
+      final sendResult = await AuthService().sendEmailOtp(
+        email: email,
+        firstName: name.isNotEmpty ? name : null,
+      );
+
+      if (!mounted) return;
+      if (sendResult['success'] != true) {
+        AppToast.show(
+          context,
+          _extractOtpErrorMessage(sendResult, 'Failed to send OTP. Please try again.'),
+          type: ToastType.error,
+        );
+        return;
+      }
+
+      final otpReferenceId = sendResult['data']?['otp_reference_id'];
+      if (otpReferenceId == null) {
+        AppToast.show(context, 'Failed to send OTP. Please try again.',
+            type: ToastType.error);
+        return;
+      }
+
+      final verified = await showNomineeEmailOtpSheet(
+        context,
+        email: email,
+        otpReferenceId: otpReferenceId,
+        nomineeName: name.isNotEmpty ? name : null,
+        resendCooldownSeconds:
+            sendResult['data']?['resend_cooldown_seconds'] as int?,
+      );
+
+      if (verified == true && mounted) {
+        setState(() => _verifiedEmail = email.toLowerCase());
+        AppToast.show(context, 'Email ID verified', type: ToastType.success);
+      }
+    } catch (e) {
+      SecureLogger.e('NOMINEE: Email OTP send failed: $e');
+      _showOtpSendFailure(e);
+    } finally {
+      if (mounted) setState(() => _isEmailVerifying = false);
+    }
+  }
+
+  /// Non-2xx OTP send responses arrive as a thrown [Failure] carrying the
+  /// server's own reason (e.g. e-mail already registered, resend cooldown) —
+  /// show that rather than a generic message. A 409 is left alone: the
+  /// interceptor already runs the force-logout dialog for it.
+  void _showOtpSendFailure(Object error) {
+    if (!mounted || error is SessionInvalidatedFailure) return;
+    AppToast.show(
+      context,
+      error is Failure ? error.message : 'Failed to send OTP. Please try again.',
+      type: ToastType.error,
+    );
   }
 
   String _extractOtpErrorMessage(Map<String, dynamic> response, String fallback) {

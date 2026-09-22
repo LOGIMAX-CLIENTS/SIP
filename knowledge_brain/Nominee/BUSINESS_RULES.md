@@ -13,6 +13,8 @@ There is no separate "create" vs "update" API — `POST users/nominee/update` is
 `NomineeDetails.isValid` requires non-empty `name`, `relationship`, `dob`, and `mobile`. This gate
 drives whether the screen shows the read-only detail view (valid) or the form (invalid/absent) —
 email, ID proof, and address are NEVER required for a nominee to be considered "added."
+Note: the FORM requires e-mail (RULE-NOMINEE-010), but `isValid` deliberately does not — adding it
+would make legacy nominees saved without an e-mail render as "no nominee" (empty form).
 - Code: `lib/features/nominee/models/nominee_model.dart:86-87`.
 
 ### RULE-NOMINEE-003: Only the `mobile` field is field-level encrypted, despite the endpoint being flagged sensitive
@@ -38,10 +40,11 @@ redundant double-fallback, not a bug, but worth simplifying.
   `lib/features/nominee/screens/nominee_screen.dart:761-765`.
 
 ### RULE-NOMINEE-005: Pincode validity gates form submission
-If a pincode is entered and the pincode check fails (`_isPincodeValid = false`), the Save/Update
-button is disabled regardless of whether all other required fields are valid. Pincode itself is
-optional (empty pincode never triggers a check, so `_isPincodeValid` stays at its default `true`).
-- Code: `lib/features/nominee/screens/nominee_screen.dart:577` (`onPressed` gate), `:1210-1239` (`_handlePincodeCheck`).
+Pincode is optional, but once typed it must be 6 digits AND confirmed via "Check"
+(`_isPincodeConfirmed`: empty → true; else must equal `_verifiedPincode`). Until then Save/Update is
+disabled. An existing nominee's on-file pincode is the confirmed baseline.
+- Code: `lib/features/nominee/screens/nominee_screen.dart` — `_isPincodeConfirmed`, `canSubmit` gate in
+  `_buildFormView`, `_handlePincodeCheck`.
 
 ### RULE-NOMINEE-006: ID proof type/number are modeled and submitted, but not user-editable
 `NomineeDetails.idType` and `.idNumber` are populated from server data on load, included in the
@@ -68,3 +71,28 @@ Nominee's pincode-to-location lookup delegates to `profile/profile_controller.da
 direct import of another feature's controller, which `AGENTS.md` §1 calls out to avoid without
 recording an exception. Recorded as a known exception in `CROSS_MODULE_MAP.md`.
 - Code: `lib/features/nominee/screens/nominee_screen.dart:16,1216`.
+
+### RULE-NOMINEE-009: Nominee mobile number is mandatory and must be OTP-verified
+The Mobile Number field's "Verify" action sends an SMS OTP (`users/auth/generate-otp`,
+`type: NOMINEE_MOBILE`; resend uses `RESEND`) and verifies it via `users/auth/verify-mobile-otp`
+(no login/token side effects). Save/Update is disabled until `_isMobileConfirmed` (10 digits and
+equal to `_verifiedMobile`). Resend cooldown is a fixed 30s client-side (mirrors `OtpScreen`).
+Client-side gate only — the backend's `nominee/update` does not check verification.
+- Code: `nominee_screen.dart` — `_isMobileConfirmed`, `_handleMobileVerify`;
+  `widgets/nominee_otp_sheet.dart` — `showNomineeMobileOtpSheet`.
+
+### RULE-NOMINEE-010: Nominee e-mail is mandatory and must be OTP-verified
+Added 2026-09-21. The Email ID field (label "Email ID *") has a "Verify" action that sends an e-mail
+OTP via `users/auth/generate-email-otp` (nominee's name passed as `first_name` for the greeting) and
+verifies via `users/auth/verify-email-otp` — the same endpoints registration and Account Details
+use. Save/Update is disabled until `_isEmailConfirmed` (trimmed, lower-cased value equals
+`_verifiedEmail`). Resend cooldown comes from the send response's `resend_cooldown_seconds` (backend
+`EMAIL_OTP_SECURITY` config; client fallback 60s). Server-side rules that surface as send/save errors:
+- `generate-email-otp` rejects an address registered to a DIFFERENT customer ("This Email ID is
+  already registered…").
+- `nominee/update` rejects an address registered to ANY customer (including the caller) or used by
+  another nominee.
+Client-side gate only — `nominee/update` still treats `email` as optional and does not check that it
+was verified.
+- Code: `nominee_screen.dart` — `_isEmailConfirmed`, `_handleEmailVerify`, `_handleSubmit`,
+  `_showSaveBlockedReason`; `widgets/nominee_otp_sheet.dart` — `showNomineeEmailOtpSheet`.

@@ -57,5 +57,18 @@ Alphabetical by class.
 | `_buildErrorState()` | `nominee_screen.dart:1152` | Error card + Retry (invalidates `nomineeDetailsProvider`) |
 | `_formatDisplayDate(String)` | `nominee_screen.dart:1190` | DOB display formatting via `_parseDob` |
 | `_parseDob(String)` | `nominee_screen.dart:1200` | Parses `dd-MM-yyyy` (server) first, falls back to `yyyy-MM-dd` |
-| `_handlePincodeCheck()` | `nominee_screen.dart:1210` | Calls **`profile` module's** `pc.profileProvider.notifier.checkPincode(pincode)` — cross-feature call, see `CROSS_MODULE_MAP.md` |
+| `_isMobileConfirmed` / `_isEmailConfirmed` / `_isPincodeConfirmed` (getters) | `nominee_screen.dart:83` / `:97` / `:68` | Save gates — value must equal the OTP-verified / Check-confirmed value (see RULE-NOMINEE-005/009/010) |
+| `_showSaveBlockedReason()` | `nominee_screen.dart:1309` | Toasts the first unmet gate when the disabled Save button is tapped |
+| `_handleMobileVerify()` | `nominee_screen.dart:1328` | Sends nominee SMS OTP (`AuthService.sendOtp`, `type: NOMINEE_MOBILE`) → `showNomineeMobileOtpSheet` → sets `_verifiedMobile` |
+| `_handleEmailVerify()` | `nominee_screen.dart:1385` | Sends nominee e-mail OTP (`AuthService.sendEmailOtp`) → `showNomineeEmailOtpSheet` → sets `_verifiedEmail` |
+| `_showOtpSendFailure(Object)` | `nominee_screen.dart:1443` | Toasts a thrown `Failure`'s server message (silent on 409 `SessionInvalidatedFailure`) |
+| `_handlePincodeCheck()` | `nominee_screen.dart:1462` | Calls **`profile` module's** `pc.profileProvider.notifier.checkPincode(pincode)` — cross-feature call, see `CROSS_MODULE_MAP.md` |
 | `_buildReadOnlyField(...)` | `nominee_screen.dart:1242` | Read-only State/City display, auto-filled post pincode-check |
+
+## OTP sheet — `lib/features/nominee/widgets/nominee_otp_sheet.dart`
+
+| Symbol | File:Line | Purpose | Callers |
+|---|---|---|---|
+| `showNomineeMobileOtpSheet(...)` | `nominee_otp_sheet.dart:22` | Opens `NomineeOtpSheet` wired to `AuthService.sendOtp(type: RESEND)` / `verifyMobileOtpOnly`, 30s resend cooldown | `_handleMobileVerify` |
+| `showNomineeEmailOtpSheet(...)` | `nominee_otp_sheet.dart:60` | Opens `NomineeOtpSheet` wired to `AuthService.sendEmailOtp` / `verifyEmailOtp`, server-provided cooldown (fallback 60s) | `_handleEmailVerify` |
+| `NomineeOtpSheet` | `nominee_otp_sheet.dart:100` | Channel-agnostic 6-digit OTP sheet; `onResend` / `onVerify` callbacks return raw API maps; pops `true` on verify success; picks up a new `otp_reference_id` / `resend_cooldown_seconds` on resend | — |
