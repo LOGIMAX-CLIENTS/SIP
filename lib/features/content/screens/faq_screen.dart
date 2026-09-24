@@ -56,15 +56,6 @@ class _FaqScreenState extends ConsumerState<FaqScreen> {
   // ─────────────────────────────────────────────────────────────────────────
 
   @override
-  void initState() {
-    super.initState();
-    // Invalidate on every screen entry so the FAQ API is called fresh each time.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.invalidate(faqsProvider);
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final faqsAsync = ref.watch(faqsProvider);

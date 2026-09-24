@@ -150,27 +150,34 @@ final onboardingContentProvider =
   return service.getOnboardingContent();
 });
 
-final termsProvider = FutureProvider<Map<String, dynamic>>((ref) {
+// CMS-backed pages are autoDispose so every screen visit re-fetches from the
+// API — admin edits must show up without an app restart.
+final termsProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
   return ref.watch(contentServiceProvider).getTermsAndConditions();
 });
 
-final privacyPolicyProvider = FutureProvider<Map<String, dynamic>>((ref) {
+final privacyPolicyProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
   return ref.watch(contentServiceProvider).getPrivacyPolicy();
 });
 
-final faqsProvider = FutureProvider<List<dynamic>>((ref) {
+final faqsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
   return ref.watch(contentServiceProvider).getFAQs();
 });
 
-final aboutUsProvider = FutureProvider<Map<String, dynamic>>((ref) {
+final aboutUsProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
   return ref.watch(contentServiceProvider).getAboutUs();
 });
 
-final contactUsProvider = FutureProvider<Map<String, dynamic>>((ref) {
+final contactUsProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
   return ref.watch(contentServiceProvider).getContactUs();
 });
 
-final refundPolicyProvider = FutureProvider<Map<String, dynamic>>((ref) {
+final refundPolicyProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
   return ref.watch(contentServiceProvider).getRefundPolicy();
 });
 
