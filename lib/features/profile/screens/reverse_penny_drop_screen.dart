@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, MethodChannel, MissingPluginException, PlatformException;
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,8 +16,10 @@ import '../services/reverse_penny_drop_service.dart';
 
 const _accentGreen = Color(0xFF1B882C);
 
-final reversePennyDropServiceProvider =
-    Provider((ref) => ReversePennyDropService());
+/// Shared native channel (see MainActivity.kt) — used for the UPI chooser.
+const _nativeChannel = MethodChannel('com.startgold.app/security');
+
+final reversePennyDropServiceProvider = Provider((ref) => ReversePennyDropService());
 
 class _UpiAppOption {
   final String id;
@@ -23,6 +27,10 @@ class _UpiAppOption {
   final String badgeText;
   final Color brandColor;
   final Uri launchUri;
+  // Android only — the exact app/activity to open, plus its launcher icon.
+  final String? packageName;
+  final String? activityName;
+  final Uint8List? iconBytes;
 
   const _UpiAppOption({
     required this.id,
@@ -30,6 +38,9 @@ class _UpiAppOption {
     required this.badgeText,
     required this.brandColor,
     required this.launchUri,
+    this.packageName,
+    this.activityName,
+    this.iconBytes,
   });
 }
 
@@ -94,8 +105,7 @@ class ReversePennyDropScreen extends ConsumerStatefulWidget {
   const ReversePennyDropScreen({super.key, required this.cbankId});
 
   @override
-  ConsumerState<ReversePennyDropScreen> createState() =>
-      _ReversePennyDropScreenState();
+  ConsumerState<ReversePennyDropScreen> createState() => _ReversePennyDropScreenState();
 }
 
 class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen> {
@@ -164,9 +174,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     try {
       if (_paymentLink == null || _clientId == null) {
         debugPrint('[RPD API] Calling initiate for cbank_id: ${widget.cbankId}');
-        final result = await ref
-            .read(reversePennyDropServiceProvider)
-            .initiate(cbankId: widget.cbankId);
+        final result = await ref.read(reversePennyDropServiceProvider).initiate(cbankId: widget.cbankId);
         if (!mounted) return;
 
         _clientId = result['client_id']?.toString();
@@ -237,13 +245,13 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       if (!mounted) return false;
 
       if (installedApps.isNotEmpty) {
-        final selectedUri = await _showUpiAppPickerSheet(
+        final selected = await _showUpiAppPickerSheet(
           context: context,
           apps: installedApps,
           genericUpiLink: genericUpiLink,
         );
-        if (selectedUri != null) {
-          return launchUrl(selectedUri, mode: LaunchMode.externalApplication);
+        if (selected != null) {
+          return launchUrl(selected.launchUri, mode: LaunchMode.externalApplication);
         }
         return false;
       }
@@ -256,24 +264,72 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
 
       // If generic cannot be launched, show picker sheet with Copy UPI VPA option
       if (mounted) {
-        final selectedUri = await _showUpiAppPickerSheet(
+        final selected = await _showUpiAppPickerSheet(
           context: context,
           apps: const [],
           genericUpiLink: genericUpiLink,
         );
-        if (selectedUri != null) {
-          return launchUrl(selectedUri, mode: LaunchMode.externalApplication);
+        if (selected != null) {
+          return launchUrl(selected.launchUri, mode: LaunchMode.externalApplication);
         }
       }
       return false;
     }
 
-    // Android resolves generic "upi://" scheme against installed apps via system chooser
-    final genericUri = Uri.parse(genericUpiLink);
-    if (await canLaunchUrl(genericUri)) {
-      return launchUrl(genericUri, mode: LaunchMode.externalApplication);
+    // Android: show our own picker of installed UPI apps and open the chosen
+    // one explicitly. The system "Open with" sheet can't be trusted — on MIUI
+    // (POCO F1) it's hijacked by GetApps' chooser, which closes instantly.
+    final androidApps = await _detectAndroidUpiApps(genericUpiLink);
+    if (!mounted) return false;
+    final selected = await _showUpiAppPickerSheet(
+      context: context,
+      apps: androidApps,
+      genericUpiLink: genericUpiLink,
+    );
+    if (selected == null) return false;
+    try {
+      final opened = await _nativeChannel.invokeMethod<bool>('launchUpiApp', {
+        'url': genericUpiLink,
+        'packageName': selected.packageName,
+        'activityName': selected.activityName,
+      });
+      if (opened == true) return true;
+    } on PlatformException catch (e) {
+      debugPrint('[RPD] launchUpiApp failed: $e');
+    } on MissingPluginException catch (_) {}
+    if (mounted) {
+      AppToast.show(context, 'Could not open ${selected.displayName}. Please try another UPI app.',
+          type: ToastType.error);
     }
     return false;
+  }
+
+  Future<List<_UpiAppOption>> _detectAndroidUpiApps(String genericUpiLink) async {
+    final launchUri = Uri.parse(genericUpiLink);
+    try {
+      final raw = await _nativeChannel.invokeListMethod<Map<dynamic, dynamic>>(
+        'getUpiApps',
+        {'url': genericUpiLink},
+      );
+      final apps = (raw ?? const []).map((app) {
+        final label = app['label']?.toString() ?? 'UPI App';
+        return _UpiAppOption(
+          id: app['packageName'].toString(),
+          displayName: label,
+          badgeText: label.length > 4 ? label.substring(0, 4).toUpperCase() : label.toUpperCase(),
+          brandColor: _accentGreen,
+          launchUri: launchUri,
+          packageName: app['packageName']?.toString(),
+          activityName: app['activityName']?.toString(),
+          iconBytes: app['icon'] as Uint8List?,
+        );
+      }).toList();
+      debugPrint('[RPD APPS] Android UPI apps: ${apps.map((a) => a.packageName).toList()}');
+      return apps;
+    } on PlatformException catch (e) {
+      debugPrint('[RPD APPS] getUpiApps failed: $e');
+    } on MissingPluginException catch (_) {}
+    return const [];
   }
 
   Future<List<_UpiAppOption>> _detectInstalledUpiApps({
@@ -305,8 +361,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
           );
 
       // Check if API provided a direct deep link for this app in ios_links
-      final apiRawLink = iosLinks?[key]?.toString() ??
-          iosLinks?[meta.name.toLowerCase()]?.toString();
+      final apiRawLink = iosLinks?[key]?.toString() ?? iosLinks?[meta.name.toLowerCase()]?.toString();
 
       final List<Uri> testUris = [];
 
@@ -370,7 +425,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     return detectedApps;
   }
 
-  Future<Uri?> _showUpiAppPickerSheet({
+  Future<_UpiAppOption?> _showUpiAppPickerSheet({
     required BuildContext context,
     required List<_UpiAppOption> apps,
     required String genericUpiLink,
@@ -378,7 +433,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     final parsed = Uri.tryParse(genericUpiLink);
     final upiId = parsed?.queryParameters['pa'] ?? '';
 
-    return showModalBottomSheet<Uri>(
+    return showModalBottomSheet<_UpiAppOption>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -464,83 +519,101 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                     ),
                   )
                 else
-                  ...apps.map((app) {
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: 10.h),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(14.r),
-                        onTap: () => Navigator.pop(sheetContext, app.launchUri),
-                        child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF8F9FA),
-                            borderRadius: BorderRadius.circular(14.r),
-                            border: Border.all(
-                              color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 44.w,
-                                height: 44.w,
-                                decoration: BoxDecoration(
-                                  color: app.brandColor,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: app.brandColor.withValues(alpha: 0.3),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 2),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: apps.map((app) {
+                          return Padding(
+                            padding: EdgeInsets.only(bottom: 10.h),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14.r),
+                                onTap: () => Navigator.pop(sheetContext, app),
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF8F9FA),
+                                    borderRadius: BorderRadius.circular(14.r),
+                                    border: Border.all(
+                                      color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06),
                                     ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    app.badgeText,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: app.badgeText.length > 4 ? 10.sp : 13.sp,
-                                      letterSpacing: 0.2,
-                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      if (app.iconBytes != null)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(10.r),
+                                          child: Image.memory(
+                                            app.iconBytes!,
+                                            width: 44.w,
+                                            height: 44.w,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        )
+                                      else
+                                        Container(
+                                          width: 44.w,
+                                          height: 44.w,
+                                          decoration: BoxDecoration(
+                                            color: app.brandColor,
+                                            shape: BoxShape.circle,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: app.brandColor.withValues(alpha: 0.3),
+                                                blurRadius: 6,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              app.badgeText,
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: app.badgeText.length > 4 ? 10.sp : 13.sp,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      SizedBox(width: 14.w),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              app.displayName,
+                                              style: TextStyle(
+                                                fontSize: 15.sp,
+                                                fontWeight: FontWeight.w600,
+                                                color: textColor,
+                                              ),
+                                            ),
+                                            SizedBox(height: 2.h),
+                                            Text(
+                                              Platform.isIOS ? 'Installed on this iPhone' : 'Installed on this phone',
+                                              style: TextStyle(
+                                                fontSize: 11.sp,
+                                                color: subTextColor,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(Icons.arrow_forward_ios_rounded, size: 14.sp, color: subTextColor),
+                                    ],
                                   ),
                                 ),
                               ),
-                              SizedBox(width: 14.w),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      app.displayName,
-                                      style: TextStyle(
-                                        fontSize: 15.sp,
-                                        fontWeight: FontWeight.w600,
-                                        color: textColor,
-                                      ),
-                                    ),
-                                    SizedBox(height: 2.h),
-                                    Text(
-                                      'Installed on this iPhone',
-                                      style: TextStyle(
-                                        fontSize: 11.sp,
-                                        color: subTextColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Icon(Icons.arrow_forward_ios_rounded, size: 14.sp, color: subTextColor),
-                            ],
-                          ),
-                        ),
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
-                  );
-                }),
+                  ),
                 SizedBox(height: 8.h),
                 Center(
                   child: TextButton.icon(
@@ -581,9 +654,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       });
     }
     try {
-      final result = await ref
-          .read(reversePennyDropServiceProvider)
-          .status(clientId: _clientId!);
+      final result = await ref.read(reversePennyDropServiceProvider).status(clientId: _clientId!);
       if (!mounted) return;
 
       final status = result['status']?.toString() ?? '';
@@ -614,8 +685,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       // always stops polling, silent or not.
       _stopPolling();
       final message = switch (status) {
-        'ACCOUNT_MISMATCH' =>
-          'The ₹1 payment came from a different account than the one being verified.',
+        'ACCOUNT_MISMATCH' => 'The ₹1 payment came from a different account than the one being verified.',
         'FAILED' => 'Verification failed. Please try again.',
         _ => result['message']?.toString() ?? 'Verification pending.',
       };
@@ -698,7 +768,8 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                     Text(
                       'Please retry with the correct bank account.',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
+                      style:
+                          GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
                     ),
                     SizedBox(height: 16.h),
                     ElevatedButton(
@@ -712,7 +783,8 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                       style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
                       child: _isProcessing
                           ? const SizedBox(
-                              width: 20, height: 20,
+                              width: 20,
+                              height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
                           : Text(
@@ -725,7 +797,8 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                       Text(
                         'A ₹1 verification request is active. Tap above to select or re-open your UPI app, then return here to complete verification.',
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.playfairDisplay(fontSize: 12.sp, color: isDark ? Colors.white54 : Colors.black54),
+                        style: GoogleFonts.playfairDisplay(
+                            fontSize: 12.sp, color: isDark ? Colors.white54 : Colors.black54),
                       ),
                     ],
                   ],
