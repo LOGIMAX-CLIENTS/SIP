@@ -43,6 +43,22 @@ class SecureStorageService {
         key: AppConfig.keyIsBiometricEnabled, value: enabled.toString());
   }
 
+  /// App-lock idle timeout — how long the app must have been backgrounded
+  /// before the MPIN/biometric lock screen shows on resume (see
+  /// AppLifecycleObserver). Falls back to the server-provided default
+  /// (AppConfig.mpinLockDefaultTimeoutSeconds) until the customer picks one
+  /// on Profile > Security > "MPIN & Biometric Timing".
+  static Future<int> getMpinLockTimeoutSeconds() async {
+    final value =
+        await _storage.read(key: AppConfig.keyMpinLockTimeoutSeconds);
+    return int.tryParse(value ?? '') ?? AppConfig.mpinLockDefaultTimeoutSeconds;
+  }
+
+  static Future<void> setMpinLockTimeoutSeconds(int seconds) async {
+    await _storage.write(
+        key: AppConfig.keyMpinLockTimeoutSeconds, value: seconds.toString());
+  }
+
   static Future<bool> getOnboardingSeen() async {
     final value = await _storage.read(key: AppConfig.keyHasSeenOnboarding);
     return value == 'true';
@@ -51,6 +67,22 @@ class SecureStorageService {
   static Future<void> setOnboardingSeen(bool seen) async {
     await _storage.write(
         key: AppConfig.keyHasSeenOnboarding, value: seen.toString());
+  }
+
+  /// Whether the "Let support know?" prompt (see
+  /// manual_kyc_upload_screen.dart's _promptNotifySupport) has already been
+  /// shown once — it's offered only on the customer's FIRST-EVER manual KYC
+  /// upload, not on every subsequent one (a second document, or a resubmit
+  /// after rejection).
+  static Future<bool> getManualKycSupportPromptSeen() async {
+    final value =
+        await _storage.read(key: AppConfig.keyHasSeenManualKycSupportPrompt);
+    return value == 'true';
+  }
+
+  static Future<void> setManualKycSupportPromptSeen(bool seen) async {
+    await _storage.write(
+        key: AppConfig.keyHasSeenManualKycSupportPrompt, value: seen.toString());
   }
 
   static Future<void> saveCustomerId(String id) async {
@@ -105,8 +137,39 @@ class SecureStorageService {
   }
   // ─────────────────────────────────────────────────────────────────────────
 
+  /// Clears all session data but preserves keys that must survive
+  /// across login/logout cycles (device identity, onboarding flag).
+  ///
+  /// **Why not `deleteAll()`?**
+  /// DeviceIdService stores `persistent_device_id` and
+  /// `persistent_device_type` in the same FlutterSecureStorage instance.
+  /// Wiping them causes a new UUID to be generated on next login, making
+  /// the server treat the same physical device as a "new device" — which
+  /// triggers spurious 409 SESSION_INVALIDATED errors on other devices.
   static Future<void> logout() async {
+    // Keys that MUST survive logout
+    const preserveKeys = [
+      'persistent_device_id',
+      'persistent_device_type',
+      AppConfig.keyHasSeenOnboarding,
+    ];
+
+    // 1. Read values to preserve
+    final preserved = <String, String>{};
+    for (final key in preserveKeys) {
+      final value = await _storage.read(key: key);
+      if (value != null && value.isNotEmpty) {
+        preserved[key] = value;
+      }
+    }
+
+    // 2. Wipe everything
     await _storage.deleteAll();
+
+    // 3. Restore preserved keys
+    for (final entry in preserved.entries) {
+      await _storage.write(key: entry.key, value: entry.value);
+    }
   }
 }
 

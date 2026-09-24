@@ -5,13 +5,18 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/shared/widgets/animations.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
+import '../../../shared/widgets/numeric_styled_text.dart';
 import '../providers/withdrawal_provider.dart';
 import '../models/withdrawal_method.dart';
 import '../services/withdrawal_service.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
+import '../../../shared/widgets/add_bank_account_sheet.dart';
+import '../../../core/utils/kyc_validator.dart';
 
 class UpiSelectionScreen extends ConsumerStatefulWidget {
   const UpiSelectionScreen({super.key});
@@ -23,7 +28,6 @@ class UpiSelectionScreen extends ConsumerStatefulWidget {
 class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
   // Brand colours
   static const _gradientDark = Color(0xFF003716);
-  static const _gradientLight = Color(0xFF167525);
   static const _accentGreen = Color(0xFF1B882C);
 
   @override
@@ -32,9 +36,16 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoSelect());
   }
 
+  // Bank-only filter: UPI is currently disabled for withdrawal (see
+  // _showAddOptions), so any previously-saved UPI methods must be hidden
+  // from this screen entirely -- not just from the "Add Account" sheet --
+  // to avoid ever auto-selecting or displaying a UPI account here.
+  List<WithdrawalMethod> _bankOnly(List<WithdrawalMethod>? list) =>
+      (list ?? []).where((m) => !m.isUpi).toList();
+
   void _autoSelect() {
-    final list = ref.read(accountDetailsProvider).valueOrNull;
-    if (list != null && list.isNotEmpty) {
+    final list = _bankOnly(ref.read(accountDetailsProvider).valueOrNull);
+    if (list.isNotEmpty) {
       final alreadySelected = ref.read(withdrawalProvider).selectedMethod;
       if (alreadySelected == null) {
         ref.read(withdrawalProvider.notifier).selectMethod(list.first);
@@ -49,7 +60,8 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
 
     ref.listen<AsyncValue<List<WithdrawalMethod>>>(accountDetailsProvider,
         (_, next) {
-      next.whenData((list) {
+      next.whenData((rawList) {
+        final list = _bankOnly(rawList);
         final current = ref.read(withdrawalProvider).selectedMethod;
         if (list.isEmpty) {
           ref.read(withdrawalProvider.notifier).selectMethod(null);
@@ -66,14 +78,14 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
       body: Column(
         children: [
           GradientHeader(
-            title: 'Select UPI ID',
+            title: 'Select Bank Account',
             onBack: () => Navigator.pop(context),
           ),
 
           // â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           Expanded(
             child: accountsAsync.when(
-              data: (methods) => _buildBody(context, methods, isDark),
+              data: (methods) => _buildBody(context, _bankOnly(methods), isDark),
               loading: () => const Center(
                   child: CircularProgressIndicator(color: _accentGreen)),
               error: (_, __) => _buildErrorState(isDark),
@@ -186,12 +198,35 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                     ),
                   ),
                   SizedBox(height: 2.h),
-                  Text(
-                    method.identifier,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 12.sp,
-                      color: isDark ? Colors.white54 : Colors.black45,
-                    ),
+                  NumericStyledText(
+                    method.subtitle != null && method.subtitle!.isNotEmpty
+                        ? '${method.identifier}  •  ${method.subtitle}'
+                        : method.identifier,
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w400,
+                    color: isDark ? Colors.white54 : Colors.black45,
+                  ),
+                  SizedBox(height: 6.h),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        method.isVerified
+                            ? Icons.verified_rounded
+                            : Icons.hourglass_top_rounded,
+                        size: 13.sp,
+                        color: method.isVerified ? _accentGreen : Colors.orange,
+                      ),
+                      SizedBox(width: 4.w),
+                      Text(
+                        method.isVerified ? 'Verified' : 'Pending Verification',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w600,
+                          color: method.isVerified ? _accentGreen : Colors.orange,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -207,11 +242,8 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 ),
                 child: Text(
                   'suggested',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 10.sp,
-                    fontWeight: FontWeight.w600,
-                    color: _accentGreen,
-                  ),
+                  style: AppTextStyles.labelSmall(isDark)
+                      .copyWith(color: _accentGreen),
                 ),
               ),
           ],
@@ -302,10 +334,9 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
           ),
           SizedBox(height: 6.h),
           Text(
-            'Add a UPI ID or bank account\nto proceed with withdrawal',
+            'Add a bank account\nto proceed with withdrawal',
             textAlign: TextAlign.center,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 12.sp,
+            style: AppTextStyles.labelMedium(isDark).copyWith(
               color: isDark ? Colors.white38 : Colors.black38,
               height: 1.5,
             ),
@@ -334,7 +365,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
           ElevatedButton(
             onPressed: () => ref.refresh(accountDetailsProvider),
             style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
-            child: const Text('Retry', style: TextStyle(color: Colors.white)),
+            child: Text('Retry', style: GoogleFonts.playfairDisplay(color: Colors.white)),
           ),
         ],
       ),
@@ -345,7 +376,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
   Widget _buildFooter(BuildContext context, WidgetRef ref, bool isDark,
       AsyncValue<List<WithdrawalMethod>> accountsAsync) {
     final selected = ref.watch(withdrawalProvider).selectedMethod;
-    final methods = accountsAsync.valueOrNull ?? [];
+    final methods = _bankOnly(accountsAsync.valueOrNull);
     final isEnabled = selected != null && methods.isNotEmpty;
 
     return SafeArea(
@@ -427,44 +458,48 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
               SizedBox(height: 16.h),
               Text(
                 'Add Account',
-                style: GoogleFonts.playfairDisplay(
-                    fontSize: 20.sp,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black),
+                style: AppTextStyles.titleLarge(isDark)
+                    .copyWith(color: isDark ? Colors.white : Colors.black),
               ),
               SizedBox(height: 4.h),
               Text(
                 'Select your preferred payout method for a quick and secure transfer.',
-                style: GoogleFonts.playfairDisplay(
-                    fontSize: 12.sp,
+                style: AppTextStyles.fieldHelper(isDark).copyWith(
                     color: isDark ? Colors.white54 : Colors.black54,
                     height: 1.5),
               ),
               SizedBox(height: 20.h),
-              _buildOptionTile(
-                context,
-                'UPI Handle',
-                'Receive your money instantly using your UPI ID for a quick and easy transfer.',
-                'assets/withdraw/upi.svg',
-                () {
-                  Navigator.pop(context);
-                  _showUpiForm(context, ref, isDark);
-                },
-                isDark,
-              ),
-              // TODO: Bank Account feature â€” to be enabled later
-              // SizedBox(height: 12.h),
+              // UPI Handle disabled for now -- bank account is the only
+              // supported withdrawal method. _showUpiForm/_processAddUpi
+              // are kept intact below, just unreachable from this sheet.
               // _buildOptionTile(
               //   context,
-              //   'Bank Account',
-              //   'Get your funds securely transferred directly to your registered bank account.',
-              //   'assets/withdraw/bank.svg',
+              //   'UPI Handle',
+              //   'Receive your money instantly using your UPI ID for a quick and easy transfer.',
+              //   'assets/withdraw/upi.svg',
               //   () {
               //     Navigator.pop(context);
-              //     _showBankForm(context, ref, isDark);
+              //     _showUpiForm(context, ref, isDark);
               //   },
               //   isDark,
               // ),
+              // SizedBox(height: 12.h),
+              _buildOptionTile(
+                context,
+                'Bank Account',
+                'Get your funds securely transferred directly to your registered bank account.',
+                'assets/withdraw/bank.svg',
+                () {
+                  Navigator.pop(context);
+                  showAddBankAccountSheet(
+                    context,
+                    ref,
+                    isDark: isDark,
+                    onAdded: () => ref.invalidate(accountDetailsProvider),
+                  );
+                },
+                isDark,
+              ),
               SizedBox(height: 16.h),
             ],
           ),
@@ -575,11 +610,7 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Add UPI Handle',
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white : Colors.black)),
+                    Text('Add UPI Handle', style: AppTextStyles.titleLarge(isDark)),
                     GestureDetector(
                       onTap: isVerifying ? null : () => Navigator.pop(sheetCtx),
                       child: Container(
@@ -597,54 +628,37 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
                 SizedBox(height: 4.h),
                 Text(
                   'Receive your money instantly using your UPI\nID for a quick and easy transfer.',
-                  style: GoogleFonts.playfairDisplay(
-                      fontSize: 12.sp,
-                      color: isDark ? Colors.white54 : Colors.black54,
-                      height: 1.5),
+                  style: AppTextStyles.fieldHelper(isDark),
                 ),
                 SizedBox(height: 24.h),
-                Text('Enter UPI ID',
-                    style: GoogleFonts.playfairDisplay(
-                        fontSize: 13.sp,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white70 : Colors.black87)),
-                SizedBox(height: 8.h),
-                TextField(
-                  controller: ctrl,
-                  enabled: !isVerifying,
-                  onChanged: (_) => setModalState(() {}),
-                  style: GoogleFonts.playfairDisplay(
-                      color: isDark ? Colors.white : Colors.black),
-                  decoration: InputDecoration(
-                    hintText: 'example@abc',
-                    hintStyle: TextStyle(
-                        fontSize: 16.sp,
-                        color: isDark ? Colors.white30 : Colors.black26),
-                    filled: true,
-                    fillColor: isDark
-                        ? Colors.white.withOpacity(0.05)
-                        : const Color(0xFFF3F4F6),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14.r),
-                        borderSide: BorderSide.none),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14.r),
-                        borderSide:
-                            const BorderSide(color: _accentGreen, width: 1.5)),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 18.w, vertical: 16.h),
-                  ),
-                ),
+                _buildField('Enter UPI ID', 'example@abc', ctrl, isDark,
+                    enabled: !isVerifying,
+                    upiFormat: true,
+                    onChanged: (_) => setModalState(() {})),
                 SizedBox(height: 28.h),
-                _buildGradientButton(
-                  'Verify & Add',
-                  ctrl.text.trim().isNotEmpty && !isVerifying,
-                  (ctrl.text.trim().isNotEmpty && !isVerifying)
+                CustomButton(
+                  text: 'Verify & Add',
+                  isLoading: isVerifying,
+                  loadingText: 'Verifying...',
+                  onPressed: (ctrl.text.trim().isNotEmpty && !isVerifying)
                       ? () => _processAddUpi(
                           sheetCtx, ref, ctrl.text.trim(), setModalState,
                           (v) => isVerifying = v)
                       : null,
-                  isLoading: isVerifying,
+                  gradient: const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [_accentGreen, _gradientDark],
+                  ),
+                  boxShadow: (ctrl.text.trim().isNotEmpty && !isVerifying)
+                      ? [
+                          BoxShadow(
+                            color: _accentGreen.withOpacity(0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : [],
                 ),
                 SizedBox(height: 8.h),
               ],
@@ -656,248 +670,45 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
     );
   }
 
-  // â”€â”€ BANK FORM SHEET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  void _showBankForm(BuildContext context, WidgetRef ref, bool isDark) {
-    final nameCtrl = TextEditingController();
-    final bankNameCtrl = TextEditingController();
-    final accCtrl = TextEditingController();
-    final ifscCtrl = TextEditingController();
-    bool isVerifying = false;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
-          child: Container(
-            padding: EdgeInsets.all(24.w),
-            decoration: BoxDecoration(
-              gradient: isDark
-                  ? const LinearGradient(
-                      colors: [Color(0xFF0F172A), Color(0xFF0F172A)])
-                  : const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFFDEF9DF), Color(0xFFFFFFFF)],
-                      stops: [-0.3775, 1.0],
-                    ),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28.r)),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36.w,
-                      height: 4.h,
-                      decoration: BoxDecoration(
-                          color: Colors.black12,
-                          borderRadius: BorderRadius.circular(4.r)),
-                    ),
-                  ),
-                  SizedBox(height: 20.h),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                  Text('Add Bank Account',
-                          style: GoogleFonts.playfairDisplay(
-                              fontSize: 20.sp,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : Colors.black)),
-                      GestureDetector(
-                        onTap: () { if (!isVerifying) Navigator.pop(sheetCtx); },
-                        child: Container(
-                          padding: EdgeInsets.all(6.w),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.05),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.close_rounded,
-                              size: 18.sp, color: Colors.black54),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 20.h),
-                  _buildField('Account Holder Name', 'Enter full name',
-                      nameCtrl, isDark,
-                      forceUpperCase: true,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 12.h),
-                  _buildField('Bank Name', 'e.g. State Bank of India',
-                      bankNameCtrl, isDark,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 12.h),
-                  _buildField(
-                      'Account Number', 'Enter account number', accCtrl, isDark,
-                      kbd: TextInputType.number,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 12.h),
-                  _buildField('IFSC Code', 'e.g. SBIN0001234', ifscCtrl, isDark,
-                      forceUpperCase: true,
-                      onChanged: (_) => setModalState(() {})),
-                  SizedBox(height: 28.h),
-                  _buildGradientButton(
-                    'Verify & Add',
-                    nameCtrl.text.trim().isNotEmpty &&
-                        bankNameCtrl.text.trim().isNotEmpty &&
-                        accCtrl.text.trim().isNotEmpty &&
-                        ifscCtrl.text.trim().isNotEmpty &&
-                        !isVerifying,
-                    (nameCtrl.text.trim().isNotEmpty &&
-                            bankNameCtrl.text.trim().isNotEmpty &&
-                            accCtrl.text.trim().isNotEmpty &&
-                            ifscCtrl.text.trim().isNotEmpty &&
-                            !isVerifying)
-                        ? () => _processAddBank(
-                            sheetCtx,
-                            ref,
-                            nameCtrl.text.trim(),
-                            bankNameCtrl.text.trim(),
-                            accCtrl.text.trim(),
-                            ifscCtrl.text.trim(),
-                            setModalState,
-                            (v) => isVerifying = v)
-                        : null,
-                    isLoading: isVerifying,
-                  ),
-                  SizedBox(height: 8.h),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // â”€â”€ Shared gradient button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  Widget _buildGradientButton(
-      String label, bool isEnabled, VoidCallback? onPressed,
-      {bool isLoading = false}) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      width: double.infinity,
-      height: 54.h,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: isEnabled
-              ? const [_accentGreen, _gradientDark]
-              : isLoading
-                  ? [_accentGreen.withOpacity(0.7), _gradientDark.withOpacity(0.7)]
-                  : [
-                      _accentGreen.withOpacity(0.4),
-                      _gradientDark.withOpacity(0.4),
-                    ],
-        ),
-        borderRadius: BorderRadius.circular(100.r),
-        boxShadow: (isEnabled && !isLoading)
-            ? [
-                BoxShadow(
-                  color: _accentGreen.withOpacity(0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : [],
-      ),
-      child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Colors.transparent,
-          disabledForegroundColor: Colors.white60,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(100.r)),
-          elevation: 0,
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: isLoading
-              ? Row(
-                  key: const ValueKey('verifying'),
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 18.h,
-                      height: 18.h,
-                      child: const CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white70),
-                      ),
-                    ),
-                    SizedBox(width: 12.w),
-                    Text(
-                      'Verifying...',
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                )
-              : Text(
-                  label,
-                  key: const ValueKey('label'),
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 16.sp,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-
-  // â”€â”€ Field helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ Field helper (used by _showUpiForm below; bank form now lives in
+  // shared/widgets/add_bank_account_sheet.dart) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Widget _buildField(
       String label, String hint, TextEditingController ctrl, bool isDark,
       {TextInputType kbd = TextInputType.text,
       bool forceUpperCase = false,
+      bool enabled = true,
+      bool upiFormat = false,
       ValueChanged<String>? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white70 : Colors.black87)),
+        Text(label, style: AppTextStyles.fieldLabel(isDark)),
         SizedBox(height: 8.h),
         TextField(
           controller: ctrl,
+          enabled: enabled,
           onChanged: onChanged,
           keyboardType: kbd,
+          contextMenuBuilder: SecureClipboard.none,
           textCapitalization: forceUpperCase
               ? TextCapitalization.characters
               : TextCapitalization.none,
-          inputFormatters: forceUpperCase
-              ? [
-                  TextInputFormatter.withFunction((oldValue, newValue) =>
-                      newValue.copyWith(text: newValue.text.toUpperCase()))
-                ]
-              : null,
-          style: GoogleFonts.playfairDisplay(
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black),
+          inputFormatters: [
+            // UPI ID: no spaces or symbols outside what's actually valid in
+            // the handle/bank-name — blocks obvious garbage at keystroke
+            // level; the real name@bank check still happens on submit.
+            if (upiFormat)
+              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9._@-]')),
+            if (upiFormat) LengthLimitingTextInputFormatter(256),
+            if (forceUpperCase)
+              TextInputFormatter.withFunction((oldValue, newValue) =>
+                  newValue.copyWith(text: newValue.text.toUpperCase())),
+          ],
+          style: AppTextStyles.kycFieldInput(isDark),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(
-                fontSize: 16.sp,
-                color: isDark ? Colors.white30 : Colors.black26),
+            hintStyle: AppTextStyles.kycFieldHint(isDark),
+            errorStyle: AppTextStyles.fieldError(isDark),
             filled: true,
             fillColor: isDark
                 ? Colors.white.withOpacity(0.05)
@@ -920,10 +731,10 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
   Future<void> _processAddUpi(
       BuildContext sheetCtx, WidgetRef ref, String upi,
       StateSetter setModalState, void Function(bool) setVerifying) async {
-    if (!upi.contains('@')) {
+    final upiError = KycValidator.validateUPI(upi);
+    if (upiError != null) {
       if (mounted) {
-        AppToast.show(sheetCtx, 'Please enter a valid UPI ID (e.g. name@bank)',
-            type: ToastType.error);
+        AppToast.show(sheetCtx, upiError, type: ToastType.error);
       }
       return;
     }
@@ -963,46 +774,4 @@ class _UpiSelectionScreenState extends ConsumerState<UpiSelectionScreen> {
     }
   }
 
-  // â”€â”€ Process Bank â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  Future<void> _processAddBank(BuildContext sheetCtx, WidgetRef ref,
-      String name, String bankName, String acc, String ifsc,
-      StateSetter setModalState, void Function(bool) setVerifying) async {
-    final user = ref.read(userProvider);
-    if (user == null) return;
-
-    setModalState(() => setVerifying(true));
-    try {
-      final result = await ref.read(withdrawalServiceProvider).verifyAndAddBank(
-            customerId: user.id,
-            mobile: user.mobile,
-            holderName: name,
-            bankName: bankName,
-            accNo: acc,
-            ifsc: ifsc,
-          );
-      if (!sheetCtx.mounted) return;
-      if (result['success'] == true) {
-        Navigator.pop(sheetCtx);
-        ref.invalidate(accountDetailsProvider);
-        if (mounted) {
-          AppToast.show(
-            context,
-            result['message'] ?? 'Bank account verified successfully',
-            type: ToastType.success,
-          );
-        }
-      } else {
-        setModalState(() => setVerifying(false));
-        AppToast.show(sheetCtx, result['message'] ?? 'Verification failed',
-            type: ToastType.error);
-      }
-    } catch (e) {
-      if (sheetCtx.mounted) {
-        setModalState(() => setVerifying(false));
-        AppToast.show(
-            sheetCtx, 'Could not verify bank details. Please try again.',
-            type: ToastType.error);
-      }
-    }
-  }
 }

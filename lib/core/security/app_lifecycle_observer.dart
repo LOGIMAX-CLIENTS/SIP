@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'clipboard_security_service.dart';
+import '../config/app_config.dart';
 import '../providers/market_provider.dart';
 import '../security/session_manager.dart';
 import '../security/secure_storage_service.dart';
 import '../security/secure_logger.dart';
 import '../services/biometric_service.dart';
-import '../network/api_client.dart';
 import '../../routes/app_router.dart';
 
 /// Observes app lifecycle to manage:
 ///   1. Socket connection (pause/resume)
-///   2. Session validation on resume (409 detection)
-///   3. App Lock re-authentication on resume (MPIN/Biometric)
+///   2. App Lock re-authentication on resume (MPIN/Biometric)
 ///
 /// App Lock triggers when:
 ///   - MPIN is enabled
-///   - App was in background (not just a brief app-switch)
+///   - App was in background for at least the configured lock-timeout
+///     (Profile > Security > "MPIN & Biometric Timing", server default via
+///     APP_CONTROL_MPIN_LOCK) — not just any brief app-switch
 ///   - User is authenticated
 ///   - No payment gateway / external flow is active
 class AppLifecycleObserver extends WidgetsBindingObserver {
@@ -44,6 +46,7 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
   bool _cachedIsAuth = false;
   bool _cachedMpinEnabled = false;
   bool _cachedBiometricEnabled = false;
+  int _cachedLockTimeoutSeconds = AppConfig.mpinLockDefaultTimeoutSeconds;
 
   // ── Lifecycle Handling ────────────────────────────────────────────────────
   @override
@@ -61,11 +64,13 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
       // Pause socket when app goes to background
       ref.read(socketIOServiceProvider).disconnect();
     } else if (state == AppLifecycleState.resumed) {
+      // ── Clear clipboard on resume (VAPT: Clipboard Leakage) ────────────
+      // Clears both system clipboard AND keyboard clipboard strip (Gboard)
+      // using native Android ClipboardManager.
+      ClipboardSecurityService.clearClipboard();
+
       // Reconnect socket when app comes back to foreground
       ref.read(socketIOServiceProvider).connect();
-
-      // ── Session validation on resume (409 detection) ──────────────────
-      _validateSessionOnResume();
 
       // ── App Lock on resume (INSTANT — uses pre-cached values) ─────────
       _checkAppLockOnResume();
@@ -78,38 +83,16 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     try {
       _cachedIsAuth = await SessionManager.isAuthenticated();
       _cachedMpinEnabled = await SecureStorageService.isMpinEnabled();
-      _cachedBiometricEnabled = await BiometricService.canUseBiometric();
+      _cachedBiometricEnabled =
+          AppConfig.biometricLoginEnabled && await BiometricService.canUseBiometric();
+      _cachedLockTimeoutSeconds =
+          await SecureStorageService.getMpinLockTimeoutSeconds();
     } catch (_) {
       // If caching fails, the defaults (false) will prevent lock from
       // triggering — safe fallback.
     }
   }
 
-  // ── Session Validation (409 Detection) ────────────────────────────────────
-  /// Validates the current session by making a lightweight API call.
-  /// If the session was invalidated while the app was in the background
-  /// (e.g. user logged in on another device), the interceptor's 409
-  /// handler will trigger the force-logout dialog automatically.
-  Future<void> _validateSessionOnResume() async {
-    // Skip if already force-logged-out or not authenticated
-    if (SessionManager.isForceLoggedOut) return;
-
-    final isAuth = await SessionManager.isAuthenticated();
-    if (!isAuth) return;
-
-    try {
-      // Use a lightweight endpoint to validate session.
-      // The interceptor will handle 409 automatically.
-      final apiClient = ApiClient();
-      await apiClient.get('users/auth/session-check');
-      SecureLogger.d('SESSION CHECK: Session is valid (resume).');
-    } catch (e) {
-      // Errors are handled by the interceptor (409 → force logout).
-      // Other errors (network, 500, etc.) are silently ignored here
-      // since they don't indicate session invalidation.
-      SecureLogger.d('SESSION CHECK: Validation skipped or failed ($e).');
-    }
-  }
 
   // ── App Lock (Re-auth on Resume) ──────────────────────────────────────────
   /// Checks whether re-authentication is needed after app resume.
@@ -122,14 +105,16 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
   ///   1. User is authenticated (cached)
   ///   2. MPIN is enabled (cached)
   ///   3. App was actually in the background
-  ///   4. No lock screen is already showing
-  ///   5. App lock is not suppressed (e.g. during payment flows)
-  ///   6. Session is not force-invalidated (409 dialog takes priority)
+  ///   4. Background duration met/exceeded the configured lock-timeout (cached)
+  ///   5. No lock screen is already showing
+  ///   6. App lock is not suppressed (e.g. during payment flows)
+  ///   7. Session is not force-invalidated (409 dialog takes priority)
   void _checkAppLockOnResume() {
     // ── Guard: already showing or suppressed ──
     if (_isLockScreenShowing) return;
     if (suppressAppLock) {
       SecureLogger.d('APP LOCK: Suppressed (external flow active).');
+      _pausedAt = null;
       return;
     }
 
@@ -146,13 +131,25 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     if (_pausedAt == null) return;
 
     final elapsed = DateTime.now().difference(_pausedAt!);
+    _pausedAt = null; // reset so we don't re-trigger
+
+    // ── Guard: background duration below the configured timeout ──
+    // Configurable via Profile > Security > "MPIN & Biometric Timing"
+    // (server default: APP_CONTROL_MPIN_LOCK.default_timeout_seconds).
+    // Without this, ANY brief backgrounding — an image picker, a share
+    // sheet, a system dialog — re-triggered the lock screen, which read to
+    // users as "it asks for PIN on every screen".
+    if (elapsed.inSeconds < _cachedLockTimeoutSeconds) {
+      SecureLogger.d(
+          'APP LOCK: Backgrounded for ${elapsed.inSeconds}s < ${_cachedLockTimeoutSeconds}s threshold — skipping.');
+      return;
+    }
 
     SecureLogger.d(
         'APP LOCK: App was backgrounded for ${elapsed.inSeconds}s → triggering lock.');
 
     // ── Show lock screen ──
     _isLockScreenShowing = true;
-    _pausedAt = null; // reset so we don't re-trigger
 
     final nav = navigatorKey.currentState;
     if (nav == null || !nav.mounted) {

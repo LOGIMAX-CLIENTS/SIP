@@ -13,10 +13,18 @@ import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/loaders.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/utils/no_leading_zeros_formatter.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/security/secure_logger.dart';
+import '../../../core/error/failures.dart';
 import '../../../routes/app_router.dart';
+import '../../kyc/kyc_flow.dart';
+import '../../kyc/bank_verification_flow.dart';
+import '../../profile/profile_controller.dart' as pc;
 import '../controller/sip_controller.dart';
 import '../models/sip_models.dart';
+import '../../profile/models/bank_account.dart';
+import '../../instant_saving/widgets/payment_method_sheet.dart';
+import '../widgets/upi_id_sheet.dart';
 // import '../../nominee/controller/nominee_controller.dart'; // Commented ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nominee feature will be updated
 
 /// Main Auto Savings (SIP) setup screen.
@@ -36,6 +44,17 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   final TextEditingController _amountController = TextEditingController();
   late AnimationController _fadeController;
 
+  /// Whether the "Custom" tab is active. Not part of SipState/config.frequencies
+  /// — Custom SIP is a separate backend product (CustomSIPScheme, see
+  /// custom_sip_service.dart) with no frequency id of its own, so it's
+  /// tracked purely client-side alongside the existing Daily/Weekly/Monthly
+  /// selection (sipState.selectedFrequencyId, left untouched underneath).
+  bool _isCustomFrequency = false;
+
+  /// Day-of-month values (1-31) selected for Custom SIP — the auto saving
+  /// runs on ALL selected dates every month. 1-28 entries (backend cap).
+  final Set<int> _selectedCustomDates = {};
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +62,12 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..forward();
+    // Always fetch fresh data on screen entry — sipDetailsProvider is a
+    // plain (non-autoDispose) FutureProvider, so without this it keeps
+    // serving whatever was cached last, even after a mandate is
+    // cancelled/changed out-of-band (e.g. via the UPI app / GPay), since
+    // no in-app action fires to invalidate it in that case.
+    Future.microtask(() => ref.invalidate(sipDetailsProvider));
   }
 
   @override
@@ -91,7 +116,13 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       });
     });
 
-    // Sync active plans into state for duplicate checking
+    // Sync active plans into state for duplicate checking.
+    // WidgetRef.listen has no fireImmediately option, so an already-cached
+    // sipDetailsProvider value (e.g. resolved earlier on
+    // sip_overview_screen.dart) wouldn't otherwise reach this listener.
+    // We rely on the ref.invalidate(sipDetailsProvider) in initState to
+    // force a fresh emission right after mount, which this listener does
+    // catch.
     ref.listen<AsyncValue<List<SipPlanDetail>>>(sipDetailsProvider,
         (prev, next) {
       next.whenData((plans) {
@@ -129,7 +160,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                         Expanded(
                           child: Text(
                             '${isGoldSelected ? 'Gold' : 'Silver'} market is closed. Auto Savings will resume when market opens.',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 11.sp,
                               fontWeight: FontWeight.w600,
                               color: const Color(0xFF92400E),
@@ -160,8 +191,17 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           ),
         ],
       ),
+      // Custom SIP always shows "Setup Auto Savings" (-> opens the date
+      // picker, which itself handles existing-plan dates vs new ones — see
+      // _showCustomDatesPicker), never "Manage Savings". Custom has no
+      // frequency id of its own, so sipState.selectedFrequencyId here would
+      // otherwise still hold whatever regular frequency (Daily/Weekly/
+      // Monthly) was last selected before switching to the Custom tab —
+      // checking hasActivePlanForFrequency against that stale id would wrongly
+      // route to managing THAT plan instead of Custom's own.
       bottomNavigationBar: configAsync.hasValue
-          ? (sipState.selectedFrequencyId != null &&
+          ? (!_isCustomFrequency &&
+                  sipState.selectedFrequencyId != null &&
                   sipState.hasActivePlanForFrequency(
                       sipState.selectedFrequencyId!,
                       commodityId: sipState.selectedCommodityId)
@@ -218,7 +258,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     // Check if selected frequency+commodity already has an active plan
     final selectedFreqId = sipState.selectedFrequencyId;
     final selectedCommodityId = sipState.selectedCommodityId;
-    final existingPlan = selectedFreqId != null
+    // Custom SIP has no frequency id / SipPlanDetail duplicate-check of its
+    // own (separate backend product — see _isCustomFrequency doc comment),
+    // so it never shows the existing-plan card, only the setup form.
+    final existingPlan = (!_isCustomFrequency && selectedFreqId != null)
         ? sipState.getActivePlanForFrequency(selectedFreqId,
             commodityId: selectedCommodityId)
         : null;
@@ -247,8 +290,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Select Invest Type',
-                  style: TextStyle(
+                  'Select Savings Type',
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.w600,
                     color: Colors.black54,
@@ -343,10 +386,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 _buildDetailRow('Started On', _formatDate(plan.startDate)),
                 _buildDetailRow('Savings Amount',
                     '\u20b9${plan.amount.toStringAsFixed(0)}'),
-                _buildDetailRow('Frequency', plan.frequency),
+                _buildDetailRow('Frequency', plan.frequency,
+                    isNumeric: false),
                 _buildDetailRow('Reference ID', plan.subscriptionId),
                 _buildDetailRow('Status', plan.status.toUpperCase(),
-                    valueColor: statusColor),
+                    valueColor: statusColor, isNumeric: false),
               ],
             ),
           ),
@@ -385,7 +429,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 Expanded(
                   child: Text(
                     'You can only keep one Active ${plan.commodityName} $freqName plan. Switch to ${plan.commodityName.toLowerCase().contains('gold') ? 'Silver' : 'Gold'} above or try a ${_getOtherFrequencies(freqName)} plan to grow your savings faster',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 11.sp,
                       color: const Color(0xFF92400E),
                       fontWeight: FontWeight.w500,
@@ -402,7 +446,23 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   }
 
   /// Build a label/value detail row for the existing plan card.
-  Widget _buildDetailRow(String label, String value, {Color? valueColor}) {
+  ///
+  /// [isNumeric] selects the value's font family: numeric/amount/rate/date/ID
+  /// values (default) use Lora; textual/categorical values (e.g. Frequency
+  /// name, Status) should pass isNumeric: false to use Playfair Display.
+  Widget _buildDetailRow(String label, String value,
+      {Color? valueColor, bool isNumeric = true}) {
+    final valueStyle = isNumeric
+        ? GoogleFonts.lora(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: valueColor ?? const Color(0xFF1A1A2E),
+          )
+        : GoogleFonts.playfairDisplay(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: valueColor ?? const Color(0xFF1A1A2E),
+          );
     return Padding(
       padding: EdgeInsets.only(bottom: 12.h),
       child: Row(
@@ -410,7 +470,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 12.sp,
               color: Colors.black45,
               fontWeight: FontWeight.w500,
@@ -419,11 +479,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           Flexible(
             child: Text(
               value,
-              style: GoogleFonts.lora(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: valueColor ?? const Color(0xFF1A1A2E),
-              ),
+              style: valueStyle,
               textAlign: TextAlign.end,
             ),
           ),
@@ -473,45 +529,42 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   // HERO SECTION
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
   Widget _buildHeroSection() {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF003716),
-            Color(0xFF0A5C2E),
-            Color(0xFF167525),
-          ],
+    return Column(
+      children: [
+        SizedBox(height: 16.h),
+        // Title text — black (#010101)
+        Text(
+          'Grow your Wealth Smarter\nfor tomorrow\'s Dreams',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 17.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF010101),
+            height: 1.4,
+            letterSpacing: 0.3,
+          ),
         ),
-      ),
-      child: Column(
-        children: [
-          SizedBox(height: 16.h),
-          Text(
-            'Grow Your Wealth Smarter\nFor Tomorrow\'s Dreams',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 17.sp,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              height: 1.4,
-              letterSpacing: 0.3,
-            ),
+        SizedBox(height: 8.h),
+        // Main illustration — constrained height
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 30.w),
+          child: Image.asset(
+            'assets/sip/autosaving.png',
+            height: 180.h,
+            fit: BoxFit.contain,
           ),
-          SizedBox(height: 8.h),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12.w),
-            child: Image.asset(
-              'assets/sip/autosaving.png',
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
-            ),
+        ),
+        // Feature details row (3-column icons)
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24.w),
+          child: Image.asset(
+            'assets/sip/explain-details.png',
+            width: double.infinity,
+            fit: BoxFit.fitWidth,
           ),
-          SizedBox(height: 8.h),
-        ],
-      ),
+        ),
+        SizedBox(height: 8.h),
+      ],
     );
   }
 
@@ -520,10 +573,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
   Widget _buildFrequencyTabs(SipConfig config, SipState sipState) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 40.w),
-      child: Transform.translate(
-        offset: Offset(0, -18.h),
-        child: Container(
+      padding: EdgeInsets.symmetric(horizontal: 20.w),
+      child: Container(
           padding: EdgeInsets.all(4.w),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -537,13 +588,16 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             ],
           ),
           child: Row(
-            children: config.frequencies.map((freq) {
-              final isSelected = sipState.selectedFrequencyId == freq.id;
+            children: [
+              ...config.frequencies.map((freq) {
+              final isSelected =
+                  !_isCustomFrequency && sipState.selectedFrequencyId == freq.id;
               final hasDuplicate = sipState.hasActivePlanForFrequency(freq.id,
                   commodityId: sipState.selectedCommodityId);
               return Expanded(
                 child: GestureDetector(
                   onTap: () {
+                    setState(() => _isCustomFrequency = false);
                     ref
                         .read(sipControllerProvider.notifier)
                         .setFrequency(freq.id);
@@ -577,7 +631,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                             ),
                           Text(
                             freq.name,
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 13.sp,
                               fontWeight: isSelected
                                   ? FontWeight.w700
@@ -593,9 +647,46 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                   ),
                 ),
               );
-            }).toList(),
+              }),
+              // ── Custom pill ── separate backend product (CustomSIPScheme),
+              // no frequency id — tracked via _isCustomFrequency, not
+              // sipState.selectedFrequencyId (see field doc comment above).
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isCustomFrequency = true),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: EdgeInsets.symmetric(vertical: 10.h),
+                    decoration: BoxDecoration(
+                      gradient: _isCustomFrequency
+                          ? const LinearGradient(
+                              colors: [
+                                Color(0xFF003716),
+                                Color(0xFF167525),
+                              ],
+                            )
+                          : null,
+                      borderRadius: BorderRadius.circular(50.r),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Flexi',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 13.sp,
+                          fontWeight: _isCustomFrequency
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: _isCustomFrequency
+                              ? Colors.white
+                              : const Color(0xFF1A1A2E),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
       ),
     );
   }
@@ -605,7 +696,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
   Widget _buildMainCard(SipConfig config, SipState sipState) {
     final selectedCommodity = sipState.selectedCommodityId;
-    final selectedFrequency = sipState.selectedFrequencyId;
+    // Custom SIP has no frequency id of its own — backend treats it as a
+    // MONTHLY-base scheme (shared/services/custom_sip.py create_scheme()),
+    // so denomination lookups reuse Monthly's (id 3) for a sensible min/max.
+    final selectedFrequency = _isCustomFrequency ? 3 : sipState.selectedFrequencyId;
     final isGold = config.commodities.any((c) =>
         c.id == selectedCommodity && c.name.toLowerCase().contains('gold'));
 
@@ -654,7 +748,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Enter Saving Amount ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
             Text(
               'Enter your saving amount',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 14.sp,
                 fontWeight: FontWeight.w600,
                 color: Colors.black54,
@@ -705,7 +799,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                         children: [
                           Text(
                             'Invalid Amount',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 12.sp,
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFFBE123C),
@@ -715,7 +809,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                           SizedBox(height: 3.h),
                           Text(
                             errorMsg,
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 11.sp,
                               color: const Color(0xFF9F1239),
                               fontWeight: FontWeight.w500,
@@ -728,6 +822,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                   ],
                 ),
               ),
+            ],
+
+            if (_isCustomFrequency) ...[
+              SizedBox(height: 14.h),
+              _buildCustomDatesSelector(),
             ],
 
             SizedBox(height: 14.h),
@@ -747,6 +846,49 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
 
             // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Savings Projection ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
             _buildSavingsProjection(sipState, config, sellRate, isGold: isGold),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Custom SIP date summary/picker trigger — shown only when the "Custom"
+  /// tab is active (_isCustomFrequency). Opens _showCustomDatesPicker() on
+  /// tap; the auto saving runs on ALL selected dates every month.
+  Widget _buildCustomDatesSelector() {
+    final hasSelection = _selectedCustomDates.isNotEmpty;
+    final sortedDates = _selectedCustomDates.toList()..sort();
+    return GestureDetector(
+      onTap: _showCustomDatesPicker,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(16.r),
+          border: Border.all(color: Colors.black.withOpacity(0.06)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_month_rounded,
+                size: 18.sp, color: const Color(0xFF167525)),
+            SizedBox(width: 10.w),
+            Expanded(
+              child: Text(
+                hasSelection
+                    ? 'Runs on: ${sortedDates.join(', ')} every month'
+                    : 'Select dates for Auto Savings',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 13.sp,
+                  fontWeight: hasSelection ? FontWeight.w700 : FontWeight.w500,
+                  color: hasSelection
+                      ? const Color(0xFF1A1A2E)
+                      : Colors.black45,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                size: 20.sp, color: Colors.black38),
           ],
         ),
       ),
@@ -845,6 +987,9 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           Expanded(
             child: TextField(
               controller: _amountController,
+              contextMenuBuilder: SecureClipboard.none,
+              enableSuggestions: false,
+              autocorrect: false,
               onChanged: (v) {
                 final val = double.tryParse(v) ?? 0;
                 ref.read(sipControllerProvider.notifier).setAmount(val);
@@ -855,6 +1000,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 NoLeadingZerosFormatter(),
+                LengthLimitingTextInputFormatter(8),
               ],
               style: GoogleFonts.lora(
                 fontSize: 22.sp,
@@ -865,7 +1011,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: '0',
-                hintStyle: TextStyle(
+                hintStyle: GoogleFonts.lora(
                   fontSize: 22.sp,
                   fontWeight: FontWeight.w700,
                   color: Colors.black12,
@@ -980,7 +1126,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                       ),
                       child: Text(
                         'POPULAR',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           color: Colors.white,
                           fontSize: 8.sp,
                           letterSpacing: 0.5,
@@ -1049,7 +1195,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
               children: [
                 Text(
                   'In 1 Year, You Would Save',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w500,
                     color: Colors.black45,
@@ -1057,7 +1203,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 ),
                 SizedBox(height: 2.h),
                 Text(
-                  '${yearlyGrams.toStringAsFixed(4)} gm worth \u20b9${yearlyAmount.toStringAsFixed(0)}',
+                  '${yearlyGrams.toStringAsFixed(6)} gm worth \u20b9${yearlyAmount.toStringAsFixed(0)}',
                   style: GoogleFonts.lora(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.w700,
@@ -1079,7 +1225,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       {bool isMarketClosed = false}) {
     final amount = double.tryParse(_amountController.text) ?? 0;
     final isValid = amount >= config.minAmount && amount <= config.maxAmount;
-    final hasDuplicate = sipState.selectedFrequencyId != null &&
+    final hasDuplicate = !_isCustomFrequency &&
+        sipState.selectedFrequencyId != null &&
         sipState.hasActivePlanForFrequency(sipState.selectedFrequencyId!,
             commodityId: sipState.selectedCommodityId);
     final canProceed =
@@ -1111,7 +1258,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(width: 4.w),
                 Text(
                   '$commodityLabel | 100% Safe & Secured',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     color: Colors.black38,
                     fontWeight: FontWeight.w500,
@@ -1184,7 +1331,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(width: 4.w),
                 Text(
                   '$commodityLabel | 100% Safe & Secured',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     color: Colors.black38,
                     fontWeight: FontWeight.w500,
@@ -1231,7 +1378,30 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
   // SETUP FLOW
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
-  void _onSetupTapped(SipConfig config, SipState sipState) {
+  Future<void> _onSetupTapped(SipConfig config, SipState sipState) async {
+    // ── Proactive KYC gate ──────────────────────────────────────────────
+    // The backend's own KYC_REQUIRED rejection (handled deeper in
+    // _createSipPlan/_createCustomSipPlan) stays as a backstop, but we
+    // check up front here so the customer never reaches the bank-picker/
+    // payment-method steps only to be bounced back out.
+    //
+    // Force a fresh fetch before reading kycStatus — profileProvider may
+    // have been populated earlier in the session (e.g. on the Profile
+    // screen, or at login) and never invalidated since. Reading a stale
+    // cached value here would send an already-fully-verified customer into
+    // the KYC hub unnecessarily (it would still show both PAN and Aadhaar
+    // as Verified once it re-fetches live, but only after an avoidable
+    // detour — that's the bug this fixes, not a KYC-status bug).
+    if (!mounted) return;
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    if (!mounted) return;
+    final kycVerified = ref.read(pc.profileProvider).user.kycStatus == 1;
+    if (!kycVerified) {
+      final verified =
+          await KycVerificationFlow.start(context, ref, requestFrom: 'sip');
+      if (!mounted || !verified) return;
+    }
+
     // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Nominee gate: block SIP creation if nominee not added ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
     // Commented ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nominee feature will be updated
     // final hasNominee = ref.read(hasNomineeProvider);
@@ -1240,11 +1410,16 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     //   return;
     // }
 
+    if (_isCustomFrequency) {
+      _showCustomDatesPicker();
+      return;
+    }
+
     final frequencyId = sipState.selectedFrequencyId ?? 1;
 
     switch (frequencyId) {
       case 1: // Daily ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ direct API call
-        _createSipPlan();
+        _selectPaymentMethodAndCreate();
         break;
       case 2: // Weekly ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ select day popup
         _showWeeklyDayPicker();
@@ -1347,7 +1522,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 ),
                 Text(
                   'Select Day',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1A1A2E),
@@ -1356,7 +1531,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(height: 4.h),
                 Text(
                   'Your auto saving will run every selected day',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                   ),
@@ -1389,7 +1564,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                           Expanded(
                             child: Text(
                               day,
-                              style: TextStyle(
+                              style: GoogleFonts.playfairDisplay(
                                 fontSize: 14.sp,
                                 fontWeight: isActive
                                     ? FontWeight.w700
@@ -1423,7 +1598,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                                 .read(sipControllerProvider.notifier)
                                 .setDay(selected!);
                             Navigator.pop(ctx);
-                            _createSipPlan();
+                            _selectPaymentMethodAndCreate();
                           }
                         : null,
                     gradient: selected != null
@@ -1472,7 +1647,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 ),
                 Text(
                   'Select Date',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1A1A2E),
@@ -1481,7 +1656,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(height: 4.h),
                 Text(
                   'Your auto saving will run on this date every month',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                   ),
@@ -1524,7 +1699,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                         child: Center(
                           child: Text(
                             '$date',
-                            style: TextStyle(
+                            style: GoogleFonts.lora(
                               fontSize: 13.sp,
                               fontWeight:
                                   isActive ? FontWeight.w700 : FontWeight.w500,
@@ -1550,7 +1725,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                                 .read(sipControllerProvider.notifier)
                                 .setDate(selected!);
                             Navigator.pop(ctx);
-                            _createSipPlan();
+                            _selectPaymentMethodAndCreate();
                           }
                         : null,
                     gradient: selected != null
@@ -1569,7 +1744,537 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
     );
   }
 
-  Future<void> _createSipPlan() async {
+  /// Small colored-dot + label legend item for the Custom SIP date picker
+  /// (see _showCustomDatesPicker) — always shown (not just once a plan
+  /// exists), so the color scheme is understood before the customer ever
+  /// has a date committed. Explains: available (blank), the customer's own
+  /// in-progress new-plan selection (dark green), active plan (green), and
+  /// paused plan (amber).
+  Widget _buildDateLegendItem({required Color color, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8.w,
+          height: 8.w,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.black.withOpacity(0.12)),
+          ),
+        ),
+        SizedBox(width: 4.w),
+        Text(
+          label,
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 10.sp,
+            fontWeight: FontWeight.w600,
+            color: Colors.black54,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Multi-select date picker for Custom SIP — unlike Monthly's single-date
+  /// grid, the auto saving runs on EVERY selected date each month (backend:
+  /// custom_dates list, 1-28 entries — see CSIPCreateSerializer). Same
+  /// bank-picker -> PaymentMethodSheet -> create flow as Daily/Weekly/Monthly
+  /// (see _selectPaymentMethodAndCreate()) — Custom SIP now supports
+  /// UPI/Card/eMandate too (backend: CSIPCreateSerializer.payment_method).
+  /// Opens the date picker. Dates already committed to an existing
+  /// non-terminal Custom SIP scheme (customSipSchemesProvider) render as
+  /// "enabled" — green for an ACTIVE scheme, amber for a PAUSED one (tap
+  /// either to manage that scheme) — instead of selectable; only dates NOT
+  /// yet owned by any scheme can be multi-selected to create a new one.
+  /// e.g. existing dates [3,5,9]: tapping 3 opens manage/pause/cancel for
+  /// that scheme; selecting 4,7,8 and confirming creates a separate new
+  /// Custom SIP with just those dates.
+  Future<void> _showCustomDatesPicker() async {
+    List<CustomSipScheme> schemes;
+    try {
+      schemes = await ref.refresh(customSipSchemesProvider.future);
+    } catch (_) {
+      schemes = [];
+    }
+    // Only ACTIVE/PAUSED schemes lock their dates — PENDING_AUTH means an
+    // incomplete mandate, same convention regular SIP's isOccupying uses,
+    // so a customer with a stuck registration can retry on the same dates
+    // instead of being permanently locked out with no visible way to
+    // reclaim them.
+    final Map<int, CustomSipScheme> dateOwners = {};
+    for (final s in schemes) {
+      if (!s.isOccupying) continue;
+      for (final d in s.customDates) {
+        dateOwners[d] = s;
+      }
+    }
+
+    final Set<int> selected = {..._selectedCustomDates}
+      ..removeWhere((d) => dateOwners.containsKey(d));
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            padding: EdgeInsets.fromLTRB(24.w, 8.h, 24.w, 32.h),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40.w,
+                  height: 4.h,
+                  margin: EdgeInsets.only(bottom: 16.h),
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(2.r),
+                  ),
+                ),
+                Text(
+                  'Select Dates',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1A1A2E),
+                  ),
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  dateOwners.isEmpty
+                      ? 'Your auto saving will run on ALL selected dates every month'
+                      : 'Tap a colored date to manage that plan. '
+                          'Pick a blank date to start another.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 12.sp,
+                    color: Colors.black45,
+                  ),
+                ),
+                SizedBox(height: 10.h),
+                Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 14.w,
+                    runSpacing: 4.h,
+                    children: [
+                      _buildDateLegendItem(
+                          color: const Color(0xFFF1F5F9), label: 'Available'),
+                      _buildDateLegendItem(
+                          color: const Color(0xFF167525), label: 'Your new selection'),
+                      _buildDateLegendItem(
+                          color: const Color(0xFF16A34A), label: 'Active'),
+                      _buildDateLegendItem(
+                          color: const Color(0xFFD97706), label: 'Paused'),
+                    ],
+                  ),
+                SizedBox(height: 16.h),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    crossAxisSpacing: 6.w,
+                    mainAxisSpacing: 6.h,
+                  ),
+                  itemCount: 28,
+                  itemBuilder: (ctx, index) {
+                    final date = index + 1;
+                    final owner = dateOwners[date];
+                    final isCommitted = owner != null;
+                    final isPausedOwner = owner?.isPaused ?? false;
+                    final isActive = !isCommitted && selected.contains(date);
+                    // Committed dates: green for an ACTIVE scheme, amber for
+                    // a PAUSED one (matches the PAUSED status badge on the
+                    // manage screen) — so the customer can tell at a glance
+                    // which of their plans is running vs paused, without
+                    // having to open each one.
+                    final committedColor = isPausedOwner
+                        ? const Color(0xFFD97706)
+                        : const Color(0xFF16A34A);
+                    final committedBgColor = isPausedOwner
+                        ? const Color(0xFFFFFBEB)
+                        : const Color(0xFFF0FDF4);
+                    return GestureDetector(
+                      onTap: () {
+                        if (isCommitted) {
+                          Navigator.pop(ctx);
+                          Navigator.pushNamed(
+                            context,
+                            AppRouter.customSipManage,
+                            arguments: {'scheme_id': owner.schemeId},
+                          ).then((_) => ref.invalidate(customSipSchemesProvider));
+                          return;
+                        }
+                        setSheetState(() {
+                          if (isActive) {
+                            selected.remove(date);
+                          } else {
+                            selected.add(date);
+                          }
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        decoration: BoxDecoration(
+                          gradient: isActive
+                              ? const LinearGradient(
+                                  colors: [
+                                    Color(0xFF003716),
+                                    Color(0xFF167525),
+                                  ],
+                                )
+                              : null,
+                          color: isCommitted
+                              ? committedBgColor
+                              : (isActive ? null : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(10.r),
+                          border: isCommitted
+                              ? Border.all(color: committedColor.withOpacity(0.5))
+                              : (!isActive
+                                  ? Border.all(color: Colors.black.withOpacity(0.04))
+                                  : null),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '$date',
+                            style: GoogleFonts.lora(
+                              fontSize: 13.sp,
+                              fontWeight: (isActive || isCommitted)
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isActive
+                                  ? Colors.white
+                                  : (isCommitted
+                                      ? committedColor
+                                      : const Color(0xFF1A1A2E)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                SizedBox(height: 16.h),
+                SafeArea(
+                  top: false,
+                  child: CustomButton(
+                    text: 'Confirm',
+                    svgIconPath: 'assets/buttons/tick.svg',
+                    onPressed: selected.isNotEmpty
+                        ? () async {
+                            setState(() {
+                              _selectedCustomDates
+                                ..clear()
+                                ..addAll(selected);
+                            });
+                            Navigator.pop(ctx);
+                            if (!mounted) return;
+                            final result = await Navigator.pushNamed(
+                              context,
+                              AppRouter.bankAccountPicker,
+                            );
+                            final account = result as BankAccount?;
+                            if (account == null || !mounted) return;
+                            final bankAccountId = int.tryParse(account.idBank);
+
+                            final config = ref.read(sipConfigProvider).valueOrNull;
+                            if (!mounted) return;
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              isScrollControlled: true,
+                              builder: (_) => PaymentMethodSheet(
+                                isRecurring: true,
+                                allowedMethodIds: config?.supportedPaymentMethods,
+                                onProceed: (String paymentMethod) {
+                                  final resolvedMethod = paymentMethod == 'netbanking'
+                                      ? 'emandate'
+                                      : paymentMethod;
+                                  _selectUpiIdIfNeeded(
+                                    account: account,
+                                    paymentMethod: resolvedMethod,
+                                    onReady: (upiId) => _createCustomSipPlan(
+                                      bankAccountId: bankAccountId,
+                                      paymentMethod: resolvedMethod,
+                                      upiId: upiId,
+                                    ),
+                                  );
+                                },
+                              ),
+                            );
+                          }
+                        : null,
+                    gradient: selected.isNotEmpty
+                        ? const LinearGradient(
+                            colors: [Color(0xFF003716), Color(0xFF167525)],
+                          )
+                        : null,
+                    backgroundColor: const Color(0xFF064E3B).withOpacity(0.3),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Creates a Custom SIP plan and routes to the same Cashfree-checkout /
+  /// success flow as _createSipPlan() — CustomSipService.createCustomSip()
+  /// returns a SipCreateResponse shaped identically (see
+  /// shared/services/custom_sip.py create_scheme()'s return dict), so this
+  /// mirrors _createSipPlan()'s navigation and KYC-retry logic exactly.
+  Future<void> _createCustomSipPlan({
+    int? bankAccountId,
+    String? paymentMethod,
+    int? upiId,
+  }) async {
+    final sipState = ref.read(sipControllerProvider);
+    final notifier = ref.read(sipControllerProvider.notifier);
+    notifier.setCreating(true);
+
+    try {
+      final service = ref.read(customSipServiceProvider);
+      final response = await service.createCustomSip(
+        commodityId: sipState.selectedCommodityId ?? 1,
+        amount: sipState.amount.toInt(),
+        customDates: _selectedCustomDates.toList()..sort(),
+        bankAccountId: bankAccountId,
+        paymentMethod: paymentMethod,
+        upiId: upiId,
+      );
+
+      notifier.setCreating(false);
+
+      if (response.success) {
+        // Refresh so the just-picked dates show as committed (green) the
+        // next time the date picker opens, instead of still selectable.
+        ref.invalidate(customSipSchemesProvider);
+        if (mounted) {
+          if (response.sessionId != null && response.orderId != null) {
+            Navigator.pushNamed(
+              context,
+              AppRouter.sipPayment,
+              arguments: {
+                'order_id': response.orderId,
+                'session_id': response.sessionId,
+                'authorization_link': response.authorizationLink,
+                'environment': response.environment ?? 'SANDBOX',
+                'subscription_id': response.subscriptionId,
+                'amount': sipState.amount,
+                'payment_gateway': response.paymentGateway,
+                'key_id': response.keyId,
+                'mode': response.mode,
+                'customer_id': response.customerId,
+                'payment_method': response.paymentMethod,
+              },
+            );
+          } else {
+            Navigator.pushNamed(
+              context,
+              AppRouter.sipSuccess,
+              arguments: {
+                'subscription_id': response.subscriptionId,
+                'message': response.message,
+              },
+            );
+          }
+        }
+      } else if (response.errorCode == 'KYC_REQUIRED') {
+        if (!mounted) return;
+        final verified = await KycVerificationFlow.start(
+          context,
+          ref,
+          requestFrom: 'sip',
+        );
+        if (!mounted) return;
+        if (verified) {
+          await _createCustomSipPlan(
+            bankAccountId: bankAccountId,
+            paymentMethod: paymentMethod,
+            upiId: upiId,
+          );
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
+      } else if (response.errorCode == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as KYC_REQUIRED above, routed through
+        // BankVerificationFlow instead — see its doc comment.
+        if (!mounted) return;
+        final verified = await BankVerificationFlow.start(context, ref);
+        if (!mounted) return;
+        if (verified) {
+          await _createCustomSipPlan(
+            bankAccountId: bankAccountId,
+            paymentMethod: paymentMethod,
+            upiId: upiId,
+          );
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
+      } else {
+        if (mounted) {
+          AppToast.show(
+            context,
+            response.message.isNotEmpty
+                ? response.message
+                : 'Failed to create Flexi AutoGold plan',
+            type: ToastType.error,
+          );
+        }
+      }
+    } on KycRequiredFailure catch (e) {
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await KycVerificationFlow.start(
+        context,
+        ref,
+        requestFrom: 'sip',
+      );
+      if (!mounted) return;
+      if (verified) {
+        await _createCustomSipPlan(
+          bankAccountId: bankAccountId,
+          paymentMethod: paymentMethod,
+          upiId: upiId,
+        );
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
+      }
+    } on BankVerificationRequiredFailure catch (e) {
+      // Same shape as the KycRequiredFailure catch above, routed through
+      // BankVerificationFlow instead — see its doc comment.
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await BankVerificationFlow.start(context, ref);
+      if (!mounted) return;
+      if (verified) {
+        await _createCustomSipPlan(
+          bankAccountId: bankAccountId,
+          paymentMethod: paymentMethod,
+          upiId: upiId,
+        );
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
+      }
+    } catch (e) {
+      notifier.setCreating(false);
+      SecureLogger.e('CustomSIP: Create failed: $e');
+      if (mounted) {
+        AppToast.show(
+          context,
+          e.toString().replaceAll('Exception: ', ''),
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  /// Bank picker → Payment Methods sheet, then registers the SIP mandate.
+  ///
+  /// The customer first picks a registered/BAV-verified bank account (see
+  /// [BankAccountPickerScreen]) — recorded on the scheme for every
+  /// method. Then the Payment Methods sheet (reused from instant_saving —
+  /// PaymentMethodSheet) offers only [SipConfig.supportedPaymentMethods]
+  /// (UPI / Netbanking — Card is excluded, see backend
+  /// SIPSchemeService.get_config()). `isRecurring: true` relabels
+  /// "netbanking" as "eMandate (Netbanking)" — selecting it registers a
+  /// bank-account eMandate authenticated via netbanking, never a repeat
+  /// netbanking charge (neither Razorpay nor Cashfree support netbanking as
+  /// a standalone recurring/MIR instrument — see
+  /// docs/features/mir_requirement_review_and_validation.md in the backend
+  /// repo). That method uses the already-selected bank account's details —
+  /// no more ad-hoc typed form (BankDetailsSheet) — since the customer must
+  /// have already picked one of their saved accounts to reach this sheet.
+  ///
+  /// The sheet still returns the underlying id "netbanking" (unchanged, so
+  /// PaymentMethodSheet's shared fallback/API-driven option list doesn't
+  /// need a wire-format change) — translated to the backend's canonical
+  /// 'emandate' value right here, once, before it reaches _createSipPlan()
+  /// / SipService.createSip().
+  ///
+  /// UPI proceeds straight to _createSipPlan() — nothing else changes for
+  /// it; in particular the Razorpay Checkout launch itself
+  /// (sip_payment_screen.dart) is untouched, since the recurring order's
+  /// own 'method' field is what determines what Checkout presents.
+  Future<void> _selectPaymentMethodAndCreate() async {
+    if (!mounted) return;
+    // No explicit generic here — this app's routes are registered via
+    // MaterialApp's `routes:` map, so Navigator always builds a
+    // MaterialPageRoute<dynamic> for them regardless of the pushNamed<T>
+    // call site; requesting pushNamed<BankAccount> fails its runtime type
+    // check against that <dynamic> route. Cast the popped result instead.
+    final result = await Navigator.pushNamed(context, AppRouter.bankAccountPicker);
+    final account = result as BankAccount?;
+    if (account == null || !mounted) return;
+
+    final config = ref.read(sipConfigProvider).valueOrNull;
+    final bankAccountId = int.tryParse(account.idBank);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => PaymentMethodSheet(
+        isRecurring: true,
+        allowedMethodIds: config?.supportedPaymentMethods,
+        onProceed: (String paymentMethod) {
+          final resolvedMethod =
+              paymentMethod == 'netbanking' ? 'emandate' : paymentMethod;
+          _selectUpiIdIfNeeded(
+            account: account,
+            paymentMethod: resolvedMethod,
+            onReady: (upiId) => _createSipPlan(
+              paymentMethod: resolvedMethod,
+              bankAccountId: bankAccountId,
+              upiId: upiId,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// UPI only: opens [UpiIdSheet] listing the chosen bank account's linked
+  /// UPI IDs — always, even when there's just one, so the customer
+  /// explicitly confirms the VPA being mandated — then calls [onReady] with
+  /// the picked CustomerUPI pk. Other methods (and a UPI account with no
+  /// linked UPI IDs, where the VPA is chosen in the gateway checkout
+  /// instead) go straight to [onReady] with null, as before.
+  void _selectUpiIdIfNeeded({
+    required BankAccount account,
+    required String paymentMethod,
+    required void Function(int? upiId) onReady,
+  }) {
+    if (paymentMethod != 'upi' || account.linkedUpis.isEmpty) {
+      onReady(null);
+      return;
+    }
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => UpiIdSheet(
+        upis: account.linkedUpis,
+        onProceed: (upi) => onReady(int.tryParse(upi.id)),
+      ),
+    );
+  }
+
+  Future<void> _createSipPlan({
+    String? paymentMethod,
+    int? bankAccountId,
+    int? upiId,
+  }) async {
     final sipState = ref.read(sipControllerProvider);
     final notifier = ref.read(sipControllerProvider.notifier);
     notifier.setCreating(true);
@@ -1582,6 +2287,9 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         amount: sipState.amount.toInt(),
         day: sipState.selectedDay,
         date: sipState.selectedDate,
+        paymentMethod: paymentMethod,
+        bankAccountId: bankAccountId,
+        upiId: upiId,
       );
 
       notifier.setCreating(false);
@@ -1601,6 +2309,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'environment': response.environment ?? 'SANDBOX',
                 'subscription_id': response.subscriptionId,
                 'amount': sipState.amount,
+                'payment_gateway': response.paymentGateway,
+                'key_id': response.keyId,
+                'mode': response.mode,
+                'customer_id': response.customerId,
+                'payment_method': response.paymentMethod,
               },
             );
           } else {
@@ -1615,16 +2328,94 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             );
           }
         }
+      } else if (response.errorCode == 'KYC_REQUIRED') {
+        // Backend blocked SIP creation with KYC_REQUIRED, wrapped as a 200
+        // OK response (ResponseStandardizationMiddleware) rather than an
+        // HTTP error — so it never throws and never reaches the
+        // KycRequiredFailure catch below. Route through the unified KYC hub
+        // here too, and once both PAN + Aadhaar are verified, automatically
+        // retry this same SIP creation request.
+        if (!mounted) return;
+        final verified = await KycVerificationFlow.start(
+          context,
+          ref,
+          requestFrom: 'sip',
+        );
+        if (!mounted) return;
+        if (verified) {
+          await _createSipPlan(
+            paymentMethod: paymentMethod,
+            bankAccountId: bankAccountId,
+            upiId: upiId,
+          );
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
+      } else if (response.errorCode == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as KYC_REQUIRED above, routed through
+        // BankVerificationFlow instead — see its doc comment.
+        if (!mounted) return;
+        final verified = await BankVerificationFlow.start(context, ref);
+        if (!mounted) return;
+        if (verified) {
+          await _createSipPlan(
+            paymentMethod: paymentMethod,
+            bankAccountId: bankAccountId,
+            upiId: upiId,
+          );
+        } else {
+          AppToast.show(context, response.message, type: ToastType.error);
+        }
       } else {
         if (mounted) {
           AppToast.show(
             context,
             response.message.isNotEmpty
                 ? response.message
-                : 'Failed to create SIP plan',
+                : 'Failed to create AutoGold plan',
             type: ToastType.error,
           );
         }
+      }
+    } on KycRequiredFailure catch (e) {
+      // Backend blocked SIP creation with KYC_REQUIRED (SIPCreateView —
+      // both PAN and Aadhaar must be APPROVED). Route through the unified
+      // KYC hub and, once both are verified, automatically retry this same
+      // SIP creation request instead of leaving the user stuck on an error.
+      // (Kept alongside the response.errorCode branch above in case this
+      // endpoint ever returns KYC_REQUIRED as a real HTTP error status.)
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await KycVerificationFlow.start(
+        context,
+        ref,
+        requestFrom: 'sip',
+      );
+      if (!mounted) return;
+      if (verified) {
+        await _createSipPlan(
+          paymentMethod: paymentMethod,
+          bankAccountId: bankAccountId,
+          upiId: upiId,
+        );
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
+      }
+    } on BankVerificationRequiredFailure catch (e) {
+      // Same shape as the KycRequiredFailure catch above, routed through
+      // BankVerificationFlow instead — see its doc comment.
+      notifier.setCreating(false);
+      if (!mounted) return;
+      final verified = await BankVerificationFlow.start(context, ref);
+      if (!mounted) return;
+      if (verified) {
+        await _createSipPlan(
+          paymentMethod: paymentMethod,
+          bankAccountId: bankAccountId,
+          upiId: upiId,
+        );
+      } else {
+        AppToast.show(context, e.message, type: ToastType.error);
       }
     } catch (e) {
       notifier.setCreating(false);
@@ -1651,7 +2442,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             SizedBox(height: 16.h),
             Text(
               'Unable to load Auto Savings',
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 16.sp,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF1A1A2E),
@@ -1661,7 +2452,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
             Text(
               'Please check your connection and try again',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                 fontSize: 13.sp,
                 color: Colors.black45,
               ),

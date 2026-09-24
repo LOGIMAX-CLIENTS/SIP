@@ -9,12 +9,18 @@ import 'package:intl/intl.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/utils/upper_case_words_formatter.dart';
+import '../../../shared/utils/address_input_formatter.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../core/security/secure_logger.dart';
+import '../../../core/error/failures.dart';
+import '../../../core/utils/validators.dart';
+import '../../../core/services/auth_service.dart';
 import '../../profile/profile_controller.dart' as pc;
 import '../controller/nominee_controller.dart';
 import '../models/nominee_model.dart';
+import '../widgets/nominee_otp_sheet.dart';
 
 /// Nominee Details screen.
 ///
@@ -50,7 +56,48 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
   bool _isSaving = false;
   bool _isInitialized = false;
   bool _isPincodeChecking = false;
-  bool _isPincodeValid = true;
+
+  // The pincode value confirmed by 'Check' - or the one already on file for
+  // an existing nominee, which was validated when it was saved. Typing away
+  // from it invalidates the confirmation. Empty = nothing confirmed.
+  String _verifiedPincode = '';
+
+  /// Pincode is OPTIONAL on this form: leaving it blank is fine. But once the
+  /// customer types one it must be 6 digits AND confirmed via 'Check' before
+  /// the nominee can be saved.
+  bool get _isPincodeConfirmed {
+    final pincode = _pincodeCtrl.text.trim();
+    if (pincode.isEmpty) return true;
+    return pincode.length == 6 && pincode == _verifiedPincode;
+  }
+
+  bool _isMobileVerifying = false;
+
+  // The mobile value confirmed via OTP — or the one already on file for an
+  // existing nominee, which was verified when it was saved. Typing away from
+  // it invalidates the verification. Empty = nothing verified.
+  String _verifiedMobile = '';
+
+  /// Mobile Number is mandatory and must be OTP-verified before the nominee
+  /// can be saved.
+  bool get _isMobileConfirmed {
+    final mobile = _mobileCtrl.text.trim();
+    return mobile.length == 10 && mobile == _verifiedMobile;
+  }
+
+  bool _isEmailVerifying = false;
+
+  // The e-mail (lower-cased) confirmed via OTP — or the one already on file
+  // for an existing nominee. Typing away from it invalidates the
+  // verification. Empty = nothing verified.
+  String _verifiedEmail = '';
+
+  /// Email ID is mandatory and must be OTP-verified before the nominee can
+  /// be saved.
+  bool get _isEmailConfirmed {
+    final email = _emailCtrl.text.trim().toLowerCase();
+    return email.isNotEmpty && email == _verifiedEmail;
+  }
 
   // Location IDs from pincode check or existing data
   int? _idCity;
@@ -94,12 +141,15 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _nomineeId = nominee.id;
     _nameCtrl.text = nominee.name;
     _mobileCtrl.text = nominee.mobile;
+    _verifiedMobile = nominee.mobile.trim();
     _emailCtrl.text = nominee.email ?? '';
+    _verifiedEmail = (nominee.email ?? '').trim().toLowerCase();
     _idNumberCtrl.text = nominee.idNumber ?? '';
     _addressCtrl.text = nominee.address ?? '';
     _cityCtrl.text = nominee.city ?? '';
     _stateCtrl.text = nominee.state ?? '';
     _pincodeCtrl.text = nominee.pincode ?? '';
+    _verifiedPincode = (nominee.pincode ?? '').trim();
     _selectedRelationship =
         nominee.relationship.isNotEmpty ? nominee.relationship : null;
     _selectedRelationshipId = nominee.relationshipId;
@@ -121,12 +171,15 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _nomineeId = null;
     _nameCtrl.clear();
     _mobileCtrl.clear();
+    _verifiedMobile = '';
     _emailCtrl.clear();
+    _verifiedEmail = '';
     _idNumberCtrl.clear();
     _addressCtrl.clear();
     _cityCtrl.clear();
     _stateCtrl.clear();
     _pincodeCtrl.clear();
+    _verifiedPincode = '';
     _selectedRelationship = null;
     _selectedRelationshipId = null;
     _selectedIdType = null;
@@ -248,7 +301,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                       children: [
                         Text(
                           'Nominee Added',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontSize: 13.sp,
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF166534),
@@ -257,7 +310,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                         SizedBox(height: 2.h),
                         Text(
                           'Your nominee details are up to date',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                             fontSize: 11.sp,
                             color: const Color(0xFF166534).withOpacity(0.7),
                           ),
@@ -457,6 +510,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 textCapitalization: TextCapitalization.words,
                 inputFormatters: [
                   UpperCaseWordsFormatter(),
+                  LengthLimitingTextInputFormatter(60),
                 ],
               ),
 
@@ -479,23 +533,24 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 maxLength: 10,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 isNumeric: true,
+                onChanged: (_) => setState(() {}),
+                actionLabel: _isMobileConfirmed ? 'Verified' : 'Verify',
+                onAction: _isMobileConfirmed ? null : _handleMobileVerify,
+                isActionLoading: _isMobileVerifying,
               ),
 
               _buildTextField(
                 controller: _emailCtrl,
-                label: 'Email ID',
-                hint: 'Enter email (optional)',
+                label: 'Email ID *',
+                hint: 'Enter email address',
                 icon: Icons.email_rounded,
                 keyboardType: TextInputType.emailAddress,
-                isOptional: true,
-                validator: (v) {
-                  if (v != null && v.isNotEmpty) {
-                    final emailRegex = RegExp(
-                        r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-                    if (!emailRegex.hasMatch(v)) return 'Enter a valid email';
-                  }
-                  return null;
-                },
+                inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
+                validator: Validators.validateEmail,
+                onChanged: (_) => setState(() {}),
+                actionLabel: _isEmailConfirmed ? 'Verified' : 'Verify',
+                onAction: _isEmailConfirmed ? null : _handleEmailVerify,
+                isActionLoading: _isEmailVerifying,
               ),
 
               SizedBox(height: 20.h),
@@ -517,11 +572,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 actionLabel: 'Check',
                 onAction: _handlePincodeCheck,
                 isActionLoading: _isPincodeChecking,
-                onChanged: (_) {
-                  if (!_isPincodeValid) {
-                    setState(() => _isPincodeValid = true);
-                  }
-                },
+                onChanged: (_) => setState(() {}),
                 validator: (v) {
                   if (v != null && v.isNotEmpty && v.length != 6) {
                     return 'Enter valid 6-digit pincode';
@@ -560,7 +611,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 textCapitalization: TextCapitalization.words,
                 maxLines: 4,
                 inputFormatters: [
-                  UpperCaseWordsFormatter(),
+                  AddressInputFormatter(),
                 ],
                 isOptional: true,
               ),
@@ -568,16 +619,37 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
               SizedBox(height: 24.h),
 
               // â”€â”€ Submit button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-              CustomButton(
-                text: _isEditing ? 'Update Nominee' : 'Save Nominee',
-                svgIconPath: 'assets/buttons/folder-add.svg',
-                isLoading: _isSaving,
-                loadingText: 'Saving...',
-                onPressed: (_isSaving || !_isPincodeValid) ? null : _handleSubmit,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF003716), Color(0xFF167525)],
-                ),
-              ),
+              // canSubmit gates BOTH the button's enabled state and, via the
+              // tap-intercepting overlay below, what happens when the user
+              // taps it while still disabled — so the button is never a
+              // silent dead end.
+              Builder(builder: (context) {
+                final canSubmit = !_isSaving &&
+                    _isMobileConfirmed &&
+                    _isEmailConfirmed &&
+                    _isPincodeConfirmed;
+                return Stack(
+                  children: [
+                    CustomButton(
+                      text: _isEditing ? 'Update Nominee' : 'Save Nominee',
+                      svgIconPath: 'assets/buttons/folder-add.svg',
+                      isLoading: _isSaving,
+                      loadingText: 'Saving...',
+                      onPressed: canSubmit ? _handleSubmit : null,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF003716), Color(0xFF167525)],
+                      ),
+                    ),
+                    if (!canSubmit && !_isSaving)
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _showSaveBlockedReason,
+                        ),
+                      ),
+                  ],
+                );
+              }),
 
               if (_isEditing) ...[
                 SizedBox(height: 12.h),
@@ -690,6 +762,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                     inputFormatters: inputFormatters,
                     validator: validator,
                     onChanged: onChanged,
+                    contextMenuBuilder: SecureClipboard.none,
                     style: isNumeric
                         ? GoogleFonts.lora(
                             fontSize: 16.sp,
@@ -1064,13 +1137,40 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     }
 
     final mobile = _mobileCtrl.text.trim();
-    if (mobile.isEmpty) {
-      AppToast.show(context, 'Mobile number is required',
+    final mobileError = Validators.validateMobile(mobile);
+    if (mobileError != null) {
+      AppToast.show(context, mobileError, type: ToastType.error);
+      return;
+    }
+    if (!_isMobileConfirmed) {
+      AppToast.show(context, 'Please verify the mobile number via OTP',
           type: ToastType.error);
       return;
     }
-    if (mobile.length != 10) {
-      AppToast.show(context, 'Enter a valid 10-digit mobile number',
+
+    final email = _emailCtrl.text.trim();
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+    if (!_isEmailConfirmed) {
+      AppToast.show(context, 'Please verify the email ID via OTP',
+          type: ToastType.error);
+      return;
+    }
+
+    // Pincode is optional, but if the customer started typing one it must be
+    // complete — otherwise an untouched/never-"Check"ed partial pincode
+    // (e.g. "123") would silently save with the nominee record. It must also
+    // be confirmed via Check - that is what _isPincodeConfirmed enforces.
+    final pincode = _pincodeCtrl.text.trim();
+    if (pincode.isNotEmpty && pincode.length != 6) {
+      AppToast.show(context, 'Enter a valid 6-digit pincode', type: ToastType.error);
+      return;
+    }
+    if (!_isPincodeConfirmed) {
+      AppToast.show(context, 'Please tap Check to verify the pincode',
           type: ToastType.error);
       return;
     }
@@ -1085,8 +1185,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
         relationshipId: _selectedRelationshipId,
         dob: DateFormat('yyyy-MM-dd').format(_selectedDob!),
         mobile: _mobileCtrl.text.trim(),
-        email:
-            _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+        email: email,
         idType: _selectedIdType,
         idNumber: _idNumberCtrl.text.trim().isNotEmpty
             ? _idNumberCtrl.text.trim()
@@ -1204,7 +1303,162 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     return DateFormat('yyyy-MM-dd').parse(dob);
   }
 
-  // â”€â”€â”€ Pincode Check (same pattern as account details) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  /// Tapped when the Save/Update button is disabled — tells the user
+  /// exactly which mandatory check is still blocking it, instead of the
+  /// button being a silent dead end.
+  void _showSaveBlockedReason() {
+    if (!_isMobileConfirmed) {
+      AppToast.show(context, 'Please verify the mobile number via OTP',
+          type: ToastType.error);
+      return;
+    }
+    if (!_isEmailConfirmed) {
+      AppToast.show(context, 'Please verify the email ID via OTP',
+          type: ToastType.error);
+      return;
+    }
+    if (!_isPincodeConfirmed) {
+      AppToast.show(context, 'Please tap Check to verify the pincode',
+          type: ToastType.error);
+      return;
+    }
+  }
+
+  // ─── Mobile OTP verification ────────────────────────────────────────────
+  Future<void> _handleMobileVerify() async {
+    final mobile = _mobileCtrl.text.trim();
+    final mobileError = Validators.validateMobile(mobile);
+    if (mobileError != null) {
+      AppToast.show(context, mobileError, type: ToastType.error);
+      return;
+    }
+
+    setState(() => _isMobileVerifying = true);
+    try {
+      final authService = AuthService();
+      final idCountry = (_idCountry ?? 101).toString();
+      final sendResult = await authService.sendOtp(
+        mobile: mobile,
+        countryCode: '+91',
+        idCountry: idCountry,
+        type: 'NOMINEE_MOBILE',
+      );
+
+      if (!mounted) return;
+      if (sendResult['success'] != true) {
+        AppToast.show(
+          context,
+          _extractOtpErrorMessage(sendResult, 'Failed to send OTP. Please try again.'),
+          type: ToastType.error,
+        );
+        return;
+      }
+
+      final otpReferenceId = sendResult['data']?['otp_reference_id'];
+      if (otpReferenceId == null) {
+        AppToast.show(context, 'Failed to send OTP. Please try again.',
+            type: ToastType.error);
+        return;
+      }
+
+      final verified = await showNomineeMobileOtpSheet(
+        context,
+        mobile: mobile,
+        countryCode: '+91',
+        idCountry: idCountry,
+        otpReferenceId: otpReferenceId,
+      );
+
+      if (verified == true && mounted) {
+        setState(() => _verifiedMobile = mobile);
+        AppToast.show(context, 'Mobile number verified', type: ToastType.success);
+      }
+    } catch (e) {
+      SecureLogger.e('NOMINEE: Mobile OTP send failed: $e');
+      _showOtpSendFailure(e);
+    } finally {
+      if (mounted) setState(() => _isMobileVerifying = false);
+    }
+  }
+
+  // ─── Email OTP verification ─────────────────────────────────────────────
+  Future<void> _handleEmailVerify() async {
+    final email = _emailCtrl.text.trim();
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+
+    setState(() => _isEmailVerifying = true);
+    try {
+      final name = _nameCtrl.text.trim();
+      final sendResult = await AuthService().sendEmailOtp(
+        email: email,
+        firstName: name.isNotEmpty ? name : null,
+      );
+
+      if (!mounted) return;
+      if (sendResult['success'] != true) {
+        AppToast.show(
+          context,
+          _extractOtpErrorMessage(sendResult, 'Failed to send OTP. Please try again.'),
+          type: ToastType.error,
+        );
+        return;
+      }
+
+      final otpReferenceId = sendResult['data']?['otp_reference_id'];
+      if (otpReferenceId == null) {
+        AppToast.show(context, 'Failed to send OTP. Please try again.',
+            type: ToastType.error);
+        return;
+      }
+
+      final verified = await showNomineeEmailOtpSheet(
+        context,
+        email: email,
+        otpReferenceId: otpReferenceId,
+        nomineeName: name.isNotEmpty ? name : null,
+        resendCooldownSeconds:
+            sendResult['data']?['resend_cooldown_seconds'] as int?,
+      );
+
+      if (verified == true && mounted) {
+        setState(() => _verifiedEmail = email.toLowerCase());
+        AppToast.show(context, 'Email ID verified', type: ToastType.success);
+      }
+    } catch (e) {
+      SecureLogger.e('NOMINEE: Email OTP send failed: $e');
+      _showOtpSendFailure(e);
+    } finally {
+      if (mounted) setState(() => _isEmailVerifying = false);
+    }
+  }
+
+  /// Non-2xx OTP send responses arrive as a thrown [Failure] carrying the
+  /// server's own reason (e.g. e-mail already registered, resend cooldown) —
+  /// show that rather than a generic message. A 409 is left alone: the
+  /// interceptor already runs the force-logout dialog for it.
+  void _showOtpSendFailure(Object error) {
+    if (!mounted || error is SessionInvalidatedFailure) return;
+    AppToast.show(
+      context,
+      error is Failure ? error.message : 'Failed to send OTP. Please try again.',
+      type: ToastType.error,
+    );
+  }
+
+  String _extractOtpErrorMessage(Map<String, dynamic> response, String fallback) {
+    final errorObj = response['error'];
+    final dataObj = response['data'];
+    return (errorObj is Map ? errorObj['message'] as String? : null) ??
+        (dataObj is Map ? dataObj['message'] as String? : null) ??
+        response['message'] as String? ??
+        fallback;
+  }
+
+  // ─── Pincode Check (same pattern as account details) ───────────────────
   Future<void> _handlePincodeCheck() async {
     final pincode = _pincodeCtrl.text.trim();
     if (pincode.length != 6) return;
@@ -1218,7 +1472,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     if (result['success'] == true) {
       final data = result['data'] as Map<String, dynamic>;
       setState(() {
-        _isPincodeValid = true;
+        _verifiedPincode = pincode;
         _stateCtrl.text = data['state'] ?? '';
         _cityCtrl.text = data['city'] ?? '';
         _idCity = int.tryParse(data['id_city'] ?? '');
@@ -1227,7 +1481,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
       });
     } else {
       setState(() {
-        _isPincodeValid = false;
+        _verifiedPincode = '';
         _stateCtrl.text = '';
         _cityCtrl.text = '';
       });

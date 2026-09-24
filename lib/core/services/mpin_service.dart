@@ -32,8 +32,25 @@ class MpinService {
       'mpin/validate',
       data: {'mpin': mpin},
     );
+    final data = response.data;
     // Server returns HTTP 200 even on failure — must check app-level flag
-    return response.data?['success'] == true;
+    if (data?['success'] == true) return true;
+
+    // Check for SESSION_EXPIRED in the response body
+    final errorCode = data?['error']?['code'] ?? data?['data']?['code'];
+    if (errorCode == 'SESSION_EXPIRED') {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: Response(
+          requestOptions: response.requestOptions,
+          statusCode: 401,
+          data: data,
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+
+    return false;
   }
 
   /// Changes the MPIN with the server.
@@ -131,7 +148,7 @@ class MpinState {
 
 class MpinNotifier extends StateNotifier<MpinState> {
   final MpinService _mpinService;
-  static const int pinLength = 4;
+  static const int pinLength = 6;
 
   MpinNotifier(this._mpinService) : super(MpinState());
 
@@ -218,8 +235,15 @@ class MpinNotifier extends StateNotifier<MpinState> {
         return false;
       }
 
-      // ── Token expired (401/403) ──
-      if (statusCode == 401 || statusCode == 403) {
+      // ── SESSION_EXPIRED Detection ──
+      // Check response body for SESSION_EXPIRED code (covers both HTTP 200
+      // and HTTP 401 scenarios, regardless of interceptor token refresh)
+      final respData = e.response?.data;
+      final bodyErrorCode = respData is Map
+          ? (respData['error']?['code'] ?? respData['data']?['code'] ?? respData['code'])
+          : null;
+
+      if (statusCode == 401 || statusCode == 403 || bodyErrorCode == 'SESSION_EXPIRED') {
         state = state.copyWith(
           isLoading: false,
           mpin: '',
@@ -237,13 +261,32 @@ class MpinNotifier extends StateNotifier<MpinState> {
         );
       }
       return false;
-    } catch (e) {
-      final msg = e.toString().replaceFirst('Exception: ', '');
+    } on SessionInvalidatedFailure catch (_) {
+      // _apiClient.post() converts the interceptor's rejected DioException
+      // into a SessionInvalidatedFailure before it reaches us — so the
+      // DioException 409 branch above never actually matches this path.
+      // The interceptor already shows the force-logout dialog and rejects
+      // the request. Do NOT set any error here — it would cause a
+      // duplicate/confusing toast on top of the dialog.
       state = state.copyWith(
         isLoading: false,
         mpin: '',
         isComplete: false,
-        error: msg.isNotEmpty ? msg : 'Something went wrong. Please try again.',
+        // No error — the interceptor dialog handles everything.
+      );
+      return false;
+    } catch (e) {
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      // Safety net: if error message mentions session expiry, treat as SESSION_EXPIRED
+      final isSessionExpired = msg.toLowerCase().contains('session') &&
+          msg.toLowerCase().contains('expired');
+      state = state.copyWith(
+        isLoading: false,
+        mpin: '',
+        isComplete: false,
+        error: isSessionExpired
+            ? 'SESSION_EXPIRED'
+            : (msg.isNotEmpty ? msg : 'Something went wrong. Please try again.'),
       );
       return false;
     }

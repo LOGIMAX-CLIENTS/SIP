@@ -6,6 +6,7 @@ import '../../routes/app_router.dart';
 import '../../core/security/session_manager.dart';
 import '../../core/security/secure_logger.dart';
 import '../../main.dart' show navigatorKey;
+import '../theme/app_text_styles.dart';
 
 /// Premium full-screen session invalidated dialog.
 ///
@@ -42,9 +43,23 @@ class SessionInvalidatedDialog {
     await SessionManager.logout();
     SecureLogger.d('SESSION: Invalidated — storage cleared, dialog showing.');
 
+    // The navigator may not be ready yet — e.g. this can race with the
+    // app-lock screen being pushed asynchronously right after app resume.
+    // Retry for a few seconds instead of silently giving up (which would
+    // permanently waste the one-shot trigger and never show the dialog).
+    var attempts = 0;
+    while ((navigatorKey.currentState == null ||
+            navigatorKey.currentContext == null ||
+            navigatorKey.currentState?.mounted != true) &&
+        attempts < 20) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      attempts++;
+    }
+
     final nav = navigatorKey.currentState;
     final ctx = navigatorKey.currentContext;
-    if (nav == null || ctx == null || !nav.mounted) {
+    if (nav == null || ctx == null || !nav.mounted || !ctx.mounted) {
+      SecureLogger.e('SESSION: Navigator never became ready — dialog not shown.');
       _isShowing = false;
       return;
     }
@@ -254,9 +269,7 @@ class _SessionInvalidatedOverlayState
           Text(
             'Session Expired',
             textAlign: TextAlign.center,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 20.sp,
-              fontWeight: FontWeight.w700,
+            style: AppTextStyles.titleLarge(false).copyWith(
               color: const Color(0xFF1A1A2E),
               letterSpacing: -0.3,
             ),
@@ -285,7 +298,7 @@ class _SessionInvalidatedOverlayState
                 SizedBox(width: 4.w),
                 Text(
                   'Logged in on another device',
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w600,
                     color: const Color(0xFFE53935),
@@ -363,11 +376,7 @@ class _SessionInvalidatedOverlayState
                     size: 18.sp, color: Colors.white),
                 label: Text(
                   'Log In Again',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
+                  style: AppTextStyles.button(false),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,

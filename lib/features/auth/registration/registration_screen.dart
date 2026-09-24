@@ -11,8 +11,14 @@ import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/utils/navigation_utils.dart';
+import '../../../core/utils/validators.dart';
+import '../../../shared/theme/app_text_styles.dart';
+import 'email_otp_sheet.dart';
+import 'package:startgold/shared/utils/dob_input_formatter.dart';
+import 'package:startgold/shared/widgets/dob_date_picker.dart';
 
 class RegistrationScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -26,13 +32,19 @@ class RegistrationScreen extends ConsumerStatefulWidget {
 
 class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _dobController = TextEditingController();
   final _referralController = TextEditingController();
 
   bool _agreedToTerms = false;
   bool _isSubmitting = false;
+
+  // ── Mandatory email OTP verification state ──────────────────────────────
+  bool _emailVerified = false;
+  bool _isVerifyingEmail = false;
+  String? _verifiedEmail;
 
   late final TapGestureRecognizer _termsRecognizer;
 
@@ -42,6 +54,13 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     _termsRecognizer = TapGestureRecognizer()
       ..onTap = () => Navigator.pushNamed(context, AppRouter.terms);
 
+    // Editing the email after verification invalidates that verification.
+    _emailController.addListener(() {
+      if (_emailVerified && _emailController.text.trim() != _verifiedEmail) {
+        setState(() => _emailVerified = false);
+      }
+    });
+
     Future.microtask(() {
       if (mounted) ref.read(authControllerProvider.notifier).clearError();
     });
@@ -49,7 +68,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
     _dobController.dispose();
     _referralController.dispose();
@@ -57,34 +77,43 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     super.dispose();
   }
 
+  /// Customers must be at least 18 — leap-year-accurate (unlike a fixed
+  /// day-count offset) since it's computed from calendar year/month/day.
+  int _calculateAge(DateTime dob) {
+    final now = DateTime.now();
+    int age = now.year - dob.year;
+    if (now.month < dob.month ||
+        (now.month == dob.month && now.day < dob.day)) {
+      age--;
+    }
+    return age;
+  }
+
   Future<void> _selectDate(BuildContext context) async {
     final DateTime now = DateTime.now();
-    final DateTime yesterday = now.subtract(const Duration(days: 1));
+    // The most recent date that still makes the customer 18 today.
+    final DateTime maxDob = DateTime(now.year - 18, now.month, now.day);
 
-    final DateTime? picked = await showDatePicker(
+    // Seed from whatever is already typed so the picker opens on that date
+    // rather than jumping back to the 18-year cutoff.
+    final DateTime? typed = DobInputFormatter.parse(_dobController.text);
+    final DateTime initial =
+        (typed != null && !typed.isAfter(maxDob)) ? typed : maxDob;
+
+    // Custom picker: Flutter's own showDatePicker has no MONTH step — its
+    // header toggles straight to a bare year list, and the month disappears
+    // while the customer scrolls years. showDobPicker keeps "<Month> <Year>"
+    // visible in every mode and steps Day -> Month -> Year.
+    final DateTime? picked = await showDobPicker(
       context: context,
-      initialDate: now.subtract(const Duration(days: 6570)), // Default 18 years
+      initialDate: initial,
       firstDate: DateTime(1900),
-      lastDate: yesterday,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF064E3B),
-              onPrimary: Colors.white,
-              onSurface: Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
+      lastDate: maxDob,
     );
 
     if (picked != null) {
-      final formattedDate =
-          "${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}";
       setState(() {
-        _dobController.text = formattedDate;
+        _dobController.text = DobInputFormatter.formatDate(picked);
       });
     }
   }
@@ -103,7 +132,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     final primaryTextColor = isDark ? Colors.white : const Color(0xFF333333);
     final inputBgColor = isDark ? Colors.white.withOpacity(0.05) : Colors.white;
 
-    final bool canSubmit = _agreedToTerms && !_isSubmitting && !authState.isLoading;
+    final bool canSubmit =
+        _agreedToTerms && _emailVerified && !_isSubmitting && !authState.isLoading;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -152,32 +182,35 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                         ),
                         SizedBox(height: 36.h),
 
-                        // Full Name Field
-                        _buildInputLabel('Full Name *', primaryTextColor),
+                        // First Name Field
+                        _buildInputLabel('First Name *', primaryTextColor),
                         SizedBox(height: 8.h),
                         _buildClassicTextField(
-                          controller: _nameController,
-                          hint: 'Enter Your Full Name',
+                          controller: _firstNameController,
+                          hint: 'Enter Your First Name',
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
                           textCapitalization: TextCapitalization.words,
-                          inputFormatters: [
-                            // Allow only letters and spaces — no special characters
-                            FilteringTextInputFormatter.allow(
-                                RegExp(r"[a-zA-Z ]")),
-                            // Capitalise first letter of every word
-                            TextInputFormatter.withFunction((oldValue, newValue) {
-                              final text = newValue.text;
-                              if (text.isEmpty) return newValue;
-                              final capitalized = text.split(' ').map((word) {
-                                if (word.isEmpty) return word;
-                                return word[0].toUpperCase() + word.substring(1);
-                              }).join(' ');
-                              return newValue.copyWith(text: capitalized);
-                            }),
-                          ],
-                          validator: (v) =>
-                              v == null || v.isEmpty ? 'Required' : null,
+                          maxLength: 30,
+                          inputFormatters: _nameInputFormatters(),
+                          validator: (v) => v == null || v.trim().length < 2
+                              ? 'Enter a valid first name'
+                              : null,
+                        ),
+                        SizedBox(height: 16.h),
+
+                        // Last Name Field
+                        _buildInputLabel(
+                            'Last Name (Optional)', primaryTextColor),
+                        SizedBox(height: 8.h),
+                        _buildClassicTextField(
+                          controller: _lastNameController,
+                          hint: 'Enter Your Last Name',
+                          bgColor: inputBgColor,
+                          textColor: primaryTextColor,
+                          textCapitalization: TextCapitalization.words,
+                          maxLength: 30,
+                          inputFormatters: _nameInputFormatters(),
                         ),
                         SizedBox(height: 6.h),
                         Row(
@@ -191,7 +224,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                             SizedBox(width: 6.w),
                             Expanded(
                               child: Text(
-                                'Note: Enter full name exactly as on your PAN Card.',
+                                'Note: Enter your name exactly as on your PAN Card.',
                                 style: GoogleFonts.playfairDisplay(
                                   fontSize: 11.sp,
                                   color: isDark ? Colors.white54 : const Color(0xFF92400E),
@@ -212,19 +245,53 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           hint: 'DD/MM/YYYY',
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
-                          readOnly: true,
-                          onTap: () => _selectDate(context),
+                          // Typeable now — DobInputFormatter inserts the
+                          // slashes, so "19061992" becomes 19/06/1992 as the
+                          // customer types instead of being rejected.
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [DobInputFormatter()],
                           isNumeric: true,
-                          suffixIcon: Icon(Icons.calendar_today_rounded,
-                              size: 20.sp,
-                              color: primaryTextColor.withOpacity(0.5)),
-                          validator: (v) =>
-                              v == null || v.isEmpty ? 'Required' : null,
+                          // The calendar is opened from the icon rather than
+                          // by tapping the field, so tapping to edit no longer
+                          // fights the picker.
+                          // Padded off the border — suffixIconConstraints
+                          // removes Flutter's default 48x48 box, so without
+                          // this the glyph sits flush against the edge. The
+                          // padding doubles as the tap target (opaque), so the
+                          // area around the icon opens the picker too.
+                          suffixIcon: GestureDetector(
+                            onTap: () => _selectDate(context),
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                  right: 16.w, left: 12.w, top: 14.h, bottom: 14.h),
+                              child: Icon(Icons.calendar_today_rounded,
+                                  size: 20.sp,
+                                  color: primaryTextColor.withOpacity(0.5)),
+                            ),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Required';
+                            // parse() rejects both an incomplete value and an
+                            // impossible one (31/02/1990 — DateTime would
+                            // silently roll that to 3 March).
+                            final dob = DobInputFormatter.parse(v);
+                            if (dob == null) {
+                              return 'Enter a valid date as DD/MM/YYYY';
+                            }
+                            if (_calculateAge(dob) < 18) {
+                              return 'You must be at least 18 years old';
+                            }
+                            return null;
+                          },
                         ),
 
                         SizedBox(height: 24.h),
 
-                        // Email Field
+                        // Email Field — the Verify action / Verified badge sits
+                        // INSIDE the field (suffixIcon), matching DOB's calendar
+                        // and Account Details' own e-mail field, rather than
+                        // floating beside the label.
                         _buildInputLabel('E-Mail *', primaryTextColor),
                         SizedBox(height: 8.h),
                         _buildClassicTextField(
@@ -233,19 +300,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
                           keyboardType: TextInputType.emailAddress,
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) {
-                              return 'E-Mail is required';
-                            }
-                            // RFC-compliant email pattern
-                            final emailRegex = RegExp(
-                              r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
-                            );
-                            if (!emailRegex.hasMatch(v.trim())) {
-                              return 'Enter a valid e-mail address';
-                            }
-                            return null;
-                          },
+                          validator: Validators.validateEmail,
+                          suffixIcon: _buildEmailVerifyAction(),
                         ),
 
                         SizedBox(height: 24.h),
@@ -357,13 +413,94 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     );
   }
 
+  List<TextInputFormatter> _nameInputFormatters() {
+    return [
+      // Allow only letters and spaces — no special characters
+      FilteringTextInputFormatter.allow(RegExp(r"[a-zA-Z ]")),
+      // Capitalise first letter of every word
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        final text = newValue.text;
+        if (text.isEmpty) return newValue;
+        final capitalized = text.split(' ').map((word) {
+          if (word.isEmpty) return word;
+          return word[0].toUpperCase() + word.substring(1);
+        }).join(' ');
+        return newValue.copyWith(text: capitalized);
+      }),
+    ];
+  }
+
   Widget _buildInputLabel(String label, Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Text(
       label,
-      style: GoogleFonts.playfairDisplay(
-        fontSize: 15.sp,
-        fontWeight: FontWeight.w500,
-        color: color,
+      style: AppTextStyles.fieldLabel(isDark).copyWith(color: color),
+    );
+  }
+
+  /// E-mail Verify link / Verified badge, rendered inside the e-mail field.
+  ///
+  /// Wrapped so the suffix hugs its content — a bare Row inside `suffixIcon`
+  /// stretches to the field's full height and pushes the text off-centre.
+  Widget _buildEmailVerifyAction() {
+    final Widget child;
+    if (_emailVerified) {
+      child = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 15.sp, color: const Color(0xFF1B882C)),
+          SizedBox(width: 4.w),
+          Text(
+            'Verified',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 13.sp,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1B882C),
+            ),
+          ),
+        ],
+      );
+    } else if (_isVerifyingEmail) {
+      child = SizedBox(
+        width: 14.w,
+        height: 14.w,
+        child: const CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.orangeAccent),
+        ),
+      );
+    } else {
+      child = Text(
+        'Verify',
+        style: GoogleFonts.playfairDisplay(
+          fontSize: 13.sp,
+          fontWeight: FontWeight.w600,
+          color: Colors.orangeAccent,
+          decoration: TextDecoration.underline,
+          decorationColor: Colors.orangeAccent,
+        ),
+      );
+    }
+
+    // The GestureDetector wraps the whole padded region, not just the glyph,
+    // so the entire right-hand area behaves like a button — tapping the space
+    // around the word triggers it too. HitTestBehavior.opaque is what makes
+    // the transparent padding count as part of the hit target.
+    final tappable = _emailVerified || _isVerifyingEmail ? null : _verifyEmail;
+    // Sized to its content — no fixed or minimum width. An earlier version pinned
+    // `width: 0` with a `minWidth` floor, which reserved space the long
+    // "Verified" row then overran, producing Flutter's RIGHT OVERFLOWED stripe
+    // beside a long address. Paired with `suffixIconConstraints` on the field
+    // (defaults to a 48x48 minimum, which would re-introduce the same fight).
+    return GestureDetector(
+      onTap: tappable,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        // Horizontal padding keeps it off the border; the vertical padding is
+        // what gives the tap target real height rather than just the text's
+        // line box.
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 14.h),
+        child: child,
       ),
     );
   }
@@ -384,6 +521,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     String? Function(String?)? validator,
     bool isNumeric = false,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
@@ -394,23 +532,19 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       onTap: onTap,
       validator: validator,
       inputFormatters: inputFormatters,
+      contextMenuBuilder: SecureClipboard.none,
       style: isNumeric
-          ? GoogleFonts.lora(
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w500,
-              color: textColor,
-            )
-          : GoogleFonts.playfairDisplay(
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w500,
-              color: textColor,
-            ),
+          ? AppTextStyles.input(isDark).copyWith(color: textColor)
+          : AppTextStyles.bodyLarge(isDark).copyWith(color: textColor),
       decoration: InputDecoration(
         counterText: '',
         hintText: hint,
-        hintStyle: GoogleFonts.playfairDisplay(
-            fontSize: 16.sp, color: textColor.withOpacity(0.6)),
+        hintStyle: AppTextStyles.inputHint(isDark)
+            .copyWith(color: textColor.withOpacity(0.6)),
         suffixIcon: suffixIcon,
+        // Without this the suffix is forced to at least 48x48, which steals
+        // width from the value text and overflows on a long e-mail address.
+        suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
         filled: true,
         fillColor: bgColor,
         contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 20.h),
@@ -434,8 +568,54 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     );
   }
 
+  Future<void> _verifyEmail() async {
+    final email = _emailController.text.trim();
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+
+    setState(() => _isVerifyingEmail = true);
+    final success = await ref.read(authControllerProvider.notifier).sendEmailOtp(
+          email,
+          firstName: _firstNameController.text.trim().isNotEmpty
+              ? _firstNameController.text.trim()
+              : null,
+        );
+
+    if (!mounted) return;
+    setState(() => _isVerifyingEmail = false);
+    if (!success) return;
+
+    final otpResponseData = ref.read(authControllerProvider).data;
+    final otpReferenceId = otpResponseData?['otp_reference_id'] as String?;
+    if (otpReferenceId == null) return;
+
+    final verified = await showEmailOtpSheet(
+      context,
+      email: email,
+      otpReferenceId: otpReferenceId,
+      firstName: _firstNameController.text.trim(),
+      resendCooldownSeconds: otpResponseData?['resend_cooldown_seconds'] as int?,
+    );
+
+    if (verified == true && mounted) {
+      setState(() {
+        _emailVerified = true;
+        _verifiedEmail = email;
+      });
+    }
+  }
+
   Future<void> _handleRegistration() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (!_emailVerified) {
+      AppToast.show(context, 'Please verify your email before proceeding.',
+          type: ToastType.error);
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -444,7 +624,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       final authService = ref.read(authServiceProvider);
       final result = await authService.registerCheck(
         mobile: widget.mobile,
-        fullName: _nameController.text.trim(),
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
         email: _emailController.text.trim(),
         tempToken: widget.tempToken,
         dob: _dobController.text,
@@ -459,7 +640,8 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
           context,
           AppRouter.mpinCreation,
           arguments: {
-            'fullName': _nameController.text.trim(),
+            'firstName': _firstNameController.text.trim(),
+            'lastName': _lastNameController.text.trim(),
             'mobile': widget.mobile,
             'email': _emailController.text.trim(),
             'dob': _dobController.text,

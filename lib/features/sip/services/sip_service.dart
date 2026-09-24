@@ -1,6 +1,8 @@
 import '../../../core/network/api_client.dart';
 import '../../../core/security/secure_logger.dart';
 import '../models/sip_models.dart';
+import '../models/sip_transaction_filter_options_model.dart';
+import '../../history/models/history_models.dart';
 
 /// SIP API service.
 ///
@@ -63,9 +65,33 @@ class SipService {
     required int amount,
     String? day,
     int? date,
+    /// 'upi' | 'card' | 'emandate'. Omitted/null keeps the backend's own
+    /// default ('upi') — matches pre-existing behaviour for callers that
+    /// don't yet offer method selection. 'emandate' is the canonical value
+    /// for bank-account mandate registration (previously sent as
+    /// 'netbanking' — the backend still accepts that as a legacy alias for
+    /// older app builds, but this client now sends 'emandate' directly; see
+    /// SIPCreateSerializer.validate() in the backend repo).
+    String? paymentMethod,
+    /// Registered bank account (from the Bank Listing picker) — recorded on
+    /// the scheme for every method; for 'emandate' it also supplies the
+    /// mandate's bank_details, taking priority over the raw bank_* fields
+    /// below (see SIPCreateSerializer.validate()).
+    int? bankAccountId,
+    /// 'upi' only — CustomerUPI pk (BankAccount.linkedUpis[].id) the
+    /// customer picked in UpiIdSheet. Omitted lets the backend fall back to
+    /// the primary/any active UPI.
+    int? upiId,
+    /// eMandate only — legacy ad-hoc entry, required by the backend when
+    /// paymentMethod == 'emandate' AND bankAccountId is absent (see
+    /// SIPCreateSerializer.validate()).
+    String? bankAccountNumber,
+    String? bankIfsc,
+    String? bankBeneficiaryName,
+    String? bankAccountType,
   }) async {
     SecureLogger.d(
-        'SIP: Creating SIP – frequency=$frequencyId, commodity=$commodityId');
+        'SIP: Creating SIP – frequency=$frequencyId, commodity=$commodityId, method=${paymentMethod ?? 'upi'}');
 
     final Map<String, dynamic> payload = {
       'frequency': frequencyId,
@@ -78,6 +104,21 @@ class SipService {
     }
     if (frequencyId == 3 && date != null) {
       payload['date'] = date;
+    }
+    if (paymentMethod != null) {
+      payload['payment_method'] = paymentMethod;
+    }
+    if (bankAccountId != null) {
+      payload['bank_account_id'] = bankAccountId;
+    }
+    if (paymentMethod == 'upi' && upiId != null) {
+      payload['upi_id'] = upiId;
+    }
+    if (paymentMethod == 'emandate') {
+      payload['bank_account_number'] = bankAccountNumber;
+      payload['bank_ifsc'] = bankIfsc;
+      payload['bank_beneficiary_name'] = bankBeneficiaryName;
+      payload['bank_account_type'] = bankAccountType ?? 'savings';
     }
 
     final response = await _apiClient.post('sip/create', data: payload);
@@ -173,23 +214,67 @@ class SipService {
   }
 
   // ─── SIP Transaction History ─────────────────────────────────────────
-  /// Fetches SIP transaction history.
+  /// Fetches one page of SIP transaction history for [frequency]
+  /// (Daily/Weekly/Monthly/Custom — required, since each tab lazy-loads
+  /// independently). [commodity]/[status]/[dateFrom]/[dateTo] are the SIP
+  /// Transactions filter sheet's server-side filter params — applied across
+  /// the customer's full history for that frequency before pagination, same
+  /// principle as HistoryService.getTransactionHistory.
   ///
-  /// Reuses the same [HistoryResponse] model from the history module
-  /// since the response structure is identical.
-  Future<Map<String, dynamic>> getSipTransactions() async {
-    SecureLogger.d('SIP: Fetching SIP transaction history');
-    final response = await _apiClient.post('sip/transactions');
+  /// Reuses the same [HistoryResponse] model from the history module since
+  /// the response structure (grouped_transactions + pagination) is identical.
+  Future<HistoryResponse> getSipTransactions({
+    required String frequency,
+    int page = 1,
+    int limit = 20,
+    String? commodity,
+    String? status,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    SecureLogger.d('SIP: Fetching SIP transaction history (freq=$frequency, page=$page)');
+    final response = await _apiClient.post('sip/transactions', data: {
+      'frequency': frequency,
+      'page': page,
+      'limit': limit,
+      if (commodity != null && commodity.isNotEmpty) 'commodity': commodity,
+      if (status != null && status.isNotEmpty) 'status': status,
+      if (dateFrom != null) 'date_from': dateFrom,
+      if (dateTo != null) 'date_to': dateTo,
+    });
     if (response.data != null) {
       if (response.data['success'] == false) {
         final errorMsg = response.data['error']?['message'] ??
             response.data['error']?['internal_message'] ??
-            'Failed to load SIP transactions';
+            'Failed to load AutoGold transactions';
         throw Exception(errorMsg);
       }
-      return response.data;
+      if (response.data['data'] != null) {
+        return HistoryResponse.fromJson(response.data['data']);
+      }
     }
-    throw Exception('Failed to load SIP transactions');
+    throw Exception('Failed to load AutoGold transactions');
+  }
+
+  // ─── SIP Transaction Filter Options ───────────────────────────────────
+  /// Fetches the dynamic filter option set (frequencies, commodities,
+  /// statuses) for the SIP Transactions filter sheet. Backend-driven so new
+  /// values appear without a mobile app release.
+  Future<SipTransactionFilterOptions> getSipTransactionFilterOptions() async {
+    SecureLogger.d('SIP: Fetching SIP transaction filter options');
+    final response = await _apiClient.post('sip/transaction-filter-options');
+    if (response.data != null) {
+      if (response.data['success'] == false) {
+        final errorMsg = response.data['error']?['message'] ??
+            response.data['error']?['internal_message'] ??
+            'Failed to load filter options';
+        throw Exception(errorMsg);
+      }
+      if (response.data['data'] != null) {
+        return SipTransactionFilterOptions.fromJson(response.data['data']);
+      }
+    }
+    throw Exception('Failed to load filter options');
   }
 
   // ─── SIP Transaction Details ─────────────────────────────────────────
@@ -205,11 +290,11 @@ class SipService {
       if (response.data['success'] == false) {
         final errorMsg = response.data['error']?['message'] ??
             response.data['error']?['internal_message'] ??
-            'Failed to load SIP transaction details';
+            'Failed to load AutoGold transaction details';
         throw Exception(errorMsg);
       }
       return response.data;
     }
-    throw Exception('Failed to load SIP transaction details');
+    throw Exception('Failed to load AutoGold transaction details');
   }
 }

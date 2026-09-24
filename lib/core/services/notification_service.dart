@@ -115,6 +115,7 @@ class NotificationService {
   /// Only sends when the token has changed (SecureStorage dedup).
   Future<void> registerFcmToken(String token) async {
     try {
+      if (kDebugMode) debugPrint('[FCM] CURRENT_DEVICE_TOKEN: $token');
       final storedToken = await SecureStorageService.getFcmToken();
       if (storedToken == token) {
         if (kDebugMode) debugPrint('[FCM] Token unchanged — skipping registration.');

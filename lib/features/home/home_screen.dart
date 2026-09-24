@@ -21,6 +21,8 @@ import '../main/main_screen.dart';
 import '../../shared/widgets/numeric_styled_text.dart';
 import 'widgets/micro_savings_banner.dart';
 import 'widgets/learn_carousel.dart';
+import 'widgets/countdown_offer_widget.dart';
+import '../../core/providers/countdown_offer_provider.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/providers/timer_provider.dart';
 import '../instant_saving/controller/saving_controller.dart';
@@ -135,9 +137,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ref.read(portfolioProvider.notifier).fetchPortfolio();
             // 2. Home dashboard — growth streak, schemes, latest metrics
             ref.invalidate(homeDashboardProvider);
-            // 3. Profile — name, photo (in case updated)
+            // 3. Countdown offer — refresh offer state
+            ref.invalidate(countdownOfferProvider);
+            // 4. Profile — name, photo (in case updated)
             ref.invalidate(profileProvider);
-            // 4. Notification badge — refresh unread count
+            // 5. Notification badge — refresh unread count
             ref.read(notificationProvider.notifier).refreshUnreadCount();
             // 5. Sell-rate timer — lock freshest live rate for header display
             final homeStatusMap =
@@ -161,10 +165,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Never block render with full-screen spinner.
     // Header shows immediately; content shimmer-loads below.
 
-    final String customerName = profileState.user.name.isNotEmpty &&
-            profileState.user.name != 'Investor'
-        ? profileState.user.name
-        : (userProfile?.name ?? ref.tr('investorLabel', fallback: 'Investor'));
+    final String customerName = profileState.user.name.isNotEmpty
+            ? profileState.user.name
+            : (userProfile?.name ?? '');
 
     final String? photoUrl =
         profileState.user.photoUrl ?? userProfile?.photoUrl;
@@ -173,8 +176,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFFDFBF3),
       body: RefreshIndicator(
-        onRefresh: () async =>
-            ref.read(portfolioProvider.notifier).fetchPortfolio(),
+        onRefresh: () async {
+          ref.read(portfolioProvider.notifier).fetchPortfolio();
+          ref.invalidate(homeDashboardProvider);
+          ref.invalidate(countdownOfferProvider);
+          ref.invalidate(profileProvider);
+          ref.read(notificationProvider.notifier).refreshUnreadCount();
+        },
         color: AppTheme.arcticBlue,
         backgroundColor: Colors.transparent,
         child: CustomScrollView(
@@ -193,33 +201,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(
               child: Stack(
                 children: [
-                  // Gold gradient visible behind green section's rounded corners
-                  // (matches Rate History section gradient so there's no white gap)
-                  if (ref
-                          .watch(homeDashboardProvider)
-                          .valueOrNull
-                          ?.rateHistory !=
-                      null)
-                    Positioned(
+                  // Color visible behind green section's rounded corners
+                  // Uses offer card color when offer is active, otherwise rate-history gradient
+                  Builder(builder: (context) {
+                    final offerAsync = ref.watch(countdownOfferProvider);
+                    final isOfferActive =
+                        offerAsync.valueOrNull?.enabled ?? false;
+                    final hasRateHistory = ref
+                            .watch(homeDashboardProvider)
+                            .valueOrNull
+                            ?.rateHistory !=
+                        null;
+
+                    if (!isOfferActive && !hasRateHistory) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Positioned(
                       bottom: 0,
                       left: 0,
                       right: 0,
                       height: 32,
                       child: Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment(-0.73, -0.68),
-                            end: Alignment(0.73, 0.68),
-                            colors: [
-                              Color(0xFFF9F3E3),
-                              Color(0xFFFFDF90),
-                              Color(0xFFf4bd44),
-                            ],
-                            stops: [0.0, 0.5679, 1.0],
-                          ),
+                        decoration: BoxDecoration(
+                          color: isOfferActive ? const Color(0xFFFFF0CB) : null,
+                          gradient: isOfferActive
+                              ? null
+                              : const LinearGradient(
+                                  begin: Alignment(-0.73, -0.68),
+                                  end: Alignment(0.73, 0.68),
+                                  colors: [
+                                    Color(0xFFF9F3E3),
+                                    Color(0xFFFFDF90),
+                                    Color(0xFFf4bd44),
+                                  ],
+                                  stops: [0.0, 0.5679, 1.0],
+                                ),
                         ),
                       ),
-                    ),
+                    );
+                  }),
                   Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
@@ -247,15 +268,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               data: (data) {
                                 if (userProfile?.isNewUser == true ||
                                     data.isNewCustomer) {
-                                  return _buildNewCustomerBanner(context,
-                                      selectedCommodity, isCurrentMarketClosed);
+                                  return KeyedSubtree(
+                                    key: const ValueKey('new_customer_banner'),
+                                    child: _buildNewCustomerBanner(context,
+                                        selectedCommodity, isCurrentMarketClosed),
+                                  );
                                 }
-                                return _buildPortfolioOverview(
-                                    isDark,
-                                    data,
-                                    selectedCommodity,
-                                    marketRates,
-                                    isCurrentMarketClosed);
+                                return KeyedSubtree(
+                                  key: const ValueKey('portfolio_overview'),
+                                  child: _buildPortfolioOverview(
+                                      isDark,
+                                      data,
+                                      selectedCommodity,
+                                      marketRates,
+                                      isCurrentMarketClosed),
+                                );
                               },
                               // On refresh: if we have previous data keep showing it
                               loading: () {
@@ -263,21 +290,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 if (prev != null) {
                                   if (userProfile?.isNewUser == true ||
                                       prev.isNewCustomer) {
-                                    return _buildNewCustomerBanner(
-                                        context,
-                                        selectedCommodity,
-                                        isCurrentMarketClosed);
+                                    return KeyedSubtree(
+                                      key: const ValueKey('new_customer_banner'),
+                                      child: _buildNewCustomerBanner(
+                                          context,
+                                          selectedCommodity,
+                                          isCurrentMarketClosed),
+                                    );
                                   }
-                                  return _buildPortfolioOverview(
-                                      isDark,
-                                      prev,
-                                      selectedCommodity,
-                                      marketRates,
-                                      isCurrentMarketClosed);
+                                  return KeyedSubtree(
+                                    key: const ValueKey('portfolio_overview'),
+                                    child: _buildPortfolioOverview(
+                                        isDark,
+                                        prev,
+                                        selectedCommodity,
+                                        marketRates,
+                                        isCurrentMarketClosed),
+                                  );
                                 }
-                                return _buildPortfolioSkeleton(isDark);
+                                return KeyedSubtree(
+                                  key: const ValueKey('portfolio_skeleton'),
+                                  child: _buildPortfolioSkeleton(isDark),
+                                );
                               },
-                              orElse: () => _buildPortfolioError(isDark),
+                              orElse: () => KeyedSubtree(
+                                key: const ValueKey('portfolio_error'),
+                                child: _buildPortfolioError(isDark),
+                              ),
                             ),
                           ),
                           SizedBox(height: 16.h),
@@ -288,14 +327,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ],
               ),
             ),
+            // ── Countdown Offer Widget ──
+            SliverToBoxAdapter(
+              child: Builder(builder: (context) {
+                final offerAsync = ref.watch(countdownOfferProvider);
+                final isOfferActive = offerAsync.valueOrNull?.enabled ?? false;
+
+                if (!isOfferActive) {
+                  return const CountdownOfferWidget();
+                }
+
+                // Stack: fill behind bottom rounded corners with #F3BA3F
+                return Stack(
+                  children: [
+                    // Background fill visible behind bottom rounded corners
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 32,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [
+                              Color(0xFFF9F0DE),
+                              Color(0xFFF3BA3F),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const CountdownOfferWidget(),
+                  ],
+                );
+              }),
+            ),
             SliverToBoxAdapter(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 400),
                 switchInCurve: Curves.easeOut,
                 child: Builder(builder: (context) {
                   final dashAsync = ref.watch(homeDashboardProvider);
-                  // Show previous data immediately during refresh (no flicker)
-                  final dashboard = dashAsync.valueOrNull;
+                  // Keep previous data visible during commodity switch (no shimmer flash)
+                  final dashboard = dashAsync.valueOrNull ?? dashAsync.whenData((d) => d).valueOrNull;
                   if (dashAsync.isLoading && dashboard == null) {
                     return _buildHomeScreenSkeleton(isDark);
                   }
@@ -369,7 +445,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               // ── 1. Invest Smart, Earn Big ──
               ...() {
                 final invest = dashboard.investSection ??
-                    InvestSection(title: 'Invest Smart, Earn Big', blocks: []);
+                    InvestSection(title: 'Save Smart, Earn Big', blocks: []);
                 return [
                   Padding(
                     padding: EdgeInsets.fromLTRB(20.w, 24.h, 20.w, 0),
@@ -1042,6 +1118,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// Format number with Indian comma separators (e.g., 16446 → 16,446).
+  String _formatIndianRate(double rate) {
+    final intPart = rate % 1 == 0 ? rate.toInt().toString() : rate.toString();
+    // Only format the integer portion
+    final parts = intPart.split('.');
+    String digits = parts[0];
+    if (digits.length <= 3) return intPart;
+    // Indian grouping: last 3 digits, then groups of 2
+    final last3 = digits.substring(digits.length - 3);
+    String rest = digits.substring(0, digits.length - 3);
+    final buffer = StringBuffer();
+    while (rest.length > 2) {
+      buffer.write(rest.substring(0, rest.length - 2));
+      buffer.write(',');
+      rest = rest.substring(rest.length - 2);
+    }
+    // Rebuild: handle the remaining part
+    final groups = <String>[];
+    String remaining = digits.substring(0, digits.length - 3);
+    while (remaining.length > 2) {
+      groups.insert(0, remaining.substring(remaining.length - 2));
+      remaining = remaining.substring(0, remaining.length - 2);
+    }
+    if (remaining.isNotEmpty) groups.insert(0, remaining);
+    groups.add(last3);
+    final formatted = groups.join(',');
+    return parts.length > 1 ? '$formatted.${parts[1]}' : formatted;
+  }
+
   Widget _buildGrowthStreakCard(bool isDark, RateHistory history) {
     final activeOrange = const Color(0xFFE2700D); // "Invest Now" button orange
     final textGreen =
@@ -1051,162 +1156,94 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isSilver = history.title.toLowerCase().contains('silver');
     final metalString = isSilver ? 'Silver' : 'Gold';
 
-    return SizedBox(
-      width: double.infinity,
-      height: 250.h,
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Left Side Content
-          Positioned(
-            left: 4.w,
-            top: 0,
-            bottom: 0,
-            child: SizedBox(
-              width: 185.w,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(height: 16.h),
-                  // Plain label
-                  NumericStyledText(
-                    history.title,
+          // ── Column 1: Text + Button ──
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Plain label
+                NumericStyledText(
+                  history.title,
+                  fontSize: 12.sp,
+                  color: const Color(0xFF6C4B08),
+                  fontWeight: FontWeight.w600,
+                ),
+                SizedBox(height: 12.h),
+
+                // Main Title — mixed text/numbers
+                NumericStyledText(
+                  history.highlightText,
+                  fontSize: 20.sp,
+                  fontWeight: FontWeight.w700,
+                  color: textGreen,
+                  height: 1.2,
+                ),
+                SizedBox(height: 8.h),
+
+                // Subtitle
+                Text(
+                  'Save Today, Golden Tomorrow',
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
-                    color: const Color(0xFF6C4B08),
-                    fontWeight: FontWeight.w600,
+                    color: textGreen.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w500,
                   ),
-                  SizedBox(height: 12.h),
+                ),
+                SizedBox(height: 20.h),
 
-                  // Main Title — mixed text/numbers
-                  NumericStyledText(
-                    history.highlightText,
-                    fontSize: 20.sp,
-                    fontWeight: FontWeight.w700,
-                    color: textGreen,
-                    height: 1.2,
-                  ),
-                  SizedBox(height: 8.h),
-
-                  // Subtitle
-                  Text(
-                    'Start saving in ${metalString.toLowerCase()} today',
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 13.sp,
-                      color: textGreen.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const Spacer(),
-
-                  // Button — compact pill, not full width
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IntrinsicWidth(
-                      child: SizedBox(
-                        height: 40.h,
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              ref.read(selectedTabProvider.notifier).state = 1,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: activeOrange,
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(horizontal: 28.w),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(100.r)),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            'Invest Now',
-                            style: GoogleFonts.playfairDisplay(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13.sp,
-                            ),
-                          ),
+                // Button — compact pill
+                IntrinsicWidth(
+                  child: SizedBox(
+                    height: 40.h,
+                    child: ElevatedButton(
+                      onPressed: () =>
+                          ref.read(selectedTabProvider.notifier).state = 1,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: activeOrange,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 28.w),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(100.r)),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Save Now',
+                        style: GoogleFonts.playfairDisplay(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13.sp,
                         ),
                       ),
                     ),
                   ),
-                  SizedBox(height: 21.h),
-                ],
-              ),
+                ),
+                SizedBox(height: 12.h),
+              ],
             ),
           ),
 
-          // Right Side Custom Bar Charts
-          Positioned(
-            right: 0,
-            bottom: 15.h,
-            top: 0,
-            width: 135.w,
-            child: Stack(
-              clipBehavior: Clip.none,
+          // ── Column 2: Bar Chart Image + End Year Label ──
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // ── Short Bar (Start Year) ──
-                Positioned(
-                  left: 0,
-                  bottom: 0,
-                  child: Column(
-                    children: [
-                      _buildChartDataPoint(
-                        '${history.startYear} : ₹${history.startRate % 1 == 0 ? history.startRate.toInt() : history.startRate}/g',
-                        backgroundColor: const Color(0xFFFFB10F),
-                        textColor: const Color(0xFF000000),
-                      ),
-                      SizedBox(height: 6.h),
-                      Container(
-                        width: 38.w,
-                        height: 60.h,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment(-0.87, -0.5),
-                            end: Alignment(0.87, 0.5),
-                            colors: [Color(0xFF1B882C), Color(0xFF003716)],
-                            stops: [0.0223, 0.9399],
-                          ),
-                          borderRadius: BorderRadius.circular(4.r),
-                        ),
-                      ),
-                    ],
-                  ),
+                // End Year badge
+                _buildChartDataPoint(
+                  '${history.endYear} : ₹${_formatIndianRate(history.endRate.toDouble())}/g',
+                  backgroundColor: const Color(0xFFFFB10F),
+                  textColor: const Color(0xFF000000),
                 ),
-
-                // ── Tall Bar (End Year) ──
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Column(
-                    children: [
-                      _buildChartDataPoint(
-                        '${history.endYear} : ₹${history.endRate % 1 == 0 ? history.endRate.toInt() : history.endRate}/g',
-                        /*   backgroundColor: const Color(0xFFECA31E),
-                        textColor: const Color(0xFF6C4B08), */
-                        backgroundColor: const Color(0xFFFFB10F),
-                        textColor: const Color(0xFF000000),
-                      ),
-                      SizedBox(height: 6.h),
-                      Container(
-                        width: 38.w,
-                        height: 145.h,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment(-0.87, -0.5),
-                            end: Alignment(0.87, 0.5),
-                            colors: [Color(0xFF1B882C), Color(0xFF003716)],
-                            stops: [0.0223, 0.9399],
-                          ),
-                          borderRadius: BorderRadius.circular(4.r),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF003716)
-                                  .withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(3, 0),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                SizedBox(height: 6.h),
+                // Bar chart image
+                Image.asset(
+                  'assets/home/rarehistory-bar.png',
+                  fit: BoxFit.contain,
                 ),
               ],
             ),
@@ -1279,132 +1316,154 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 24.w),
       child: Column(
         children: [
-          Text(
-            selected == CommodityType.gold
-                ? 'Total Gold Savings'
-                : 'Total Silver Savings',
-            style: GoogleFonts.playfairDisplay(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 15.sp,
-              letterSpacing: 0.5,
-            ),
-          ),
-          SizedBox(height: 16.h),
-          // ── Balance + Growth pill — always centered as a stable unit ──
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Gradient gm text
-              ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  begin: const Alignment(-0.87, -0.5),
-                  end: const Alignment(0.87, 0.5),
-                  colors: selected == CommodityType.gold
-                      ? const [Color(0xFFFFB500), Color(0xFFFFCA49)]
-                      : const [Color(0xFFB6B6B6), Color(0xFFE5E5E5)],
-                ).createShader(bounds),
-                blendMode: BlendMode.srcIn,
-                child: Text(
-                  '${data.summary.balance.toStringAsFixed(4)} gm',
-                  style: GoogleFonts.lora(
-                    fontSize: 28.sp,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+          // ── Animated content swap when commodity changes ──
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
+            child: Column(
+              key: ValueKey('portfolio_content_${selected.name}'),
+              children: [
+                Text(
+                  selected == CommodityType.gold
+                      ? 'Total Gold Savings'
+                      : 'Total Silver Savings',
+                  style: GoogleFonts.playfairDisplay(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 15.sp,
+                    letterSpacing: 0.5,
                   ),
                 ),
-              ),
-              SizedBox(width: 10.w),
-              // Growth pill
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF023A17),
-                  borderRadius: BorderRadius.circular(20.r),
-                  border: Border.all(
-                    color: const Color(0xFF0B7F03),
-                    width: 0.6,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                SizedBox(height: 16.h),
+                // ── Balance + Growth pill — always centered as a stable unit ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Icon(
-                      isPositive ? Icons.arrow_upward : Icons.arrow_downward,
-                      size: 13.sp,
-                      color: isPositive
-                          ? const Color(0xFF0ED500)
-                          : const Color(0xFFFF1A1A),
+                    // Gradient gm text — Flexible + FittedBox auto-scales long balances
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: ShaderMask(
+                          shaderCallback: (bounds) => LinearGradient(
+                            begin: const Alignment(-0.87, -0.5),
+                            end: const Alignment(0.87, 0.5),
+                            colors: selected == CommodityType.gold
+                                ? const [Color(0xFFFFB500), Color(0xFFFFCA49)]
+                                : const [Color(0xFFB6B6B6), Color(0xFFE5E5E5)],
+                          ).createShader(bounds),
+                          blendMode: BlendMode.srcIn,
+                          child: Text(
+                            '${data.summary.balance.toStringAsFixed(6)} gm',
+                            style: GoogleFonts.lora(
+                              fontSize: 28.sp,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    SizedBox(width: 3.w),
-                    Text(
-                      '${returnsPct.toStringAsFixed(1)}%',
-                      style: GoogleFonts.lora(
-                        fontSize: 12.sp,
-                        fontWeight: FontWeight.bold,
-                        color: isPositive
-                            ? const Color(0xFF0ED500)
-                            : const Color(0xFFFF1A1A),
+                    SizedBox(width: 10.w),
+                    // Growth pill
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF023A17),
+                        borderRadius: BorderRadius.circular(20.r),
+                        border: Border.all(
+                          color: const Color(0xFF0B7F03),
+                          width: 0.6,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isPositive
+                                ? Icons.arrow_upward
+                                : Icons.arrow_downward,
+                            size: 13.sp,
+                            color: isPositive
+                                ? const Color(0xFF0ED500)
+                                : const Color(0xFFFF1A1A),
+                          ),
+                          SizedBox(width: 3.w),
+                          Text(
+                            '${returnsPct.toStringAsFixed(1)}%',
+                            style: GoogleFonts.lora(
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.bold,
+                              color: isPositive
+                                  ? const Color(0xFF0ED500)
+                                  : const Color(0xFFFF1A1A),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16.h),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () =>
-                      Navigator.pushNamed(context, AppRouter.withdrawal),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF335C41),
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: 15.h),
-                    minimumSize: Size(0, 36.h),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(100.r),
+                SizedBox(height: 16.h),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () =>
+                            Navigator.pushNamed(context, AppRouter.withdrawal),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF335C41),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(vertical: 15.h),
+                          minimumSize: Size(0, 36.h),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(100.r),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          'Withdrawal',
+                          style: GoogleFonts.playfairDisplay(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.sp,
+                          ),
+                        ),
+                      ),
                     ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Withdrawal',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.sp,
+                    SizedBox(width: 16.w),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () =>
+                            ref.read(selectedTabProvider.notifier).state = 1,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF064E3B),
+                          padding: EdgeInsets.symmetric(vertical: 15.h),
+                          minimumSize: Size(0, 36.h),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(100.r),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          'Save More',
+                          style: GoogleFonts.playfairDisplay(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.sp,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-              SizedBox(width: 16.w),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () =>
-                      ref.read(selectedTabProvider.notifier).state = 1,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF064E3B),
-                    padding: EdgeInsets.symmetric(vertical: 15.h),
-                    minimumSize: Size(0, 36.h),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(100.r),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Invest More',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.sp,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           SizedBox(height: 12.h),
           _buildCommodityToggle(selected, isCurrentMarketClosed),
@@ -1415,7 +1474,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildCommodityToggle(CommodityType selected, bool isMarketClosed) {
     final isGold = selected == CommodityType.gold;
-    final referralMsg = ref.watch(profileProvider).user.referralMessage.trim();
+    final referralMsg = ref.read(profileProvider).user.referralMessage.trim();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1581,7 +1640,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: Center(
           child: Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 14.sp,
               fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
               color: isActive
@@ -1695,8 +1754,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           TextSpan(text: 'with just '),
                           TextSpan(
                             text: '₹10',
-                            style: TextStyle(
-                                fontFamily: 'Lora',
+                            style: GoogleFonts.lora(
                                 color: const Color(0xFFFBBF24)),
                           ),
                         ],
@@ -1723,8 +1781,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               elevation: 0,
                             ),
                             child: Text(
-                              'Invest Now',
-                              style: TextStyle(
+                              'Save Now',
+                              style: GoogleFonts.playfairDisplay(
                                 fontSize: 13.sp,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1827,7 +1885,9 @@ class PremiumHomeHeader extends SliverPersistentHeaderDelegate {
                 children: [
                   Flexible(
                     child: Text(
-                      'Hello, $customerName',
+                      customerName.isNotEmpty
+                          ? 'Hello, $customerName'
+                          : 'Welcome',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.playfairDisplay(
@@ -1876,7 +1936,7 @@ class PremiumHomeHeader extends SliverPersistentHeaderDelegate {
                               child: Center(
                                 child: Text(
                                   unreadCount > 99 ? '99+' : '$unreadCount',
-                                  style: TextStyle(
+                                  style: GoogleFonts.lora(
                                     fontSize: unreadCount > 9 ? 8.sp : 9.sp,
                                     fontWeight: FontWeight.w900,
                                     color: Colors.white,
@@ -2083,7 +2143,7 @@ class _LiveBadgeState extends State<_LiveBadge>
               SizedBox(width: 5.w),
               Text(
                 'LIVE',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 10.sp,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -2174,7 +2234,7 @@ class _ClosedBadgeState extends State<_ClosedBadge>
               SizedBox(width: 5.w),
               Text(
                 'CLOSED',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 10.sp,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,

@@ -1,0 +1,730 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
+import '../../core/providers/user_provider.dart';
+import '../../core/error/failures.dart';
+import '../../features/withdrawal/services/withdrawal_service.dart';
+import '../../features/profile/services/bank_details_service.dart';
+import '../../features/profile/screens/bank_penny_verify_screen.dart';
+import '../../routes/app_router.dart';
+import 'custom_button.dart';
+import 'app_toast.dart';
+import 'secure_clipboard.dart';
+
+/// Shared "Add Bank Account" bottom sheet — penny-drop verify & save, with a
+/// live Beneficiary Name check (on field-blur) against the customer's
+/// verified PAN/Aadhaar name before "Verify & Add" is enabled. Used by both
+/// the Withdrawal bank-selection screen and Profile → Bank Details, so the
+/// add-bank flow only exists once. The server (verify_bank) is the
+/// authoritative gate — this is a pre-flight UX check only.
+final _ifscRegex = RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$');
+
+/// Returns the Future from the underlying showModalBottomSheet() call —
+/// resolves once the sheet closes, however it closes (successful add via
+/// onAdded, or the customer dismissing it) — so a caller that needs to know
+/// when the WHOLE flow is done (not just the success case onAdded already
+/// covers) can await it. Existing fire-and-forget callers are unaffected:
+/// not awaiting a returned Future is always valid Dart.
+Future<void> showAddBankAccountSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  required bool isDark,
+  required VoidCallback onAdded,
+}) {
+  const accentGreen = Color(0xFF1B882C);
+  const gradientDark = Color(0xFF003716);
+
+  final nameCtrl = TextEditingController();
+  final accCtrl = TextEditingController();
+  final confirmAccCtrl = TextEditingController();
+  final ifscCtrl = TextEditingController();
+  final nameFocus = FocusNode();
+  bool isVerifying = false;
+  bool isCheckingName = false;
+  String? nameError;
+  bool nameMatched = false;
+  // False only when checkBeneficiaryName() reports has_kyc=false — the
+  // customer has no verified PAN/Aadhaar at all, so "fix the name" isn't
+  // the right instruction; show a "Complete KYC" prompt instead.
+  bool nameHasKyc = true;
+  // Persistent inline error for the "Verify & Add" submit itself — a toast
+  // alone can be missed, and the specific reason (account-status-code
+  // message, PAN/Aadhaar name mismatch, bank-registered-name mismatch) is
+  // worth the customer actually reading, not just glancing past. Cleared
+  // whenever a new submit attempt starts.
+  String? submitError;
+  // Whether the backend offered a manual-review route for the failure above
+  // (data.manual_review_available) — set alongside submitError, so it only
+  // ever shows next to a failure it actually explains, never stale.
+  bool manualReviewAvailable = false;
+  // True once the customer has sent this account for manual review — either
+  // just now, or already, on a prior failed attempt for the same account
+  // (data.manual_review_requested) — so the button becomes a fact instead of
+  // an action, and can't be tapped twice.
+  bool manualReviewRequested = false;
+  bool isRequestingReview = false;
+
+  // Required evidence for "Contact Admin" — same strictness as PAN/Aadhaar's
+  // own manual upload (ManualKycUploadScreen): typed details alone gave the
+  // admin nothing to actually confirm the account from.
+  final passbookPicker = ImagePicker();
+  XFile? passbookFile;
+
+  // StatefulBuilder hands back the SAME StateSetter across rebuilds (it's
+  // bound to the underlying State), so capturing it here and registering
+  // the FocusNode listener ONCE outside builder is safe — and necessary:
+  // registering inside builder would re-add a new listener on every
+  // rebuild, firing checkName() multiple times per single field blur.
+  // Declared here (not nearer checkName()) so pickPassbookPhoto below can
+  // also reference it before StatefulBuilder assigns the real setter.
+  StateSetter? modalSetState;
+
+  Future<void> pickPassbookPhoto(BuildContext pickerCtx) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: pickerCtx,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: accentGreen),
+              title: const Text('Take Photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: accentGreen),
+              title: const Text('Choose from Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel, color: Colors.grey),
+              title: const Text('Cancel'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    try {
+      final file = await passbookPicker.pickImage(
+        source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 85,
+      );
+      if (file == null) return;
+
+      // Mirrors the backend's 5MB cap (shared/utils/upload_validation.py).
+      final sizeBytes = await file.length();
+      if (sizeBytes > 5 * 1024 * 1024) {
+        if (pickerCtx.mounted) {
+          AppToast.show(pickerCtx, 'Image is too large. Maximum allowed size is 5MB.', type: ToastType.error);
+        }
+        return;
+      }
+
+      modalSetState?.call(() => passbookFile = file);
+    } catch (_) {
+      if (pickerCtx.mounted) {
+        AppToast.show(pickerCtx, 'Could not pick the image. Please try again.', type: ToastType.error);
+      }
+    }
+  }
+
+  Future<void> checkName() async {
+    final name = nameCtrl.text.trim();
+    if (name.isEmpty) {
+      modalSetState?.call(() {
+        nameError = null;
+        nameMatched = false;
+      });
+      return;
+    }
+    modalSetState?.call(() => isCheckingName = true);
+    try {
+      final result =
+          await ref.read(bankDetailsServiceProvider).checkBeneficiaryName(name);
+      modalSetState?.call(() {
+        isCheckingName = false;
+        nameMatched = result['matched'] == true;
+        nameError = nameMatched ? null : result['message']?.toString();
+        nameHasKyc = result['has_kyc'] != false;
+      });
+    } catch (_) {
+      // Non-blocking: server-side verify_bank() still enforces this
+      // rule, so a transient check failure shouldn't lock the form.
+      modalSetState?.call(() {
+        isCheckingName = false;
+        nameMatched = true;
+        nameError = null;
+        nameHasKyc = true;
+      });
+    }
+  }
+
+  nameFocus.addListener(() {
+    if (!nameFocus.hasFocus) checkName();
+  });
+
+  return showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetCtx) => StatefulBuilder(
+      builder: (ctx, setModalState) {
+        modalSetState = setModalState;
+
+        final canSubmit = nameCtrl.text.trim().isNotEmpty &&
+            nameMatched &&
+            accCtrl.text.trim().length >= 9 &&
+            confirmAccCtrl.text.trim() == accCtrl.text.trim() &&
+            _ifscRegex.hasMatch(ifscCtrl.text.trim().toUpperCase()) &&
+            !isVerifying &&
+            !isCheckingName;
+
+        return Padding(
+          padding:
+              EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+          child: Container(
+            padding: EdgeInsets.all(24.w),
+            decoration: BoxDecoration(
+              gradient: isDark
+                  ? const LinearGradient(
+                      colors: [Color(0xFF0F172A), Color(0xFF0F172A)])
+                  : const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFFDEF9DF), Color(0xFFFFFFFF)],
+                      stops: [-0.3775, 1.0],
+                    ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28.r)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36.w,
+                      height: 4.h,
+                      decoration: BoxDecoration(
+                          color: Colors.black12,
+                          borderRadius: BorderRadius.circular(4.r)),
+                    ),
+                  ),
+                  SizedBox(height: 20.h),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Add Bank Account',
+                          style: AppTextStyles.titleLarge(isDark)),
+                      GestureDetector(
+                        onTap: () {
+                          if (!isVerifying) Navigator.pop(sheetCtx);
+                        },
+                        child: Container(
+                          padding: EdgeInsets.all(6.w),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.05),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.close_rounded,
+                              size: 18.sp, color: Colors.black54),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 20.h),
+                  _field('Beneficiary Name', 'Enter full name', nameCtrl,
+                      isDark,
+                      focusNode: nameFocus,
+                      forceUpperCase: true,
+                      lettersOnly: true,
+                      errorText: nameError,
+                      suffix: isCheckingName
+                          ? SizedBox(
+                              width: 16.w,
+                              height: 16.w,
+                              child: const CircularProgressIndicator(
+                                  strokeWidth: 2, color: accentGreen),
+                            )
+                          : (nameMatched
+                              ? Icon(Icons.check_circle_rounded,
+                                  color: accentGreen, size: 20.sp)
+                              : null),
+                      onChanged: (_) => setModalState(() {
+                        nameMatched = false;
+                        nameError = null;
+                        nameHasKyc = true;
+                      })),
+                  // Shown only when the customer has NO verified PAN/Aadhaar
+                  // at all (has_kyc=false) — "fix the name" isn't the right
+                  // instruction here, they need to complete KYC first.
+                  if (nameError != null && !nameHasKyc) ...[
+                    SizedBox(height: 6.h),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (context.mounted) {
+                            Navigator.pushNamed(context, AppRouter.kycVerification);
+                          }
+                        });
+                      },
+                      child: Text(
+                        'Complete KYC →',
+                        style: AppTextStyles.fieldError(isDark).copyWith(
+                          color: accentGreen,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                  SizedBox(height: 12.h),
+                  _field('Account Number', 'Enter account number', accCtrl,
+                      isDark,
+                      kbd: TextInputType.number,
+                      digitsOnly: true,
+                      onChanged: (_) => setModalState(() {})),
+                  SizedBox(height: 12.h),
+                  _field('Confirm Account Number', 'Re-enter account number',
+                      confirmAccCtrl, isDark,
+                      kbd: TextInputType.number,
+                      digitsOnly: true,
+                      onChanged: (_) => setModalState(() {})),
+                  if (confirmAccCtrl.text.isNotEmpty &&
+                      accCtrl.text.trim() != confirmAccCtrl.text.trim()) ...[
+                    SizedBox(height: 6.h),
+                    Text('Account numbers do not match',
+                        style: AppTextStyles.fieldError(isDark)),
+                  ],
+                  SizedBox(height: 12.h),
+                  _field('IFSC Code', 'e.g. SBIN0001234', ifscCtrl, isDark,
+                      forceUpperCase: true,
+                      ifscOnly: true,
+                      onChanged: (_) => setModalState(() {})),
+                  if (submitError != null) ...[
+                    SizedBox(height: 16.h),
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10.r),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.error_outline_rounded, size: 18.sp, color: Colors.red.shade400),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: Text(
+                              submitError!,
+                              style: AppTextStyles.fieldError(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  SizedBox(height: 28.h),
+                  CustomButton(
+                    text: 'Verify & Add',
+                    isLoading: isVerifying,
+                    loadingText: 'Verifying...',
+                    onPressed: canSubmit
+                        ? () async {
+                            final user = ref.read(userProvider);
+                            if (user == null) return;
+                            setModalState(() {
+                              isVerifying = true;
+                              submitError = null;
+                            });
+                            try {
+                              final withdrawalSvc = ref.read(withdrawalServiceProvider);
+                              // Which BAV method the active KYC gateway supports,
+                              // AND which live-control second step (RPD vs the
+                              // ₹1-payment flow) is active — never hardcode a
+                              // provider name client-side for either (see
+                              // getActiveBankVerificationMethod's doc comment).
+                              final methodInfo =
+                                  await withdrawalSvc.getActiveBankVerificationMethod();
+                              final isPennyless = methodInfo.bavMethod == 'pennyless';
+
+                              final result = isPennyless
+                                  ? await withdrawalSvc.verifyAndAddBankPennyless(
+                                      holderName: nameCtrl.text.trim(),
+                                      accNo: accCtrl.text.trim(),
+                                      ifsc: ifscCtrl.text.trim(),
+                                    )
+                                  : await withdrawalSvc.verifyAndAddBank(
+                                      customerId: user.id,
+                                      mobile: user.mobile,
+                                      holderName: nameCtrl.text.trim(),
+                                      bankName: '',
+                                      accNo: accCtrl.text.trim(),
+                                      ifsc: ifscCtrl.text.trim(),
+                                    );
+                              if (!sheetCtx.mounted) return;
+                              if (result['success'] == true) {
+                                Navigator.pop(sheetCtx);
+                                // Defer the provider invalidation, toast, and
+                                // next-screen push to the following frame —
+                                // stacking a ref.invalidate() (rebuilds the
+                                // Bank Details screen underneath), an
+                                // AppToast (inserts its own OverlayEntry),
+                                // and a Navigator.push all synchronously
+                                // right after Navigator.pop(), with no frame
+                                // to let the popped sheet's route actually
+                                // finish tearing down, is what was causing
+                                // "_dependents.isEmpty" InheritedElement
+                                // crashes when navigating back through Bank
+                                // Details.
+                                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                                  onAdded();
+                                  if (context.mounted) {
+                                    AppToast.show(
+                                      context,
+                                      result['message'] ??
+                                          'Bank account verified successfully',
+                                      type: ToastType.success,
+                                    );
+                                  }
+                                  // ── Live-control second step — auto-chained
+                                  // for EVERY BAV path (Cashfree or Pennyless
+                                  // alike), not just Cashfree. id_payout is
+                                  // CustomerBank.cbank_id (see
+                                  // CashfreeService.verify_bank()'s /
+                                  // BankVerificationSurePassService.verify_pennyless()'s
+                                  // response — the key name is a holdover
+                                  // from Cashfree payout-beneficiary
+                                  // registration, not a payout itself; both
+                                  // BAV paths return it under the same key).
+                                  // Which screen to open is resolved from
+                                  // methodInfo.secondStepMethod — itself
+                                  // read straight off the backend's
+                                  // VerificationGatewayRouting(RPD) check,
+                                  // never off isPennyless/the BAV provider.
+                                  final cbankId = (result['data']
+                                          as Map<String, dynamic>?)?['id_payout']
+                                      ?.toString();
+                                  if (cbankId != null &&
+                                      cbankId.isNotEmpty &&
+                                      context.mounted) {
+                                    if (methodInfo.secondStepMethod == 'rpd') {
+                                      // Previously fired without awaiting —
+                                      // RPD's own `true` result (full
+                                      // verification, not just BAV) was
+                                      // discarded, so onAdded() never ran a
+                                      // second time and bankAccountsProvider
+                                      // stayed on the BAV-only snapshot from
+                                      // above. Bank Details/Picker showed
+                                      // stale status until something
+                                      // unrelated refreshed the provider.
+                                      final rpdVerified = await Navigator.pushNamed(
+                                        context,
+                                        AppRouter.reversePennyDrop,
+                                        arguments: {'cbankId': cbankId},
+                                      );
+                                      if (rpdVerified == true) onAdded();
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => BankPennyVerifyScreen(
+                                              cbankId: cbankId),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                });
+                              } else {
+                                final failData =
+                                    result['data'] as Map<String, dynamic>?;
+                                final errMsg = result['message'] ??
+                                    (result['error']
+                                            as Map<String, dynamic>?)?['message'] ??
+                                    failData?['message'] ??
+                                    'Verification failed';
+                                setModalState(() {
+                                  isVerifying = false;
+                                  submitError = errMsg.toString();
+                                  manualReviewAvailable =
+                                      failData?['manual_review_available'] == true;
+                                  manualReviewRequested =
+                                      failData?['manual_review_requested'] == true;
+                                });
+                                AppToast.show(sheetCtx, errMsg,
+                                    type: ToastType.error);
+                              }
+                            } catch (e) {
+                              if (sheetCtx.mounted) {
+                                final message = e is Failure
+                                    ? e.message
+                                    : 'Could not verify bank details. Please try again.';
+                                setModalState(() {
+                                  isVerifying = false;
+                                  submitError = message;
+                                });
+                                AppToast.show(sheetCtx, message,
+                                    type: ToastType.error);
+                              }
+                            }
+                          }
+                        : null,
+                    gradient: const LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [accentGreen, gradientDark],
+                    ),
+                    boxShadow: canSubmit
+                        ? [
+                            BoxShadow(
+                              color: accentGreen.withOpacity(0.35),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : [],
+                  ),
+                  // Only next to a failure that actually offers it — "Verify
+                  // & Add" above already serves as Retry (it re-submits with
+                  // whatever the customer has typed, and is re-enabled as
+                  // soon as the fields are valid again), so this is the one
+                  // new action: hand the same details to an admin instead.
+                  if (submitError != null && manualReviewAvailable) ...[
+                    SizedBox(height: 10.h),
+                    if (manualReviewRequested)
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.symmetric(vertical: 12.h),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: accentGreen.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(50.r),
+                        ),
+                        child: Text(
+                          'Sent to admin for review',
+                          style: AppTextStyles.button(isDark)
+                              .copyWith(color: accentGreen),
+                        ),
+                      )
+                    else ...[
+                      // Required before the button is enabled — an admin
+                      // reviewing typed text alone has nothing to actually
+                      // confirm the account against.
+                      GestureDetector(
+                        onTap: isRequestingReview ? null : () => pickPassbookPhoto(sheetCtx),
+                        child: Container(
+                          width: double.infinity,
+                          padding: EdgeInsets.all(14.r),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white.withOpacity(0.03) : Colors.black.withOpacity(0.02),
+                            borderRadius: BorderRadius.circular(14.r),
+                            border: Border.all(
+                              color: passbookFile != null
+                                  ? accentGreen
+                                  : (isDark ? Colors.white24 : Colors.black12),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              if (passbookFile != null)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8.r),
+                                  child: Image.file(File(passbookFile!.path), width: 40.w, height: 40.w, fit: BoxFit.cover),
+                                )
+                              else
+                                Container(
+                                  width: 40.w,
+                                  height: 40.w,
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.white12 : Colors.black12,
+                                    borderRadius: BorderRadius.circular(8.r),
+                                  ),
+                                  child: Icon(Icons.add_a_photo_outlined,
+                                      size: 18.sp, color: isDark ? Colors.white54 : Colors.black45),
+                                ),
+                              SizedBox(width: 12.w),
+                              Expanded(
+                                child: Text(
+                                  passbookFile != null
+                                      ? 'Passbook/cheque photo — tap to retake'
+                                      : 'Upload passbook photo or cancelled cheque',
+                                  style: AppTextStyles.fieldHelper(isDark),
+                                ),
+                              ),
+                              Icon(
+                                passbookFile != null ? Icons.check_circle : Icons.chevron_right,
+                                color: passbookFile != null ? accentGreen : (isDark ? Colors.white38 : Colors.black38),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 10.h),
+                      OutlinedButton(
+                        onPressed: (isVerifying || isRequestingReview || passbookFile == null)
+                            ? null
+                            : () async {
+                                setModalState(() => isRequestingReview = true);
+                                try {
+                                  final result = await ref
+                                      .read(bankDetailsServiceProvider)
+                                      .requestManualBavReview(
+                                        accNo: accCtrl.text.trim(),
+                                        ifsc: ifscCtrl.text.trim(),
+                                        holderName: nameCtrl.text.trim(),
+                                        passbookPhoto: passbookFile!,
+                                      );
+                                  if (!sheetCtx.mounted) return;
+                                  if (result['success'] == true) {
+                                    setModalState(() {
+                                      isRequestingReview = false;
+                                      manualReviewRequested = true;
+                                    });
+                                    AppToast.show(
+                                      sheetCtx,
+                                      result['message'] ??
+                                          'Sent for manual review. Please contact admin for approval.',
+                                      type: ToastType.success,
+                                    );
+                                  } else {
+                                    final errMsg = result['message'] ??
+                                        (result['error'] as Map<String,
+                                                dynamic>?)?['message'] ??
+                                        'Could not send this for review.';
+                                    setModalState(
+                                        () => isRequestingReview = false);
+                                    AppToast.show(sheetCtx, errMsg,
+                                        type: ToastType.error);
+                                  }
+                                } catch (e) {
+                                  if (sheetCtx.mounted) {
+                                    setModalState(
+                                        () => isRequestingReview = false);
+                                    AppToast.show(
+                                      sheetCtx,
+                                      e is Failure
+                                          ? e.message
+                                          : 'Could not send this for review.',
+                                      type: ToastType.error,
+                                    );
+                                  }
+                                }
+                              },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: accentGreen,
+                          side: BorderSide(color: accentGreen.withOpacity(0.4)),
+                          minimumSize: Size(double.infinity, 50.h),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(50.r),
+                          ),
+                        ),
+                        child: isRequestingReview
+                            ? SizedBox(
+                                width: 18.w,
+                                height: 18.w,
+                                child: const CircularProgressIndicator(
+                                    strokeWidth: 2, color: accentGreen),
+                              )
+                            : Text('Contact Admin',
+                                style: AppTextStyles.button(isDark)
+                                    .copyWith(color: accentGreen)),
+                      ),
+                    ],
+                  ],
+                  SizedBox(height: 8.h),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  ).whenComplete(() {
+    // Deferred a frame — whenComplete fires as soon as the sheet's route is
+    // popped, but its TextField (still holding this same FocusNode, a
+    // ChangeNotifier) is still mid dismiss-animation for that frame, and
+    // EditableText's internal focus/cursor listenable merge can still try
+    // to touch it. Disposing synchronously here raced that teardown and
+    // produced "_dependents.isEmpty"/"attached: is not true" widget-tree
+    // corruption crashes on close (and, transitively, on anything that
+    // reopens this sheet or the screen behind it right after).
+    WidgetsBinding.instance.addPostFrameCallback((_) => nameFocus.dispose());
+  });
+}
+
+Widget _field(
+    String label, String hint, TextEditingController ctrl, bool isDark,
+    {TextInputType kbd = TextInputType.text,
+    bool forceUpperCase = false,
+    bool lettersOnly = false,
+    bool digitsOnly = false,
+    bool ifscOnly = false,
+    FocusNode? focusNode,
+    String? errorText,
+    Widget? suffix,
+    ValueChanged<String>? onChanged}) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: AppTextStyles.fieldLabel(isDark)),
+      SizedBox(height: 8.h),
+      TextField(
+        controller: ctrl,
+        focusNode: focusNode,
+        onChanged: onChanged,
+        keyboardType: kbd,
+        contextMenuBuilder: SecureClipboard.none,
+        textCapitalization:
+            forceUpperCase ? TextCapitalization.characters : TextCapitalization.none,
+        inputFormatters: [
+          // Beneficiary name: letters and spaces only — no digits/symbols.
+          if (lettersOnly) FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+          if (lettersOnly) LengthLimitingTextInputFormatter(60),
+          // Account number: digits only — keyboardType alone doesn't block
+          // letters/symbols pasted in or typed via an alternate keyboard.
+          if (digitsOnly) FilteringTextInputFormatter.digitsOnly,
+          if (digitsOnly) LengthLimitingTextInputFormatter(20),
+          // IFSC: letters+digits only, exactly 11 chars (AAAA0999999).
+          if (ifscOnly) FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+          if (ifscOnly) LengthLimitingTextInputFormatter(11),
+          if (forceUpperCase)
+            TextInputFormatter.withFunction((oldValue, newValue) =>
+                newValue.copyWith(text: newValue.text.toUpperCase())),
+        ],
+        style: AppTextStyles.kycFieldInput(isDark),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: AppTextStyles.kycFieldHint(isDark),
+          errorStyle: AppTextStyles.fieldError(isDark),
+          filled: true,
+          fillColor:
+              isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFF3F4F6),
+          suffixIcon: suffix != null
+              ? Padding(padding: EdgeInsets.all(12.w), child: suffix)
+              : null,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14.r), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14.r),
+              borderSide: const BorderSide(color: Color(0xFF1B882C), width: 1.5)),
+          contentPadding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 16.h),
+        ),
+      ),
+      if (errorText != null) ...[
+        SizedBox(height: 6.h),
+        Text(errorText, style: AppTextStyles.fieldError(isDark)),
+      ],
+    ],
+  );
+}

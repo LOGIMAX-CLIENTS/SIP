@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/providers/app_control_provider.dart';
 import '../../routes/app_router.dart';
 import '../../main.dart' show navigatorKey;
+import '../theme/app_text_styles.dart';
 
 /// Pre-action maintenance gate.
 ///
@@ -123,11 +124,8 @@ class _MaintenanceBlockedDialog extends StatelessWidget {
             Text(
               title.isNotEmpty ? title : 'Action Unavailable',
               textAlign: TextAlign.center,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 18.sp,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1A1A2E),
-              ),
+              style: AppTextStyles.titleMedium(false)
+                  .copyWith(color: const Color(0xFF1A1A2E)),
             ),
 
             SizedBox(height: 12.h),
@@ -163,10 +161,7 @@ class _MaintenanceBlockedDialog extends StatelessWidget {
                 ),
                 child: Text(
                   'Got it',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: AppTextStyles.button(false),
                 ),
               ),
             ),

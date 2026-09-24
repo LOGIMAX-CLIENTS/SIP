@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -12,6 +13,7 @@ import '../../shared/widgets/numeric_styled_text.dart';
 
 import '../main/main_screen.dart';
 import '../../routes/app_router.dart';
+import '../../core/providers/app_control_provider.dart';
 import 'referral_service.dart';
 
 class ReferralScreen extends ConsumerStatefulWidget {
@@ -32,14 +34,52 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
   }
 
   // ── Native system share sheet — opens all platforms ─────────────────────
-  Future<void> _shareReferral(String code, String rewardAmount) async {
-    final reward =
-        rewardAmount.startsWith('₹') ? rewardAmount : '₹$rewardAmount';
-    final text =
-        '🌟 Join me on StartGold and earn $reward in free Digital Gold!\n\n'
-        'Use my referral code: $code\n\n'
-        'Download now 👇\nhttps://startgold.com/download';
-    await Share.share(text, subject: 'Invite to StartGold');
+  Future<void> _shareReferral(
+      BuildContext context, String code, String rewardAmount,
+      [String? shareLink]) async {
+    if (code.isEmpty) {
+      AppToast.show(context, 'Referral code not available. Please try again.',
+          type: ToastType.warning);
+      return;
+    }
+    try {
+      final reward =
+          rewardAmount.startsWith('₹') ? rewardAmount : '₹$rewardAmount';
+      // Send the platform's app store link (from APP_CONTROL_VERSION config)
+      // instead of the generic referral/download URL, so the friend lands
+      // directly on the correct store listing for their device.
+      final storeUrl =
+          ref.read(appControlProvider).versionInfo?.current.storeUrl;
+      final link = (storeUrl != null && storeUrl.isNotEmpty)
+          ? storeUrl
+          : (shareLink != null && shareLink.isNotEmpty)
+              ? shareLink
+              : 'https://startgold.com/download';
+      final text =
+          '🌟 Join me on StartGold and earn $reward in free Pure Gold!\n\n'
+          'Use my referral code: $code\n\n'
+          'Download now 👇\n$link';
+
+      final box = context.findRenderObject() as RenderBox?;
+      final Rect? origin = box != null
+          ? (box.localToGlobal(Offset.zero) & box.size)
+          : null;
+
+      await Share.share(
+        text,
+        subject: 'Invite to StartGold',
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Referral] Share error: $e');
+      if (mounted) {
+        await Clipboard.setData(ClipboardData(text: code));
+        if (mounted) {
+          AppToast.show(this.context, 'Referral code copied to clipboard!',
+              type: ToastType.success);
+        }
+      }
+    }
   }
 
   @override
@@ -250,7 +290,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
             ),
             SizedBox(height: 20.h),
           ],
-          _buildPremiumCodeCard(context, code, data.rewardAmount),
+          _buildPremiumCodeCard(context, code, data.rewardAmount, data.shareLink),
           SizedBox(height: 20.h),
           _buildBulletSection(bulletPoints, rewardText),
           SizedBox(height: 24.h),
@@ -335,7 +375,8 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
 
   // ── Premium code card ──────────────────────────────────────────────────────
   Widget _buildPremiumCodeCard(
-      BuildContext context, String code, String rewardAmount) {
+      BuildContext context, String code, String rewardAmount,
+      [String? shareLink]) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20.r),
@@ -387,7 +428,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
               child: Text(
                 code,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.playfairDisplay(
+                style: GoogleFonts.lora(
                   fontSize: 28.sp,
                   fontWeight: FontWeight.w900,
                   color: const Color(0xFF1B3A2D),
@@ -450,27 +491,30 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
                         ),
                       ],
                     ),
-                    child: ElevatedButton.icon(
-                      onPressed: () => _shareReferral(code, rewardAmount),
-                      icon: Icon(Icons.share_rounded,
-                          size: 16.sp, color: Colors.white),
-                      label: Text(
-                        'Share',
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 13.sp,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                    child: Builder(
+                      builder: (btnContext) => ElevatedButton.icon(
+                        onPressed: () => _shareReferral(
+                            btnContext, code, rewardAmount, shareLink),
+                        icon: Icon(Icons.share_rounded,
+                            size: 16.sp, color: Colors.white),
+                        label: Text(
+                          'Share',
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 13.sp,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        padding: EdgeInsets.symmetric(vertical: 16.h),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(50.r)),
-                        elevation: 0,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          padding: EdgeInsets.symmetric(vertical: 16.h),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(50.r)),
+                          elevation: 0,
+                        ),
                       ),
                     ),
                   ),

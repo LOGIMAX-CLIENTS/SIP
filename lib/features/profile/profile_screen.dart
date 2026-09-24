@@ -5,15 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../core/services/biometric_service.dart';
+import 'package:intl/intl.dart';
 import '../../routes/app_router.dart';
-import '../../core/security/secure_storage_service.dart';
 import '../../core/utils/masking_utils.dart';
+import '../kyc/utils/kyc_step_status.dart';
 import '../auth/controller/auth_controller.dart';
 import '../main/main_screen.dart';
 import 'profile_controller.dart' as pc;
-import '../../shared/widgets/loaders.dart';
-import '../../shared/widgets/app_toast.dart';
 
 // ── App version provider ───────────────────────────────────────────────────
 final appVersionProvider = FutureProvider<String>((ref) async {
@@ -29,80 +27,15 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  bool _biometricEnabled = false;
-  bool _biometricAvailable = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadBiometricState();
-  }
-
-  Future<void> _loadBiometricState() async {
-    // deviceHasBiometric() uses getAvailableBiometrics() internally.
-    // canUseBiometric() also auto-disables storage if device biometrics
-    // were removed since last launch.
-    final hasDevice = await BiometricService.deviceHasBiometric();
-    final canUse = hasDevice && await BiometricService.canUseBiometric();
-    if (mounted) {
-      setState(() {
-        _biometricAvailable = hasDevice;
-        _biometricEnabled = canUse;
-      });
+  /// Formats ISO 8601 login timestamp to Indian format.
+  /// e.g., "2026-06-13T10:04:09.000000Z" → "13/06/2026, 3:34 PM"
+  String _formatLoginDate(String isoDate) {
+    try {
+      final dt = DateTime.parse(isoDate).toLocal();
+      return DateFormat('dd/MM/yyyy, h:mm a').format(dt);
+    } catch (_) {
+      return isoDate; // Fallback: show raw value if parsing fails
     }
-  }
-
-  Future<void> _onBiometricToggle(bool newValue) async {
-    if (newValue) {
-      // ── Guard 1: confirm device has enrolled biometrics ──────────────
-      final check = await BiometricService.checkBeforeEnable();
-      if (check == BiometricCheckResult.noneEnrolled) {
-        if (mounted) {
-          AppToast.show(
-            context,
-            'No biometric found in device. Please enroll a fingerprint or face in your phone settings.',
-            type: ToastType.error,
-          );
-        }
-        return; // Keep toggle OFF
-      }
-      if (check == BiometricCheckResult.notSupported) {
-        if (mounted) {
-          AppToast.show(
-            context,
-            'Biometric authentication is not supported on this device.',
-            type: ToastType.error,
-          );
-        }
-        return;
-      }
-
-      // ── Guard 2: verify identity with existing MPIN ───────────────────
-      final verified = await Navigator.pushNamed(
-        context,
-        AppRouter.mpin,
-        arguments: {'type': 'verify_only'},
-      );
-      if (verified != true) return; // MPIN not verified — abort
-
-      // ── Guard 3: final biometric prompt to confirm enrollment ─────────
-      final enrolled = await BiometricService.authenticate(
-        reason: 'Confirm biometrics to enable this feature',
-      );
-      if (!enrolled) return; // User cancelled — abort
-    }
-
-    // Persist the new state
-    await SecureStorageService.setBiometricEnabled(newValue);
-    if (newValue) await SecureStorageService.setMpinEnabled(true);
-    if (mounted) setState(() => _biometricEnabled = newValue);
-
-    final msg = newValue
-        ? 'Biometric authentication enabled'
-        : 'Biometric authentication disabled';
-    if (mounted)
-      AppToast.show(context, msg,
-          type: newValue ? ToastType.success : ToastType.info);
   }
 
   @override
@@ -110,11 +43,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final profileState = ref.watch(pc.profileProvider);
 
-    if (profileState.isLoading && profileState.user.name == 'Investor') {
+    if (profileState.isLoading && profileState.user.name.isEmpty) {
       return _buildSkeleton(isDark);
     }
 
     final user = profileState.user;
+    // "N/total" badge for the KYC Validation menu item — same
+    // computeKycStepStatuses() the checklist screen itself uses (see
+    // kyc/utils/kyc_step_status.dart), so this can never disagree with the
+    // checklist's own progress ring. Null while the underlying doc-types
+    // fetch hasn't resolved yet (e.g. first paint) — the menu item falls
+    // back to just the binary "Verified" badge in that case.
+    final kycProgress = ref.watch(kycProgressProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -136,10 +76,81 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         'Profile Settings',
                         [
                           _buildMenuItem(
-                            'Account Details',
+                            'Personal Details',
                             'assets/sidemenu/account.svg',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.accountDetails),
+                          ),
+                          _buildMenuItem(
+                            'KYC Validation',
+                            'assets/sidemenu/kyc.svg',
+                            onTap: () async {
+                              // Always open the KYC screen — even when already
+                              // verified, so the user can view their masked
+                              // PAN/Aadhaar details and use Edit to redo
+                              // verification (see kyc/screens/kyc_screen.dart).
+                              await Navigator.pushNamed(
+                                  context, AppRouter.kycVerification,
+                                  arguments: {'request_from': 'profile'});
+                              // Refresh regardless of the pop result — the
+                              // merged checklist screen (KycVerificationScreen)
+                              // never pops with `true` (it keeps the customer
+                              // on the same page to continue into bank
+                              // verification steps in place), so gating this
+                              // on `result == true` meant returning via the
+                              // back button never refreshed anything here.
+                              // fetchProfileDetails() is cheap and safe to
+                              // call even when nothing actually changed.
+                              // Deferred by a frame, not called inline.
+                              // fetchProfileDetails() sets `state` SYNCHRONOUSLY
+                              // on its first line (isLoading: true), which makes
+                              // Riverpod notify every consumer immediately. Run
+                              // straight off the pop, that lands while the KYC
+                              // route is still being torn down, and a consumer
+                              // element already marked defunct gets
+                              // markNeedsBuild called on it — the
+                              // "'_lifecycleState != _ElementLifecycle.defunct'
+                              // is not true" crash seen after completing PAN
+                              // verification. A `mounted` check alone does not
+                              // cover it: THIS widget is alive, the dying one is
+                              // the route being popped.
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                ref
+                                    .read(pc.profileProvider.notifier)
+                                    .fetchProfileDetails();
+                              });
+                            },
+                            // Prefer the LIVE per-step count (kycProgressProvider,
+                            // same computeKycStepStatuses the checklist itself
+                            // uses) over the legacy binary user.kycStatus flag
+                            // whenever it's available — shows "N/total" always,
+                            // complete or not, instead of collapsing a fully
+                            // verified customer down to a wordy "Verified" badge
+                            // that hides the actual count. user.kycStatus is
+                            // only the fallback while kycProgressProvider's
+                            // underlying fetch hasn't resolved yet (e.g. first
+                            // paint), so the badge isn't just blank meanwhile.
+                            trailing: kycProgress != null && kycProgress.total > 0
+                                ? _buildKycBadge(
+                                    label: '${kycProgress.completed}/${kycProgress.total}',
+                                    complete: kycProgress.completed == kycProgress.total,
+                                  )
+                                : user.kycStatus == 1
+                                    ? _buildKycBadge(label: 'Verified', complete: true)
+                                    : null,
+                          ),
+                          _buildMenuItem(
+                            'Bank Details',
+                            'assets/withdraw/bank.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.bankDetails),
+                          ),
+                          _buildMenuItem(
+                            'Auto Savings',
+                            'assets/sidemenu/autosaving.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.sipOverview),
                           ),
                           _buildMenuItem(
                             'Transaction History',
@@ -148,74 +159,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.transactionHistory),
                           ),
                           _buildMenuItem(
-                            'KYC Verification',
-                            'assets/sidemenu/kyc.svg',
-                            onTap: () async {
-                              if (user.kycStatus == 1) {
-                                AppToast.show(
-                                    context, 'Your KYC is already verified! ✓',
-                                    type: ToastType.success);
-                                return;
-                              }
-                              final result = await Navigator.pushNamed(
-                                  context, AppRouter.kyc,
-                                  arguments: {'request_from': 'profile'});
-                              // Refresh profile to update the verified badge
-                              if (result == true && mounted) {
-                                ref
-                                    .read(pc.profileProvider.notifier)
-                                    .fetchProfileDetails();
-                              }
-                            },
-                            trailing: user.kycStatus == 1
-                                ? Container(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 10.w, vertical: 4.h),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0E5723)
-                                          .withOpacity(0.08),
-                                      borderRadius:
-                                          BorderRadius.circular(100.r),
-                                      border: Border.all(
-                                          color: const Color(0xFF0E5723)
-                                              .withOpacity(0.15)),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.verified_user_rounded,
-                                            color: const Color(0xFF0E5723),
-                                            size: 14.sp),
-                                        SizedBox(width: 4.w),
-                                        Text(
-                                          'Verified',
-                                          style: TextStyle(
-                                            fontSize: 10.sp,
-                                            fontWeight: FontWeight.w900,
-                                            color: const Color(0xFF0E5723),
-                                            letterSpacing: 0.3,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : null,
-                          ),
-                          // Nominee Details - Commented as requested
-
-                          _buildMenuItem(
                             'Nominee Details',
                             'assets/sidemenu/nominee.svg',
                             onTap: () =>
                                 Navigator.pushNamed(context, AppRouter.nominee),
-                          ),
-
-                          // Auto Savings — commented: accessible via other nav paths
-                          _buildMenuItem(
-                            'Auto Savings',
-                            'assets/sidemenu/autosaving.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.sipOverview),
                           ),
                           // SIP Transactions — commented: accessible from Auto Savings Quick Actions
                           // _buildMenuItem(
@@ -276,31 +223,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         isDark),
                     SizedBox(height: 16.h),
                     _buildSection(
-                        'Account',
+                        'Security',
                         [
-                          // Biometrics Auth
-                          if (_biometricAvailable)
-                            _buildMenuItem(
-                              'Biometric Authentication',
-                              'assets/sidemenu/lock.svg',
-                              onTap: () =>
-                                  _onBiometricToggle(!_biometricEnabled),
-                              trailing: Switch(
-                                value: _biometricEnabled,
-                                onChanged: _onBiometricToggle,
-                                activeColor: const Color(0xFF0E5723),
-                              ),
-                            ),
-
-                          // Change MPIN
-
                           _buildMenuItem(
                             'Change MPIN',
                             'assets/sidemenu/mpin.svg',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.changeMpin),
                           ),
-
+                          _buildMenuItem(
+                            'MPIN & Biometric Timing',
+                            'assets/sidemenu/lock.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.mpinLockTiming),
+                          ),
+                        ],
+                        isDark),
+                    SizedBox(height: 16.h),
+                    _buildSection(
+                        'Account',
+                        [
                           _buildMenuItem(
                             'Logout',
                             'assets/sidemenu/logout.svg',
@@ -686,6 +628,60 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        // ── VAPT Finding 6: Last Login Info ─────────
+                        if (user.lastLoginAt != null &&
+                            user.lastLoginAt!.isNotEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(top: 6.h),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle_outline_rounded,
+                                  size: 12.sp,
+                                  color: const Color(0xFF4ADE80),
+                                ),
+                                SizedBox(width: 4.w),
+                                Flexible(
+                                  child: Text(
+                                    'Last login: ${_formatLoginDate(user.lastLoginAt!)}',
+                                    style: GoogleFonts.playfairDisplay(
+                                      fontSize: 11.sp,
+                                      color: Colors.white.withOpacity(0.6),
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        // ── VAPT Finding 6: Last Failed Login ───────
+                        if (user.lastFailedLoginAt != null &&
+                            user.lastFailedLoginAt!.isNotEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(top: 4.h),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 12.sp,
+                                  color: const Color(0xFFFBBF24),
+                                ),
+                                SizedBox(width: 4.w),
+                                Flexible(
+                                  child: Text(
+                                    'Last failed login: ${_formatLoginDate(user.lastFailedLoginAt!)}',
+                                    style: GoogleFonts.playfairDisplay(
+                                      fontSize: 11.sp,
+                                      color: const Color(0xFFFBBF24).withOpacity(0.8),
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -715,6 +711,42 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         ...items,
       ],
+    );
+  }
+
+  /// Small pill badge for the KYC Validation menu item's trailing slot —
+  /// green when [complete] (fully verified / "Verified"), amber otherwise
+  /// (an "N/total" in-progress count). Shared so the always-show-the-count
+  /// and legacy-fallback branches above render identically.
+  Widget _buildKycBadge({required String label, required bool complete}) {
+    final color = complete ? const Color(0xFF0E5723) : const Color(0xFFB45309);
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(100.r),
+        border: Border.all(color: color.withOpacity(0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            complete ? Icons.verified_user_rounded : Icons.pending_actions_rounded,
+            color: color,
+            size: 14.sp,
+          ),
+          SizedBox(width: 4.w),
+          Text(
+            label,
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 10.sp,
+              fontWeight: FontWeight.w900,
+              color: color,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -786,12 +818,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
+        title: Text('Logout',
+            style: GoogleFonts.playfairDisplay(
+                fontSize: 16.sp, fontWeight: FontWeight.w700)),
+        content: Text('Are you sure you want to logout?',
+            style: GoogleFonts.playfairDisplay(fontSize: 13.sp)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+              child: Text('Cancel',
+                  style: GoogleFonts.playfairDisplay())),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
@@ -800,7 +836,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Navigator.pushNamedAndRemoveUntil(
                   context, AppRouter.login, (route) => false);
             },
-            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+            child: Text('Logout',
+                style: GoogleFonts.playfairDisplay(color: Colors.red)),
           ),
         ],
       ),

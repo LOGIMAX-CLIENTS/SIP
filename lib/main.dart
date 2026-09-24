@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,16 +15,26 @@ import 'shared/theme/app_theme.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/localization/language_provider.dart';
 import 'core/services/fcm_service.dart';
+import 'core/security/screenshot_security_service.dart';
+import 'core/security/clipboard_security_service.dart';
+import 'core/services/environment_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await EnvironmentService.initialize();
 
   // Firebase + FCM — mobile only (Android / iOS).
   // Web does not support firebase_messaging or flutter_local_notifications.
+  bool firebaseInitialized = false;
   if (!kIsWeb) {
-    await Firebase.initializeApp();
+    try {
+      await Firebase.initializeApp();
+      firebaseInitialized = true;
+    } catch (e) {
+      debugPrint('⚠️ [Firebase] Initialization skipped (check GoogleService-Info.plist): $e');
+    }
   }
 
   // 1. Security Check: Root Detection — mobile only
@@ -43,20 +54,32 @@ void main() async {
       return;
     }
 
-    // 2. Lock portrait orientation — mobile only
+    // 2. Screenshot & Screen Recording Protection
+    //    Initializes and sets FLAG_SECURE on Android and blur overlay on iOS
+    //    based on configuration.
+    await ScreenshotSecurityService.initialize();
+    // 3. Clear clipboard on launch (VAPT: Clipboard Leakage)
+    //    Clears both system clipboard AND keyboard clipboard strip (Gboard).
+    await ClipboardSecurityService.clearClipboard();
+
+    // 4. Lock portrait orientation — mobile only
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
     // 3. Initialize SSL certificate pinning (loads cached server pins)
     await CertificatePinning.init();
-
-    // 4. Start FCM service — mobile only
-    await FcmService.init();
   }
 
-  // 4. Always start with Flutter splash — handles session/routing internally
+  // 4. Always start with Flutter splash immediately
   runApp(const ProviderScope(
     child: MyApp(),
   ));
+
+  // 5. Start FCM service in background without blocking app launch
+  if (!kIsWeb && firebaseInitialized) {
+    FcmService.init().catchError((e) {
+      debugPrint('⚠️ [FCM] Service init error: $e');
+    });
+  }
 }
 
 class MyApp extends ConsumerWidget {
@@ -93,13 +116,28 @@ class MyApp extends ConsumerWidget {
             Locale('ta'),
             Locale('te'),
           ],
-          // ── Global gradient background + runtime control wrapper ──
+          // ── Global tap-to-dismiss keyboard + background gradient + runtime control wrapper ──
           builder: (context, child) {
-            return Container(
-              decoration: const BoxDecoration(
-                gradient: AppTheme.lightGradient,
+            return GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (scrollNotification) {
+                  if (scrollNotification is UserScrollNotification &&
+                      scrollNotification.direction != ScrollDirection.idle) {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                  }
+                  return false;
+                },
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: AppTheme.lightGradient,
+                  ),
+                  child: AppControlWrapper(child: child!),
+                ),
               ),
-              child: AppControlWrapper(child: child!),
             );
           },
         );

@@ -3,17 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 
 class RegistrationSuccessScreen extends ConsumerWidget {
-  final String fullName;
+  final String firstName;
 
   const RegistrationSuccessScreen({
     super.key,
-    required this.fullName,
+    required this.firstName,
   });
 
   @override
@@ -24,9 +25,6 @@ class RegistrationSuccessScreen extends ConsumerWidget {
     final accentGreen = const Color(0xFF064E3B);
     final secondaryTextColor =
         isDark ? Colors.white60 : const Color(0xFF555555);
-
-    // Extract first name for the greeting
-    final firstName = fullName.split(' ').first;
 
     return PopScope(
       canPop: false,
@@ -197,8 +195,7 @@ class RegistrationSuccessScreen extends ConsumerWidget {
                       children: [
                         TextSpan(
                           text: 'Powered by: ',
-                          style: GoogleFonts.playfairDisplay(
-                            fontSize: 12.sp,
+                          style: AppTextStyles.labelMedium(isDark).copyWith(
                             color: isDark
                                 ? Colors.white38
                                 : const Color(0xFF888888),

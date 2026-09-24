@@ -5,13 +5,28 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:startgold/features/support/enquiry_service.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
+import 'package:startgold/shared/widgets/secure_clipboard.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 
 class EnquiryFormScreen extends ConsumerStatefulWidget {
   /// Optional: pre-select a ticket type when navigating from a specific screen.
   /// E.g. 'Auto Savings' when coming from ManageSavingsScreen.
   final String? initialType;
 
-  const EnquiryFormScreen({super.key, this.initialType});
+  /// Optional: pre-fill Subject/Message when navigating from a specific
+  /// screen that already knows what the ticket is about — e.g. a manual
+  /// KYC upload confirming it was submitted (see
+  /// manual_kyc_upload_screen.dart). The customer can still edit either
+  /// field before submitting.
+  final String? initialSubject;
+  final String? initialMessage;
+
+  const EnquiryFormScreen({
+    super.key,
+    this.initialType,
+    this.initialSubject,
+    this.initialMessage,
+  });
 
   @override
   ConsumerState<EnquiryFormScreen> createState() => _EnquiryFormScreenState();
@@ -50,6 +65,12 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
     if (widget.initialType != null &&
         kTicketTypes.containsKey(widget.initialType)) {
       _selectedType = widget.initialType!;
+    }
+    if (widget.initialSubject != null) {
+      _subjectController.text = widget.initialSubject!;
+    }
+    if (widget.initialMessage != null) {
+      _contentController.text = widget.initialMessage!;
     }
     _fadeCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 500));
@@ -137,7 +158,7 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
               SizedBox(height: 24.h),
 
               // ── Subject ────────────────────────────────────────────────
-              _buildSectionLabel('Subject'),
+              _buildSectionLabel('Subject *'),
               SizedBox(height: 10.h),
               _buildTextField(
                 controller: _subjectController,
@@ -149,7 +170,7 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
               SizedBox(height: 24.h),
 
               // ── Content / Message ──────────────────────────────────────
-              _buildSectionLabel('Message'),
+              _buildSectionLabel('Message *'),
               SizedBox(height: 10.h),
               _buildTextField(
                 controller: _contentController,
@@ -338,6 +359,9 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
       controller: controller,
       maxLines: maxLines,
       validator: validator,
+      contextMenuBuilder: SecureClipboard.none,
+      enableSuggestions: false,
+      autocorrect: false,
       style: GoogleFonts.playfairDisplay(
         fontSize: 15.sp,
         color: const Color(0xFF1A2332),
@@ -427,11 +451,7 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen>
                   SizedBox(width: 10.w),
                   Text(
                     'Submit Enquiry',
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
+                    style: AppTextStyles.button(false),
                   ),
                 ],
               ),
@@ -533,11 +553,11 @@ class _SuccessSheet extends StatelessWidget {
             child: Column(
               children: [
                 if (ticketId.isNotEmpty)
-                  _info('Ticket ID', '#$ticketId'),
+                  _info('Ticket ID', '#$ticketId', numeric: true),
                 if (subject.isNotEmpty)
                   _info('Subject', subject),
                 if (submittedOn.isNotEmpty)
-                  _info('Submitted', submittedOn),
+                  _info('Submitted', submittedOn, numeric: true),
                 _infoStatus(status),
               ],
             ),
@@ -562,11 +582,7 @@ class _SuccessSheet extends StatelessWidget {
               ),
               child: Text(
                 'Done',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
+                style: AppTextStyles.button(false),
               ),
             ),
           ),
@@ -575,7 +591,18 @@ class _SuccessSheet extends StatelessWidget {
     );
   }
 
-  Widget _info(String label, String value) {
+  Widget _info(String label, String value, {bool numeric = false}) {
+    final valueStyle = numeric
+        ? GoogleFonts.lora(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A2332),
+          )
+        : GoogleFonts.playfairDisplay(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A2332),
+          );
     return Padding(
       padding: EdgeInsets.only(bottom: 10.h),
       child: Row(
@@ -592,11 +619,7 @@ class _SuccessSheet extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1A2332),
-              ),
+              style: valueStyle,
               textAlign: TextAlign.end,
             ),
           ),

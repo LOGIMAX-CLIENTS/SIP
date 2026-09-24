@@ -1,16 +1,33 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:startgold/core/error/failures.dart';
 import 'package:startgold/core/providers/user_provider.dart';
+import 'package:startgold/core/security/secure_logger.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
 
-final kycDocumentsProvider = FutureProvider.autoDispose.family<List<KycDocumentType>, String>((ref, requestFrom) async {
+final kycDocumentsProvider = FutureProvider.autoDispose.family<KycDocumentsResult, String>((ref, requestFrom) async {
   final user = ref.watch(userProvider);
-  if (user == null) return [];
-  
+  if (user == null) return KycDocumentsResult(documents: [], aadhaarApproved: false);
+
   return ref.read(kycRepositoryProvider).getDocumentTypes(
     customerId: user.id,
     requestFrom: requestFrom,
   );
+});
+
+/// Persisted (not live-session) KYC/bank verification status — see
+/// KycRepository.getVerificationStatus's docstring for the full key list
+/// and NOT_STARTED-by-default caveat for aadhaar_pan_link/pan_bank_link.
+/// autoDispose + not `.family` (no per-request-from variant needed, it's
+/// the same customer-wide status regardless of which flow opened the
+/// checklist) — callers `ref.invalidate` this after an action that could
+/// change it (a PAN-Aadhaar retry, a PAN-Bank Link check).
+final verificationStatusProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  final userId = ref.watch(userProvider.select((u) => u?.id));
+  if (userId == null) throw Exception('User not logged in');
+  return ref.read(kycRepositoryProvider).getVerificationStatus();
 });
 
 final kycSubmitProvider = StateNotifierProvider<KycSubmitController, AsyncValue<bool>>((ref) {
@@ -43,4 +60,651 @@ class KycSubmitController extends StateNotifier<AsyncValue<bool>> {
     }
   }
 }
+
+// ─── Aadhaar / DigiLocker sub-flow ──────────────────────────────────────────
+//
+// Aadhaar is not a simple field-form submission like PAN — it's a two-step,
+// poll-based flow (see KycRepository.initiateAadhaar/pollAadhaar, mirroring
+// the backend's `_initiate_aadhaar_kyc` / `_check_aadhaar_kyc`). This
+// notifier tracks that sub-flow's state so the unified KYC hub screen
+// (kyc_screen.dart) can render the Aadhaar card independently of the PAN form.
+
+enum AadhaarPhase {
+  idle,
+  initiating,
+  awaitingConsent, // consent_url ready (Cashfree) — hub should open the DigiLocker WebView
+  awaitingSdk, // sdk_token ready (SurePass) — hub should launch the native DigiLocker Flutter SDK
+  polling,
+  // CONFIRM_NAME_UPDATE from the backend (KYC_NAME_MISMATCH_RESOLUTION) —
+  // Aadhaar verified fine, but the verified name/DOB don't match the
+  // profile on file. Not a failure: verificationId stays valid, and
+  // AadhaarNotifier.confirmNameMismatch() resolves it without restarting
+  // DigiLocker consent. See AadhaarState.aadhaarMismatchPrompt below for
+  // the prompt's data.
+  awaitingNameMismatchConfirm,
+  approved,
+  expired,
+  rejected,
+  failed,
+  // Backend status "NOT_SHARED" — the customer didn't select Aadhaar in
+  // DigiLocker's document picker this round, but PAN may still have come
+  // through from the same session (see KYCService._check_aadhaar_kyc's
+  // NOT_SHARED branch: "not a failure ... report this as a genuine
+  // success"). Deliberately distinct from `failed` — that phase's callers
+  // treat it as a dead end (show a failure dialog, stop); this one needs
+  // its own handling so a PAN approval landing here isn't silently lost.
+  aadhaarNotShared,
+}
+
+/// Shared shape of a CONFIRM_NAME_UPDATE prompt (backend
+/// `KYCService._confirm_name_update_prompt`) — identical for AADHAAR's own
+/// mismatch (surfaced as AadhaarState.aadhaarMismatchPrompt, resolved via
+/// AadhaarNotifier.confirmNameMismatch) and for PAN's mismatch piggybacked
+/// onto an Aadhaar poll response (AadhaarState.panMismatchPrompt, resolved
+/// via KycRepository.confirmPanNameMismatch using [verificationId] as
+/// pan_kyc_id — PAN has no poll cycle of its own to attach a
+/// verification_id to, so the backend reuses the same field name for its
+/// own dedicated PAN KYC row id instead). [verifiedName]/[verifiedDob] are
+/// what the document says; [profileName]/[profileDob] are what's actually
+/// on file (Customer.cus_name/cus_dob) to compare against.
+class NameMismatchPrompt {
+  final String document; // 'AADHAAR' | 'PAN'
+  final String verificationId;
+  final String? verifiedName;
+  final String? verifiedDob;
+  final String? profileName;
+  final String? profileDob;
+  final String? message;
+
+  /// Which field actually failed the server's comparison, so the dialog can
+  /// ask for only that one. Decided server-side and never re-derived here:
+  /// the name check is fuzzy (NameMatchingService.compute_match with a score
+  /// threshold), so comparing [verifiedName] to [profileName] on the client
+  /// would disagree with the gate that actually blocked the customer.
+  /// The customer still resubmits BOTH values — the hidden one is sent back
+  /// pre-filled from the verified value, since the server re-checks both.
+  final bool nameMismatch;
+  final bool dobMismatch;
+
+  const NameMismatchPrompt({
+    required this.document,
+    required this.verificationId,
+    this.verifiedName,
+    this.verifiedDob,
+    this.profileName,
+    this.profileDob,
+    this.message,
+    this.nameMismatch = true,
+    this.dobMismatch = false,
+  });
+
+  factory NameMismatchPrompt.fromJson(Map<String, dynamic> json) {
+    final verifiedDob = json['verified_dob']?.toString();
+    return NameMismatchPrompt(
+      document: (json['document'] ?? '').toString(),
+      verificationId: (json['verification_id'] ?? '').toString(),
+      verifiedName: json['verified_name']?.toString(),
+      verifiedDob: verifiedDob,
+      profileName: json['profile_name']?.toString(),
+      profileDob: json['profile_dob']?.toString(),
+      message: json['message']?.toString(),
+      // A backend that predates these keys sends neither — fall back to the
+      // old "ask for both" behaviour (name always, DOB whenever the document
+      // carried one) so a new app against an old server never hides a field
+      // the customer still has to correct.
+      nameMismatch: json['name_mismatch'] as bool? ?? true,
+      dobMismatch: json['dob_mismatch'] as bool? ??
+          (verifiedDob != null && verifiedDob.isNotEmpty),
+    );
+  }
+}
+
+class AadhaarState {
+  final AadhaarPhase phase;
+  final String? verificationId;
+  final String? consentUrl;
+  // SurePass SDK-flow fields — populated instead of consentUrl when the
+  // active backend gateway is SurePass (see kyc.py's initiate_digilocker
+  // branch: providers report EITHER a consent_url (Cashfree) OR an
+  // sdk_token+provider_client_id (SurePass), never both.
+  final String? sdkToken;
+  final String? providerClientId;
+  final int? sdkTokenExpirySeconds;
+  final String? sdkEnvironment; // "SANDBOX" | "PRODUCTION" — which base URL issued sdkToken
+  final String? message;
+  final String? maskedNumber;
+  final String? verifiedName;
+  // Same "not returned by the backend yet" caveat as KycDocumentsResult.aadhaarDob
+  // (kyc_document.dart) — carried here purely so it flows into the profile
+  // selection dialog once the backend adds it.
+  final String? verifiedDob;
+  // Populated only in AadhaarPhase.awaitingNameMismatchConfirm — see
+  // NameMismatchPrompt's doc comment.
+  final NameMismatchPrompt? aadhaarMismatchPrompt;
+  // Populated whenever an Aadhaar poll response (APPROVED, already-approved,
+  // or even REJECTED — see KYCService._pan_status_response_extras, called
+  // from all three) carries pan_status: "PENDING_CONFIRMATION" alongside its
+  // own status. Independent of [phase]/[aadhaarMismatchPrompt] — Aadhaar and
+  // PAN mismatches are resolved through entirely separate requests (see
+  // NameMismatchPrompt's doc comment) and can occur together or alone.
+  final NameMismatchPrompt? panMismatchPrompt;
+  // Populated whenever an Aadhaar poll response carries pan_status:
+  // "REJECTED" alongside pan_message (e.g. a cross-account PAN duplicate) —
+  // same independent-of-[phase] shape as panMismatchPrompt above, since
+  // Aadhaar itself can succeed while PAN is rejected. Shown as a toast, not
+  // a dialog — unlike a mismatch, there's nothing for the customer to
+  // confirm/correct here, just something to be told.
+  final String? panRejectionMessage;
+  // PAN–Aadhaar link result — backend field `aadhaar_pan_linked` (nullable
+  // bool: true/false once the provider's PAN check resolved it, null if not
+  // yet known/unavailable). Sourced from the SAME pan-comprehensive /
+  // pan/export-data call PAN verification already makes during the
+  // DigiLocker flow — there is no separate provider call or screen for this;
+  // see KYCService._check_aadhaar_kyc's `aadhaar_pan_linked` field (present
+  // on every already-approved/APPROVED terminal response). Only ever
+  // populated live in this session — `kyc/document-types` (the endpoint that
+  // seeds this screen on load/reopen) does not persist or return it, so
+  // unlike verifiedName/maskedNumber this has no `backend...` fallback and
+  // reads null again after an app restart or navigating away and back.
+  final bool? aadhaarPanLinked;
+
+  const AadhaarState({
+    this.phase = AadhaarPhase.idle,
+    this.verificationId,
+    this.consentUrl,
+    this.sdkToken,
+    this.providerClientId,
+    this.sdkTokenExpirySeconds,
+    this.sdkEnvironment,
+    this.message,
+    this.maskedNumber,
+    this.verifiedName,
+    this.verifiedDob,
+    this.aadhaarMismatchPrompt,
+    this.panMismatchPrompt,
+    this.panRejectionMessage,
+    this.aadhaarPanLinked,
+  });
+
+  AadhaarState copyWith({
+    AadhaarPhase? phase,
+    String? verificationId,
+    String? consentUrl,
+    String? sdkToken,
+    String? providerClientId,
+    int? sdkTokenExpirySeconds,
+    String? sdkEnvironment,
+    String? message,
+    String? maskedNumber,
+    String? verifiedName,
+    String? verifiedDob,
+    NameMismatchPrompt? aadhaarMismatchPrompt,
+    NameMismatchPrompt? panMismatchPrompt,
+    String? panRejectionMessage,
+    bool? aadhaarPanLinked,
+  }) {
+    return AadhaarState(
+      phase: phase ?? this.phase,
+      verificationId: verificationId ?? this.verificationId,
+      consentUrl: consentUrl ?? this.consentUrl,
+      sdkToken: sdkToken ?? this.sdkToken,
+      providerClientId: providerClientId ?? this.providerClientId,
+      sdkTokenExpirySeconds: sdkTokenExpirySeconds ?? this.sdkTokenExpirySeconds,
+      sdkEnvironment: sdkEnvironment ?? this.sdkEnvironment,
+      message: message ?? this.message,
+      aadhaarMismatchPrompt: aadhaarMismatchPrompt ?? this.aadhaarMismatchPrompt,
+      panMismatchPrompt: panMismatchPrompt ?? this.panMismatchPrompt,
+      panRejectionMessage: panRejectionMessage ?? this.panRejectionMessage,
+      maskedNumber: maskedNumber ?? this.maskedNumber,
+      verifiedName: verifiedName ?? this.verifiedName,
+      verifiedDob: verifiedDob ?? this.verifiedDob,
+      aadhaarPanLinked: aadhaarPanLinked ?? this.aadhaarPanLinked,
+    );
+  }
+}
+
+final aadhaarProvider =
+    StateNotifierProvider.autoDispose<AadhaarNotifier, AadhaarState>((ref) {
+  return AadhaarNotifier(ref.read(kycRepositoryProvider), ref);
+});
+
+class AadhaarNotifier extends StateNotifier<AadhaarState> {
+  final KycRepository _repository;
+  final Ref _ref;
+  KeepAliveLink? _keepAliveLink;
+
+  AadhaarNotifier(this._repository, this._ref) : super(const AadhaarState());
+
+  // ── Cross-widget outcome-handling dedupe ─────────────────────────────────
+  // Shared by KycScreen (shows the mismatch dialog / failure dialog in
+  // place, via its own ref.listen) and MainScreen (a fallback that
+  // navigates back to KycScreen when no KycScreen is currently mounted to
+  // react itself — see main_screen.dart). Both listen to the SAME
+  // AadhaarState transitions, so each one having only its own private
+  // dedupe set stops IT from double-handling but not the OTHER side from
+  // ALSO acting: confirmed via [KYC DEBUG] logs that KycScreen would open
+  // the mismatch dialog while MainScreen independently pushed a fresh
+  // KycScreen route on top of it in the same instant. The dialog's own
+  // Navigator.pop() then popped that redundant top route instead of
+  // itself — Navigator.pop() always removes whichever route is CURRENTLY
+  // topmost, not "my own route" — so the dialog stayed visually stuck on
+  // "Processing..." forever even though the backend call had already
+  // succeeded underneath. Keyed by verificationId (mismatch/PAN-mismatch)
+  // or verificationId+phase (failure/approved) — whichever side observes a
+  // given outcome FIRST claims it via .add() and proceeds; the other sees
+  // .add() return false and skips entirely.
+  static final Set<String> handledMismatchIds = {};
+  static final Set<String> handledFailureKeys = {};
+  static final Set<String> handledApprovedKeys = {};
+
+  /// Serializes KycScreen._checkAndHandleCompletion() app-wide. That method
+  /// has FOUR independent call sites (the linear _runVerifyAadhaar chain,
+  /// the on-load APPROVED recovery, the mismatch-dialog-resolved paths, and
+  /// the Meon SDK path) and, unlike the dialog/failure outcomes above, its
+  /// own internal decision (bothComplete && !wasAlreadyConfirmed) depends
+  /// on a FRESH network fetch each time — so handledApprovedKeys' one-shot
+  /// .add() claim doesn't help here: confirmed live via [KYC DEBUG] logs
+  /// that THREE separate calls, arriving milliseconds apart from different
+  /// KycScreen instances, each independently fetched, each independently
+  /// saw kyc_confirmed still false (a real backend read timing gap, not a
+  /// data problem — the mirror rows themselves were already correct), and
+  /// each independently decided to run the full success-dialogs sequence —
+  /// three success animations, three "Save" prompts, three
+  /// Navigator.pop(context, true) calls. Awaiting this (see
+  /// _checkAndHandleCompletion) makes every call after the first simply
+  /// wait for the in-flight one instead of starting its own redundant copy.
+  static Future<void>? completionInFlight;
+
+  /// Blocks aadhaarProvider's .autoDispose teardown for the duration of the
+  /// initiate -> consent/SDK sub-screen -> poll sequence. Without this, the
+  /// provider can lose its listener and be disposed while the pushed
+  /// sub-screen is on top — most reliably reproduced with SurePass's native
+  /// DigiLocker SDK, which runs in its own Android Activity and triggers a
+  /// real onPause/onResume on the host Activity — and a poll response that
+  /// arrives after that silently no-ops via this notifier's own `mounted`
+  /// guard, dropping CONFIRM_NAME_UPDATE/APPROVED/etc. with no error shown.
+  /// Call from the widget alongside AppLifecycleObserver.suppressAppLock
+  /// (same try/finally scope — see kyc_screen.dart's _runVerifyAadhaar).
+  void pauseAutoDispose() {
+    _keepAliveLink ??= _ref.keepAlive();
+  }
+
+  /// Releases the link acquired by [pauseAutoDispose] so the provider goes
+  /// back to disposing normally once the flow ends (success, failure, or the
+  /// user backing out) — must be called in every case, hence the finally
+  /// block pairing at the call site.
+  void resumeAutoDispose() {
+    _keepAliveLink?.close();
+    _keepAliveLink = null;
+  }
+
+  /// Shown to the user instead of ANY backend/provider exception, gateway
+  /// error, or network failure — never the technical detail itself. That
+  /// detail is only ever logged via [SecureLogger] for debugging.
+  static const _temporaryIssueMessage =
+      "We're currently experiencing a temporary technical service issue. "
+      "Please try again later or contact your administrator.";
+
+  /// The backend already returns a clean, user-facing message for every
+  /// known Aadhaar failure path — this is a defensive fallback so that if
+  /// something else ever throws a raw technical exception (e.g. a gateway
+  /// error string like "CASHFREE API error: 422 — {...}", or an unhandled
+  /// Dio/network exception), the Aadhaar card never displays it verbatim.
+  static final _technicalErrorPattern = RegExp(
+    r'API error:\s*\d{3}|status(Code)?\s*[:=]?\s*\d{3}|error code:\s*\d{3}|'
+    r'DioException|SocketException|TimeoutException|HandshakeException',
+    caseSensitive: false,
+  );
+
+  String _sanitizeErrorMessage(Object e) {
+    // A deliberate 4xx business response (NAME_MISMATCH, REJECTED, EXPIRED,
+    // PROFILE_NAME_MISMATCH, etc.) — ApiClient maps every non-2xx response
+    // to a Failure, so without this check a real, backend-authored,
+    // safe-to-show message (e.g. "Your profile name and/or date of birth
+    // doesn't match your Aadhaar record...") was being discarded below and
+    // replaced with the generic technical-issue string, regardless of the
+    // real reason. Only 4xx is trusted here — a 5xx is still an
+    // infrastructure fault, not a business message.
+    if (e is ServerFailure && e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
+      return e.message;
+    }
+    // Network/provider-infrastructure failures (timeouts, 5xx, connection
+    // drops, SSL errors) never carry a message safe to show verbatim.
+    if (e is Failure) {
+      SecureLogger.e('[Aadhaar] technical error (not shown to user)', e);
+      return _temporaryIssueMessage;
+    }
+    final raw = e.toString().replaceFirst('Exception: ', '');
+    if (_technicalErrorPattern.hasMatch(raw)) {
+      SecureLogger.e('[Aadhaar] technical error (not shown to user)', e);
+      return _temporaryIssueMessage;
+    }
+    return raw;
+  }
+
+  /// `pan_confirmation` (see NameMismatchPrompt's doc comment) is only
+  /// present when `data['pan_status'] == 'PENDING_CONFIRMATION'` — every
+  /// other pan_status either has no such prompt or isn't relevant here.
+  static NameMismatchPrompt? _extractPanMismatchPrompt(Map<String, dynamic> data) {
+    if (data['pan_status'] != 'PENDING_CONFIRMATION') return null;
+    final raw = data['pan_confirmation'];
+    if (raw is! Map) return null;
+    return NameMismatchPrompt.fromJson(Map<String, dynamic>.from(raw));
+  }
+
+  /// `pan_message` (e.g. "This PAN is already linked to another account.")
+  /// is only meaningful when `data['pan_status'] == 'REJECTED'` — the
+  /// top-level `message`/`data['message']` at this point describes Aadhaar's
+  /// own outcome (which succeeded), not PAN's, so without this the customer
+  /// never sees why PAN specifically failed.
+  static String? _extractPanRejectionMessage(Map<String, dynamic> data) {
+    if (data['pan_status'] != 'REJECTED') return null;
+    return data['pan_message']?.toString();
+  }
+
+  /// Step 1: request a DigiLocker consent session. If Aadhaar was already
+  /// approved in a prior attempt, short-circuits straight to `approved`
+  /// without ever calling Cashfree (see backend idempotency check).
+  ///
+  /// [aadhaarNumber] and [fullName] are what the user typed in on the hub
+  /// screen. Both are REQUIRED by the backend (`_initiate_aadhaar_kyc`
+  /// rejects the call with "Aadhaar number is required."/"Name is required
+  /// for Aadhaar verification." if either is blank) — the caller must
+  /// validate the form before invoking this. DigiLocker consent is still
+  /// required on top of these for actual identity verification.
+  Future<void> initiate(
+    String requestFrom, {
+    required String aadhaarNumber,
+    required String fullName,
+    // Typed alongside Aadhaar's fields on the same KYC screen (see
+    // kyc_screen.dart's _buildPanInputFields) — sent through to the SAME
+    // DigiLocker initiate call rather than PAN having a separate consent.
+    String? panName,
+    String? panNumber,
+    bool allowReverify = false,
+  }) async {
+    state = state.copyWith(phase: AadhaarPhase.initiating, message: null);
+    try {
+      final data = await _repository.initiateAadhaar(
+        requestFrom: requestFrom,
+        aadhaarNumber: aadhaarNumber,
+        fullName: fullName,
+        panName: panName,
+        panNumber: panNumber,
+        allowReverify: allowReverify,
+      );
+      // See the identical guard in pollUntilTerminal — this notifier can be
+      // disposed while the request above was in flight (e.g. a 401 sends it
+      // through the interceptor's refresh-and-retry detour).
+      if (!mounted) return;
+      final status = (data['status'] ?? '').toString();
+
+      if (data['is_already_approved'] == true || status == 'already approved') {
+        state = state.copyWith(
+          phase: AadhaarPhase.approved,
+          aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
+        );
+        return;
+      }
+
+      if (status == 'PENDING' && data['consent_url'] != null) {
+        state = state.copyWith(
+          phase: AadhaarPhase.awaitingConsent,
+          verificationId: data['verification_id']?.toString(),
+          consentUrl: data['consent_url'].toString(),
+          message: data['message']?.toString(),
+        );
+        return;
+      }
+
+      if (status == 'PENDING' && data['sdk_token'] != null) {
+        state = state.copyWith(
+          phase: AadhaarPhase.awaitingSdk,
+          verificationId: data['verification_id']?.toString(),
+          sdkToken: data['sdk_token'].toString(),
+          providerClientId: data['provider_client_id']?.toString(),
+          sdkTokenExpirySeconds: data['sdk_token_expiry_seconds'] is num
+              ? (data['sdk_token_expiry_seconds'] as num).toInt()
+              : null,
+          sdkEnvironment: data['sdk_environment']?.toString(),
+          message: data['message']?.toString(),
+        );
+        return;
+      }
+
+      // Some providers (SurePass) can resolve the whole check synchronously
+      // within the initiate call itself — no consent_url/sdk_token round
+      // trip at all — so CONFIRM_NAME_UPDATE can arrive here too, not just
+      // from pollUntilTerminal's matching case below. Without this branch it
+      // fell into the generic `failed` case, showing the message as a plain
+      // error toast instead of opening the mismatch dialog.
+      if (status == 'CONFIRM_NAME_UPDATE') {
+        state = state.copyWith(
+          phase: AadhaarPhase.awaitingNameMismatchConfirm,
+          aadhaarMismatchPrompt: NameMismatchPrompt.fromJson(data),
+          message: data['message']?.toString(),
+        );
+        return;
+      }
+
+      state = state.copyWith(
+        phase: AadhaarPhase.failed,
+        message: data['message']?.toString() ?? 'Unable to start Aadhaar verification.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      state = state.copyWith(phase: AadhaarPhase.failed, message: _sanitizeErrorMessage(e));
+    }
+  }
+
+  /// Step 2: poll for the consent outcome after the user returns from the
+  /// DigiLocker WebView. Retries on PENDING with a short backoff up to
+  /// [maxAttempts] — DigiLocker document fetch can briefly return
+  /// HTTP-202 "still processing" even after consent succeeds.
+  Future<void> pollUntilTerminal(
+    String requestFrom, {
+    int maxAttempts = 10,
+    Duration delay = const Duration(seconds: 2),
+  }) async {
+    final verificationId = state.verificationId;
+    if (verificationId == null) {
+      state = state.copyWith(
+        phase: AadhaarPhase.failed,
+        message: 'Aadhaar verification session missing. Please restart.',
+      );
+      return;
+    }
+
+    state = state.copyWith(phase: AadhaarPhase.polling, message: null);
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final data = await _repository.pollAadhaar(
+          requestFrom: requestFrom,
+          verificationId: verificationId,
+        );
+        // The KYC screen (and this autoDispose notifier with it) can be torn
+        // down while this await was in flight — e.g. a 401 mid-poll sends
+        // the request through the interceptor's silent refresh-and-retry
+        // detour, which is slow enough for the screen to unmount before it
+        // resolves. Touching `state` after that throws "Bad state: Tried to
+        // use AadhaarNotifier after dispose was called" instead of just
+        // discarding the now-irrelevant result.
+        SecureLogger.d('[KYC DEBUG] pollUntilTerminal response received, mounted=$mounted, status=${data['status']}');
+        if (!mounted) return;
+        final status = (data['status'] ?? '').toString();
+        // Piggybacked PAN mismatch/rejection — independent of Aadhaar's own
+        // status below (see panMismatchPrompt's/panRejectionMessage's doc
+        // comments); extracted once here so every branch that can carry
+        // either picks it up the same way.
+        final panMismatchPrompt = _extractPanMismatchPrompt(data);
+        final panRejectionMessage = _extractPanRejectionMessage(data);
+
+        if (data['is_already_approved'] == true || status == 'already approved') {
+          state = state.copyWith(
+            phase: AadhaarPhase.approved,
+            panMismatchPrompt: panMismatchPrompt,
+            panRejectionMessage: panRejectionMessage,
+            aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
+          );
+          return;
+        }
+
+        switch (status) {
+          case 'APPROVED':
+            state = state.copyWith(
+              phase: AadhaarPhase.approved,
+              panMismatchPrompt: panMismatchPrompt,
+              panRejectionMessage: panRejectionMessage,
+              aadhaarPanLinked: data['aadhaar_pan_linked'] as bool?,
+            );
+            return;
+          case 'EXPIRED':
+            state = state.copyWith(
+              phase: AadhaarPhase.expired,
+              message: data['message']?.toString(),
+            );
+            return;
+          case 'REJECTED':
+            state = state.copyWith(
+              phase: AadhaarPhase.rejected,
+              message: data['message']?.toString(),
+              panMismatchPrompt: panMismatchPrompt,
+            );
+            return;
+          case 'CONFIRM_NAME_UPDATE':
+            state = state.copyWith(
+              phase: AadhaarPhase.awaitingNameMismatchConfirm,
+              aadhaarMismatchPrompt: NameMismatchPrompt.fromJson(data),
+              message: data['message']?.toString(),
+            );
+            return;
+          case 'PENDING':
+            state = state.copyWith(message: data['message']?.toString());
+            if (attempt < maxAttempts - 1) {
+              await Future.delayed(delay);
+            }
+            continue;
+          case 'NOT_SHARED':
+            // Aadhaar wasn't shared this round — PAN may still have been
+            // captured (data['pan_status'] can be APPROVED). Must NOT fall
+            // into `default`/`failed` below: kyc_screen.dart only refreshes
+            // document-types (and thus ever shows PAN as verified) for
+            // phases it specifically knows about — `failed` was silently
+            // eating a real PAN approval before this case existed.
+            state = state.copyWith(
+              phase: AadhaarPhase.aadhaarNotShared,
+              message: data['message']?.toString(),
+            );
+            return;
+          default:
+            SecureLogger.e('[Aadhaar] unexpected DigiLocker status (not shown to user): $status');
+            state = state.copyWith(
+              phase: AadhaarPhase.failed,
+              message: data['message']?.toString() ?? _temporaryIssueMessage,
+            );
+            return;
+        }
+      } catch (e) {
+        if (!mounted) return;
+        state = state.copyWith(phase: AadhaarPhase.failed, message: _sanitizeErrorMessage(e));
+        return;
+      }
+    }
+
+    // Exhausted retries while still PENDING — not a failure, just needs the
+    // user to try again shortly. verificationId is preserved so a retry
+    // resumes polling instead of restarting the whole consent flow.
+    state = state.copyWith(
+      phase: AadhaarPhase.awaitingConsent,
+      message: 'Aadhaar verification is taking longer than expected. Please try again in a moment.',
+    );
+  }
+
+  /// Resets to idle so the user can restart consent after EXPIRED/REJECTED,
+  /// or to redo verification from the "Edit" action on an approved card.
+  void reset() => state = const AadhaarState();
+
+  /// Seeds the card as already-approved from the server's per-document
+  /// status check (`kyc/document-types`'s `aadhaar_status`/`aadhaar_masked_number`/
+  /// `aadhaar_name` — see kyc_screen.dart) — skips the form entirely, no
+  /// DigiLocker round trip. [maskedNumber]/[name] are shown on the verified
+  /// card instead of a bare "Verified" badge.
+  void seedApproved({String? maskedNumber, String? name, String? dob}) {
+    if (state.phase == AadhaarPhase.idle) {
+      state = state.copyWith(
+        phase: AadhaarPhase.approved,
+        maskedNumber: maskedNumber,
+        verifiedName: name,
+        verifiedDob: dob,
+      );
+    }
+  }
+
+  /// Syncs the masked number/name shown on the verified card after a LIVE
+  /// approval this session (first-time or via Edit/reverify) — unlike
+  /// [seedApproved], applies regardless of current phase, since
+  /// `pollUntilTerminal`'s APPROVED case only flips the phase and doesn't
+  /// carry these display fields itself (see kyc_screen.dart's
+  /// _checkAndHandleCompletion, which re-fetches document-types and calls
+  /// this right after).
+  void updateVerifiedDetails({String? maskedNumber, String? name, String? dob}) {
+    state = state.copyWith(maskedNumber: maskedNumber, verifiedName: name, verifiedDob: dob);
+  }
+
+  /// Resubmits the customer's corrected name/DOB after a
+  /// CONFIRM_NAME_UPDATE prompt (see pollUntilTerminal's matching case) —
+  /// same verificationId, no fresh DigiLocker round trip. The backend
+  /// re-validates [name]/[dob] against the Aadhaar record it already
+  /// fetched (KYCService._validate_mismatch_resubmission) and, on match,
+  /// applies them to the profile AND approves the row in that same call
+  /// (KYCService._finalize_name_mismatch_confirmation) — no separate
+  /// updateProfileName/updateProfileDob call needed here, unlike the
+  /// post-completion _VerifiedDetailsDialog flow in kyc_screen.dart.
+  Future<(NameMismatchOutcome, String?)> confirmNameMismatch(
+    String requestFrom, {
+    required String name,
+    required String dob,
+  }) async {
+    final verificationId = state.verificationId;
+    if (verificationId == null) {
+      const msg = 'Aadhaar verification session missing. Please restart.';
+      state = state.copyWith(phase: AadhaarPhase.failed, message: msg);
+      return (NameMismatchOutcome.failed, msg);
+    }
+    SecureLogger.d('[KYC DEBUG] confirmNameMismatch: sending, verificationId=$verificationId');
+    try {
+      final data = await _repository.pollAadhaar(
+        requestFrom: requestFrom,
+        verificationId: verificationId,
+        confirmNameUpdate: true,
+        name: name,
+        dob: dob,
+      );
+      SecureLogger.d('[KYC DEBUG] confirmNameMismatch: response received, notifier.mounted=$mounted, status=${data['status']}');
+      if (!mounted) return (NameMismatchOutcome.failed, null);
+      final status = (data['status'] ?? '').toString();
+      if (status == 'APPROVED') {
+        state = state.copyWith(phase: AadhaarPhase.approved);
+        SecureLogger.d('[KYC DEBUG] confirmNameMismatch: returning resolved');
+        return (NameMismatchOutcome.resolved, null);
+      }
+      // Unexpected non-APPROVED, non-thrown status — treat the same as a
+      // continued mismatch (let the dialog offer a retry) rather than a
+      // hard failure; the verification_id/session is still alive.
+      final msg = data['message']?.toString();
+      return (NameMismatchOutcome.stillMismatched, msg);
+    } catch (e) {
+      SecureLogger.d('[KYC DEBUG] confirmNameMismatch: threw, notifier.mounted=$mounted, error=$e');
+      if (!mounted) return (NameMismatchOutcome.failed, null);
+      // The common case: backend rejects with NAME_MISMATCH (still doesn't
+      // match) as a thrown Exception, not a data payload — same
+      // "let the customer retry" treatment as above.
+      return (NameMismatchOutcome.stillMismatched, _sanitizeErrorMessage(e));
+    }
+  }
+}
+
+/// Outcome of [AadhaarNotifier.confirmNameMismatch].
+enum NameMismatchOutcome { resolved, stillMismatched, failed }
 

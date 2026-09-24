@@ -17,7 +17,7 @@ class AuthService {
       final packageInfo = await PackageInfo.fromPlatform();
       return packageInfo.version;
     } catch (e) {
-      return '1.0.0';
+      return '1.1.0';
     }
   }
 
@@ -95,9 +95,60 @@ class AuthService {
     return response.data;
   }
 
+  /// Verifies an OTP against an arbitrary mobile number with NO login/session
+  /// side effects — unlike [verifyOtp], this never saves tokens. For one-off
+  /// mobile-ownership checks (e.g. a nominee's contact number) where the
+  /// number does not belong to the logged-in customer's own account.
+  Future<Map<String, dynamic>> verifyMobileOtpOnly({
+    required String mobile,
+    required String otp,
+    required String otpReferenceId,
+  }) async {
+    final response = await _apiClient.post(
+      'users/auth/verify-mobile-otp',
+      data: {
+        'mobile': mobile,
+        'otp': otp,
+        'otp_reference_id': otpReferenceId,
+      },
+    );
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> sendEmailOtp({
+    required String email,
+    String? firstName,
+  }) async {
+    final response = await _apiClient.post(
+      'users/auth/generate-email-otp',
+      data: {
+        'email': email,
+        'first_name': firstName,
+      },
+    );
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> verifyEmailOtp({
+    required String email,
+    required String otp,
+    required String otpReferenceId,
+  }) async {
+    final response = await _apiClient.post(
+      'users/auth/verify-email-otp',
+      data: {
+        'email': email,
+        'otp': otp,
+        'otp_reference_id': otpReferenceId,
+      },
+    );
+    return response.data;
+  }
+
   Future<Map<String, dynamic>> register({
     required String mobile,
-    required String fullName,
+    required String firstName,
+    String? lastName,
     required String email,
     required String tempToken,
     String? dob,
@@ -107,7 +158,8 @@ class AuthService {
       'users/auth/register',
       data: {
         'mobile': mobile,
-        'full_name': fullName,
+        'first_name': firstName,
+        'last_name': lastName,
         'email': email,
         'dob': dob,
         'referral_code': referralCode,
@@ -147,7 +199,8 @@ class AuthService {
   /// Returns the raw API response for the caller to check success/error.
   Future<Map<String, dynamic>> registerCheck({
     required String mobile,
-    required String fullName,
+    required String firstName,
+    String? lastName,
     required String email,
     required String tempToken,
     String? dob,
@@ -157,7 +210,8 @@ class AuthService {
       'users/auth/register-check',
       data: {
         'mobile': mobile,
-        'full_name': fullName,
+        'first_name': firstName,
+        'last_name': lastName,
         'email': email,
         'dob': dob,
         'referral_code': referralCode,
@@ -295,13 +349,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
             }
           } else {
             errorMessage = respData['message'] ??
-                'Server unreachable [${e.response?.statusCode ?? 'No Connection'}]';
+                'Unable to reach the server. Please try again.';
           }
         } else {
-          errorMessage = 'Server unreachable [No Data]';
+          errorMessage = 'Unable to reach the server. Please try again.';
         }
       } else {
-        errorMessage = 'Internal Error: ${e.toString()}';
+        errorMessage = 'Something went wrong. Please try again.';
       }
       state = state.copyWith(isLoading: false, error: errorMessage);
       return false;
@@ -363,7 +417,121 @@ class AuthNotifier extends StateNotifier<AuthState> {
             }
           } else {
             errorMessage = respData['message'] ??
-                'Verification error [${e.response?.statusCode ?? 'No Connection'}]';
+                'Verification failed. Please try again.';
+          }
+        }
+      }
+      state = state.copyWith(isLoading: false, error: errorMessage);
+      return false;
+    }
+  }
+
+  Future<bool> sendEmailOtp(String email, {String? firstName}) async {
+    if (state.isLoading) return false;
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final data = await _authService.sendEmailOtp(email: email, firstName: firstName);
+
+      if (data['success'] == true) {
+        state = state.copyWith(isLoading: false, data: data['data']);
+        return true;
+      } else {
+        String? errorMessage;
+        if (data['error'] != null && data['error']['message'] != null) {
+          final msg = data['error']['message'];
+          if (msg is Map) {
+            errorMessage = msg.values.first.toString();
+          } else {
+            errorMessage = msg.toString();
+          }
+        }
+        errorMessage ??=
+            data['message'] ?? 'Failed to send OTP. Please try again.';
+        state = state.copyWith(isLoading: false, error: errorMessage);
+        return false;
+      }
+    } catch (e) {
+      String errorMessage = 'Connection error. Please check your internet.';
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout) {
+          errorMessage = 'Server timeout. Please try again later.';
+        } else if (e.response?.data != null) {
+          final respData = e.response?.data;
+          if (respData['error'] != null &&
+              respData['error']['message'] != null) {
+            final msg = respData['error']['message'];
+            if (msg is Map) {
+              errorMessage = msg.values.first
+                  .toString()
+                  .replaceAll('[', '')
+                  .replaceAll(']', '');
+            } else {
+              errorMessage = msg.toString();
+            }
+          } else {
+            errorMessage = respData['message'] ??
+                'Unable to reach the server. Please try again.';
+          }
+        } else {
+          errorMessage = 'Unable to reach the server. Please try again.';
+        }
+      }
+      state = state.copyWith(isLoading: false, error: errorMessage);
+      return false;
+    }
+  }
+
+  Future<bool> verifyEmailOtp(String email, String otp, String otpReferenceId) async {
+    if (state.isLoading) return false;
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final data = await _authService.verifyEmailOtp(
+        email: email,
+        otp: otp,
+        otpReferenceId: otpReferenceId,
+      );
+
+      if (data['success'] == true) {
+        state = state.copyWith(isLoading: false, data: data['data']);
+        return true;
+      } else {
+        String? errorMessage;
+        if (data['error'] != null && data['error']['message'] != null) {
+          final msg = data['error']['message'];
+          if (msg is Map) {
+            errorMessage = msg.values.first
+                .toString()
+                .replaceAll('[', '')
+                .replaceAll(']', '');
+          } else {
+            errorMessage = msg.toString();
+          }
+        }
+        errorMessage ??=
+            data['message'] ?? 'Invalid or expired OTP. Please try again.';
+        state = state.copyWith(isLoading: false, error: errorMessage);
+        return false;
+      }
+    } catch (e) {
+      String errorMessage = 'Verification failed. Please try again.';
+      if (e is DioException) {
+        if (e.response?.data != null) {
+          final respData = e.response?.data;
+          if (respData['error'] != null &&
+              respData['error']['message'] != null) {
+            final msg = respData['error']['message'];
+            if (msg is Map) {
+              errorMessage = msg.values.first
+                  .toString()
+                  .replaceAll('[', '')
+                  .replaceAll(']', '');
+            } else {
+              errorMessage = msg.toString();
+            }
+          } else {
+            errorMessage = respData['message'] ??
+                'Verification failed. Please try again.';
           }
         }
       }
@@ -374,7 +542,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<bool> register({
     required String mobile,
-    required String fullName,
+    required String firstName,
+    String? lastName,
     required String email,
     required String tempToken,
     String? dob,
@@ -385,7 +554,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final data = await _authService.register(
         mobile: mobile,
-        fullName: fullName,
+        firstName: firstName,
+        lastName: lastName,
         email: email,
         tempToken: tempToken,
         dob: dob,

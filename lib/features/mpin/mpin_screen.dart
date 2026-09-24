@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../shared/widgets/numeric_styled_text.dart';
-import 'package:screen_protector/screen_protector.dart';
+import '../../core/security/screenshot_security_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/services/mpin_service.dart';
@@ -174,17 +174,11 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
   }
 
   Future<void> _secureScreen() async {
-    if (!kIsWeb) {
-      await ScreenProtector.preventScreenshotOn();
-      await ScreenProtector.protectDataLeakageWithBlur();
-    }
+    await ScreenshotSecurityService.secureScreen();
   }
 
   Future<void> _releaseScreen() async {
-    if (!kIsWeb) {
-      await ScreenProtector.preventScreenshotOff();
-      await ScreenProtector.protectDataLeakageWithBlurOff();
-    }
+    await ScreenshotSecurityService.releaseScreen();
   }
 
   @override
@@ -374,9 +368,9 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
                                 : isBiometric
                                     ? AppConstants.mpinBiometricSubtitle
                                     : isSetup
-                                        ? 'Create a 4-digit PIN for quick & secure access.'
+                                        ? 'Create a 6-digit PIN for quick & secure access.'
                                         : isReset
-                                            ? 'Enter your new 4-digit security PIN.'
+                                            ? 'Enter your new 6-digit security PIN.'
                                             : isVerifyAfterReset
                                                 ? 'Enter your new PIN to confirm & unlock.'
                                                 : AppConstants.mpinSubtitle;
@@ -417,7 +411,7 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
                           delay: const Duration(milliseconds: 300),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(4, (index) {
+                            children: List.generate(MpinNotifier.pinLength, (index) {
                               bool filled = index < mpinState.mpin.length;
                               return TweenAnimationBuilder<double>(
                                 tween:

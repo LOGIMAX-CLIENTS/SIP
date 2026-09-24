@@ -11,6 +11,7 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/animations.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/gradient_header.dart';
+import '../../core/utils/validators.dart';
 
 enum _ChangePinStep { enterOld, enterNew, confirmNew }
 
@@ -52,18 +53,18 @@ class _ChangeMpinScreenState extends ConsumerState<ChangeMpinScreen> {
 
   String get _stepSubtitle {
     switch (_step) {
-      case _ChangePinStep.enterOld: return 'Enter your existing 4-digit MPIN.';
-      case _ChangePinStep.enterNew: return 'Choose a new 4-digit PIN.';
+      case _ChangePinStep.enterOld: return 'Enter your existing 6-digit MPIN.';
+      case _ChangePinStep.enterNew: return 'Choose a new 6-digit PIN.';
       case _ChangePinStep.confirmNew: return 'Re-enter your new PIN to confirm.';
     }
   }
 
   void _onKeyPressed(String key) {
-    if (_currentInput.length < 4) {
+    if (_currentInput.length < MpinNotifier.pinLength) {
       setState(() {
         _currentInput += key;
       });
-      if (_currentInput.length == 4) {
+      if (_currentInput.length == MpinNotifier.pinLength) {
         Future.delayed(const Duration(milliseconds: 200), _processStep);
       }
     }
@@ -91,6 +92,14 @@ class _ChangeMpinScreenState extends ConsumerState<ChangeMpinScreen> {
           setState(() { _currentInput = ''; });
           _shuffleKeypad();
           AppToast.show(context, 'New PIN must be different from current PIN.', type: ToastType.error);
+          return;
+        }
+        if (Validators.isWeakPin(_currentInput)) {
+          setState(() { _currentInput = ''; });
+          _shuffleKeypad();
+          AppToast.show(context,
+              'Choose a less predictable PIN — avoid sequences like 123456 or repeated digits.',
+              type: ToastType.error);
           return;
         }
         setState(() {
@@ -251,7 +260,7 @@ class _ChangeMpinScreenState extends ConsumerState<ChangeMpinScreen> {
                     // PIN Dots
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(4, (index) {
+                      children: List.generate(MpinNotifier.pinLength, (index) {
                         final filled = index < _currentInput.length;
                         return TweenAnimationBuilder<double>(
                           tween: Tween(begin: 1.0, end: filled ? 1.2 : 1.0),

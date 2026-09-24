@@ -105,7 +105,7 @@ class _MicroSavingsBannerState extends State<MicroSavingsBanner>
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 172.h,
+      height: 160.h,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20.r),
         gradient: const LinearGradient(
@@ -144,12 +144,12 @@ class _MicroSavingsBannerState extends State<MicroSavingsBanner>
             // ── Heading text (top-left) ──
             Positioned(
               left: 24.w,
-              top: 24.h,
-              right: 160.w,
+              top: 16.h,
+              right: 80.w,
               child: Text(
-                'Micro Savings,\nMega Rewards',
+                'Micro Savings, Mega Rewards',
                 style: GoogleFonts.playfairDisplay(
-                  fontSize: 19.sp,
+                  fontSize: 17.sp,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF8B5E00),
                   height: 1.3,
@@ -158,11 +158,26 @@ class _MicroSavingsBannerState extends State<MicroSavingsBanner>
               ),
             ),
 
-            // ── Interactive swipe track (bottom-left) ──
+            // ── Interactive swipe track ──
             Positioned(
               left: 18.w,
-              bottom: 18.h,
+              bottom: 58.h,
               child: _buildSwipeTrack(),
+            ),
+
+            // ── Subtitle text (below swipe bar) ──
+            Positioned(
+              left: 24.w,
+              bottom: 12.h,
+              child: Text(
+                'Small steps today,\nBig rewards tomorrow.',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xCC010101),
+                  height: 1.4,
+                ),
+              ),
             ),
           ],
         ),

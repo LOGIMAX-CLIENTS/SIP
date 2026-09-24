@@ -1,15 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:startgold/core/security/secure_logger.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:startgold/core/security/app_lifecycle_observer.dart';
+import 'package:startgold/core/utils/kyc_validator.dart';
 import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
+import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
+import 'package:startgold/features/kyc/screens/manual_kyc_upload_screen.dart';
+import 'package:startgold/features/profile/profile_controller.dart' as pc;
+import 'package:startgold/routes/app_router.dart';
 import 'package:startgold/shared/theme/app_theme.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
+import 'package:startgold/shared/utils/aadhaar_input_formatter.dart';
+import 'package:startgold/shared/utils/pan_input_formatter.dart';
+import 'package:startgold/shared/utils/upper_case_words_formatter.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/custom_button.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
+import 'package:startgold/shared/widgets/secure_clipboard.dart';
 
+/// Unified KYC hub — shows PAN and Aadhaar verification together, on one
+/// page: PAN Name/Number fields (`_buildPanInputFields`), then Aadhaar
+/// Name/Number fields, then a single combined "Verify via DigiLocker"
+/// button (see `_buildAadhaarCard`) — PAN has no consent or submit of its
+/// own, both sets of typed fields are sent together in the SAME DigiLocker
+/// initiate call (`_runVerifyAadhaar`).
+///
+/// KYC is complete only when BOTH PAN and Aadhaar are approved (mirrors the
+/// backend's `KYCService.is_kyc_complete`, which every gated action — SIP
+/// create, withdrawal, savings — already checks). PAN's document-types
+/// entry (`/kyc/document-types`, id_document="1") only ever drives its
+/// status/verified-banner display now — the OTHER document types still use
+/// the generic field-form + `_submitDoc`/`kycSubmitProvider` path directly
+/// (see `_buildDocumentCard`'s final `else` branch). Aadhaar is a DigiLocker
+/// consent + poll flow (`/kyc/upload`, id_document="2") that does not come
+/// back from `/kyc/document-types` today, so it is rendered as a second,
+/// client-side card driven by [aadhaarProvider] rather than by the
+/// documents list.
+///
+/// The "Finish" footer only completes once both are approved, at which
+/// point this screen pops `true` — every caller (SIP/Withdrawal/Investment/
+/// Profile) awaits that and either retries the original blocked action
+/// (see `KycVerificationFlow`) or just refreshes its own status.
 class KycScreen extends ConsumerStatefulWidget {
   final String requestFrom;
   final Map<String, dynamic>? extraData;
@@ -25,9 +60,155 @@ class KycScreen extends ConsumerStatefulWidget {
 }
 
 class _KycScreenState extends ConsumerState<KycScreen> {
-  final _formKey = GlobalKey<FormState>();
   final Map<String, Map<String, TextEditingController>> _docControllers = {};
+  final Map<String, GlobalKey<FormState>> _docFormKeys = {};
+  final Set<String> _completedDocIds = {};
+  final Set<String> _submittingDocIds = {};
   bool _initialized = false;
+  bool _aadhaarSeeded = false;
+  // Guards the stale-approved reconciliation below — fires at most once per
+  // screen instance, same pattern as _aadhaarSeeded.
+  bool _aadhaarReconciled = false;
+  // Guards the on-load completion-recovery check below — fires at most
+  // once per screen instance, same pattern as _aadhaarSeeded.
+  bool _completionCheckedOnLoad = false;
+  // Guards _checkAadhaarOutcomeRecoveryOnLoad — fires at most once per
+  // screen instance. Covers the case where MainScreen's app-shell fallback
+  // navigated back to THIS (freshly (re)pushed) KycScreen instance because
+  // its own listener caught a pending mismatch/failure that happened while
+  // no KycScreen was mounted to show it — see main_screen.dart's
+  // _navigateToKycAndLetItHandle doc comment for the full chain.
+  bool _aadhaarOutcomeCheckedOnLoad = false;
+  // Set when the user taps "Edit" on an already-verified Aadhaar card, so
+  // the next _onVerifyAadhaar() call tells the backend to bypass its
+  // already-approved idempotency short-circuit (see KYCRepository.initiateAadhaar).
+  bool _aadhaarEditing = false;
+  // Set specifically by _onRetryPan (never by the plain "Edit" button) —
+  // distinguishes "redoing DigiLocker only to fetch PAN, Aadhaar itself is
+  // fine" from "the customer is actually correcting their Aadhaar details".
+  // ref.read(aadhaarProvider.notifier).reset() (inside _editAadhaar) drops
+  // the local phase back to idle either way, which would otherwise make the
+  // Aadhaar card render as if it needed verifying from scratch — misleading
+  // when it's already approved server-side and this is purely a PAN retry.
+  bool _retryingPanOnly = false;
+  // Dedupe guards for the mismatch dialog / failure dialog — now backed by
+  // AadhaarNotifier.handledMismatchIds/handledFailureKeys, SHARED with
+  // MainScreen's own fallback listener. A KycScreen-local (even if static)
+  // Set only stopped duplicate handling within this screen's own code
+  // paths; it couldn't stop MainScreen's independent ref.listen from ALSO
+  // pushing a new KycScreen route over an already-open dialog for the same
+  // event, which raced with the dialog's own Navigator.pop() (see
+  // AadhaarNotifier's doc comment on handledMismatchIds for the full story
+  // of how that left the dialog stuck on "Processing..." forever).
+  Set<String> get _shownMismatchIds => AadhaarNotifier.handledMismatchIds;
+  Set<String> get _shownFailureKeys => AadhaarNotifier.handledFailureKeys;
+  // Re-entrancy guard AND loading indicator for the Aadhaar verification
+  // attempt in flight — true for the whole duration of _onVerifyAadhaar()
+  // (initiate -> consent/SDK sub-screen -> poll), not just the initiating/
+  // polling AadhaarState phases. Without this, awaitingSdk/awaitingConsent
+  // leave the button tappable while the previous call is still awaiting its
+  // pushed route, so a second tap fires an overlapping attempt that
+  // re-initiates and pushes a duplicate sub-screen.
+  bool _verifyingAadhaar = false;
+  // Full-page "updating your verification status" overlay — see
+  // _checkAndHandleCompletion's doc comment for why this exists: the gap
+  // between a verify action finishing and this screen settling into its
+  // final state previously had no on-screen feedback at all.
+  bool _completingKyc = false;
+
+  final _aadhaarNumberController = TextEditingController();
+  final _aadhaarNameController = TextEditingController();
+  final _aadhaarFormKey = GlobalKey<FormState>();
+
+  // PAN Name/Number — typed alongside Aadhaar's fields on this same screen
+  // and sent as part of the SAME DigiLocker initiate call (see
+  // _runVerifyAadhaar), rather than PAN having its own separate consent/
+  // button. Validated via their own Form key since these fields live in
+  // _buildDocumentCard's widget tree, a separate Form from Aadhaar's.
+  final _panNameController = TextEditingController();
+  final _panNumberController = TextEditingController();
+  final _panFormKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // aadhaarProvider is kept alive (see AadhaarNotifier.pauseAutoDispose)
+    // across the SDK-bounce navigation that can land the user somewhere
+    // other than this screen mid-verify — so if MainScreen's app-shell
+    // fallback just navigated the user back HERE because it caught a
+    // pending outcome no KycScreen was mounted to show, that outcome is
+    // still sitting in aadhaarProvider's current state, unconsumed. Check
+    // once, post-frame (dialogs need a laid-out context).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAadhaarOutcomeRecoveryOnLoad());
+  }
+
+  /// See initState's doc comment. Reads aadhaarProvider's CURRENT state
+  /// directly rather than relying on ref.listen — a listener registered in
+  /// build() only fires on FUTURE transitions, not the one that already
+  /// happened before this (possibly freshly-pushed) screen existed.
+  void _checkAadhaarOutcomeRecoveryOnLoad() {
+    if (_aadhaarOutcomeCheckedOnLoad) return;
+    _aadhaarOutcomeCheckedOnLoad = true;
+    if (!mounted) return;
+    final state = ref.read(aadhaarProvider);
+    if (state.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
+        state.aadhaarMismatchPrompt != null) {
+      _maybeShowAadhaarMismatchDialog(state.aadhaarMismatchPrompt!);
+    }
+    if (state.panMismatchPrompt != null) {
+      _maybeShowPanMismatchDialog(state.panMismatchPrompt!);
+    }
+    if (state.panRejectionMessage != null) {
+      AppToast.show(context, state.panRejectionMessage!, type: ToastType.error);
+    }
+    if (state.phase == AadhaarPhase.expired ||
+        state.phase == AadhaarPhase.rejected ||
+        state.phase == AadhaarPhase.failed) {
+      _maybeShowAadhaarFailureDialog(state);
+    }
+    // APPROVED counterpart — confirmed via [KYC DEBUG] logs that the
+    // ORIGINAL screen can be disposed by the SDK bounce before its own
+    // linear _runVerifyAadhaar() chain ever reaches its approved branch
+    // (the "widget mounted=false" log fires right there), so nothing ever
+    // claims AadhaarNotifier.handledApprovedKeys and MainScreen's fallback
+    // navigates here — but until this branch existed, THIS freshly-pushed
+    // screen never re-ran the completion sequence either: it just showed
+    // "Verified" cards from its own normal doc-types fetch and stopped,
+    // with no success animation, no auto Navigator.pop(context, true), and
+    // therefore no refreshed "Verified" badge back on the Profile screen
+    // (that badge only refreshes when THIS route pops with `true`).
+    //
+    // Guarded on verificationId != null specifically to NOT fire for a
+    // customer who casually reopens an already-long-verified KYC screen
+    // (AadhaarNotifier.seedApproved() also sets phase=approved, purely for
+    // display, whenever the backend reports Aadhaar approved on ANY fresh
+    // load — but it never sets verificationId, so that case is excluded
+    // here). AadhaarNotifier.handledApprovedKeys.add() below is the second,
+    // durable guard — even a genuine verificationId only ever runs this
+    // once, matching _checkAndHandleCompletion's own claim for the case
+    // where the original screen DOES survive to run it itself.
+    if (state.phase == AadhaarPhase.approved && state.verificationId != null) {
+      if (AadhaarNotifier.handledApprovedKeys.add(state.verificationId!)) {
+        _checkAndHandleCompletion();
+      }
+    }
+    // NOT_SHARED counterpart — same disposal race as approved above
+    // (confirmed live: "widget mounted=false" logged right where the
+    // linear chain would have handled this phase), but this one was
+    // missing recovery entirely: no on-load claim here, and no MainScreen
+    // fallback either (see main_screen.dart), so a freshly-pushed screen
+    // just silently re-fetched document-types on its own normal load —
+    // no loader, no success/failure toast, nothing telling the customer
+    // anything happened. Same verificationId != null guard and
+    // handledApprovedKeys claim as the approved case (aadhaarNotShared can
+    // still mean "PAN got verified this round", so it deserves the same
+    // one-time completion check).
+    if (state.phase == AadhaarPhase.aadhaarNotShared && state.verificationId != null) {
+      if (AadhaarNotifier.handledApprovedKeys.add(state.verificationId!)) {
+        _checkAndHandleCompletion();
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -36,13 +217,53 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         controller.dispose();
       }
     }
+    _aadhaarNumberController.dispose();
+    _aadhaarNameController.dispose();
+    _panNameController.dispose();
+    _panNumberController.dispose();
     super.dispose();
+  }
+
+  /// Mirrors the backend's `validate_aadhaar_number` (shared/utils/validators.py):
+  /// 12 digits, first digit 2-9, and not an obvious placeholder (all same
+  /// digit). This is purely a client-side sanity check — actual identity
+  /// verification always happens via DigiLocker consent, never this number.
+  String? _validateAadhaarNumber(String? value) {
+    final digits = AadhaarInputFormatter.unformat(value ?? '');
+    if (digits.length != 12) return 'Enter a valid 12-digit Aadhaar number';
+    if (!RegExp(r'^[2-9]').hasMatch(digits)) {
+      return 'Enter a valid 12-digit Aadhaar number';
+    }
+    if (RegExp(r'^(\d)\1{11}$').hasMatch(digits)) {
+      return 'Enter a valid 12-digit Aadhaar number';
+    }
+    return null;
+  }
+
+  String? _validateAadhaarName(String? value) {
+    if (value == null || value.trim().length < 2) return 'Enter a valid name';
+    return null;
+  }
+
+  String? _validatePanName(String? value) {
+    if (value == null || value.trim().length < 2) return 'Enter a valid name';
+    return null;
+  }
+
+  /// Format check only (`KycValidator.validatePAN` — AAAAA9999A) — actual
+  /// identity verification still happens via the same DigiLocker consent as
+  /// Aadhaar, never this typed number alone. Unformats first since the
+  /// field displays the grouped "AAAAA 9999 A" form (PanInputFormatter),
+  /// mirroring _validateAadhaarNumber's identical unformat-then-validate step.
+  String? _validatePanNumber(String? value) {
+    return KycValidator.validatePAN(PanInputFormatter.unformat(value ?? ''));
   }
 
   void _initControllers(List<KycDocumentType> docs) {
     if (_initialized) return;
     for (var doc in docs) {
       _docControllers[doc.id] = {};
+      _docFormKeys[doc.id] = GlobalKey<FormState>();
       final List<KycField> allFields = List.from(doc.fields);
       final isPan = doc.name.toUpperCase().contains('PAN') ||
           doc.code.toUpperCase().contains('PAN');
@@ -55,53 +276,229 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       for (var field in allFields) {
         _docControllers[doc.id]![field.name] = TextEditingController();
       }
+
+      // Seed already-approved documents so their card starts in the
+      // Verified state instead of re-prompting for input.
+      if (doc.alreadyUploaded || doc.status.toUpperCase() == 'APPROVED') {
+        _completedDocIds.add(doc.id);
+      }
     }
     _initialized = true;
   }
 
-  Future<void> _submit(List<KycDocumentType> docs) async {
-    if (!_formKey.currentState!.validate()) return;
+  /// Seeds the Aadhaar card as already-approved before the user ever sees
+  /// the form, if the server reports it's already VERIFIED — mirrors
+  /// `_initControllers`'s PAN seeding above. Deferred to a post-frame
+  /// callback since it's triggered from `build()` and mutates a provider
+  /// this widget also watches.
+  void _seedAadhaarIfApproved(bool aadhaarApproved, {String? maskedNumber, String? name, String? dob}) {
+    if (_aadhaarSeeded || !aadhaarApproved) return;
+    _aadhaarSeeded = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(aadhaarProvider.notifier).seedApproved(maskedNumber: maskedNumber, name: name, dob: dob);
+      }
+    });
+  }
 
-    // Pick the docs that need submission
-    final List<KycDocumentType> docsToSubmit = docs;
-    if (docsToSubmit.isEmpty) {
-      _handleSuccess();
+  /// Inverse of `_seedAadhaarIfApproved` — aadhaarProvider is kept alive for
+  /// the app's whole lifetime (MainScreen permanently watches it via
+  /// ref.listen for the mismatch/failure/approved fallback routing), so a
+  /// phase of APPROVED set by an earlier verify can still be sitting in the
+  /// provider when this screen is freshly reopened for a customer whose
+  /// current backend status is no longer APPROVED (re-verification was
+  /// invalidated, a different account, etc). Without this, the Verified
+  /// banner keeps showing purely from that stale local phase even though
+  /// aadhaar_status from /kyc/document-types now reports PENDING. Fires at
+  /// most once per screen instance so it never fights a live verify that's
+  /// genuinely in flight in this same instance (see _aadhaarReconciled).
+  void _reconcileAadhaarWithBackend(bool aadhaarApproved) {
+    if (_aadhaarReconciled) return;
+    _aadhaarReconciled = true;
+    if (aadhaarApproved) return;
+    if (ref.read(aadhaarProvider).phase != AadhaarPhase.approved) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(aadhaarProvider.notifier).reset();
+    });
+  }
+
+  /// Recovers a customer who auto-verified (both PAN and Aadhaar already
+  /// log-approved) but never reached the mandatory Profile Name Selection
+  /// dialog — e.g. the app was closed right after DigiLocker succeeded.
+  /// `_checkAndHandleCompletion()` only re-runs after a LIVE submit, so
+  /// merely reopening this screen wouldn't otherwise retry it — the cards
+  /// already show "Verified" everywhere, so nothing would look wrong, but
+  /// `result.kycConfirmed` (backed by CustomerPan/CustomerAadhaar, which
+  /// only flips once this dialog's choice is submitted) would stay false
+  /// forever, silently blocking SIP/withdrawals with no visible cause. Fires
+  /// at most once per screen instance; once `kycConfirmed` is true this
+  /// never fires again.
+  void _checkCompletionRecoveryOnLoad(KycDocumentsResult result) {
+    if (_completionCheckedOnLoad) return;
+    final bothComplete =
+        result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
+    if (!bothComplete) return;
+    if (result.kycConfirmed) {
+      // Both documents are verified AND already confirmed in a past
+      // session — there is nothing left to show or ask, but this screen
+      // has no "Continue" button of its own; the only way forward is the
+      // Navigator.pop(context, true) that _runCompletionSequence() does
+      // at the end of the dialog sequence. Skipping straight past that
+      // sequence (correct — there's nothing to (re)confirm) previously
+      // skipped the pop too, so a caller awaiting KycVerificationFlow's
+      // result (e.g. Withdraw's KYC_REQUIRED gate) never got its `true`
+      // and the customer was stuck looking at two "Verified" cards with
+      // no way to proceed.
+      _completionCheckedOnLoad = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.pop(context, true);
+      });
+      return;
+    }
+    // Second, durable guard alongside result.kycConfirmed — kycConfirmed
+    // can read false on a fetch shortly after a genuine completion (a
+    // backend read-timing gap, confirmed live via [KYC DEBUG] logs: the
+    // mirror rows were already correctly APPROVED in the DB at the exact
+    // moment this returned false), which without this would re-show the
+    // WHOLE success-dialogs sequence on every subsequent reopen of this
+    // screen for the rest of the session, not just once — this function's
+    // own _completionCheckedOnLoad only guards ONE instance, and a fresh
+    // instance is exactly what Profile's "KYC Validation" tap-in creates
+    // every time. Falls back to a purely local key when there's no live
+    // verificationId (e.g. a customer recovering from an earlier app
+    // session, where aadhaarProvider has reset to its pristine state) so
+    // that case's original recovery behavior is unaffected.
+    final key = ref.read(aadhaarProvider).verificationId ?? 'recovery-${result.aadhaarMaskedNumber}';
+    if (!AadhaarNotifier.handledApprovedKeys.add(key)) return;
+    _completionCheckedOnLoad = true;
+
+    final panDoc = result.documents.isEmpty
+        ? null
+        : result.documents.firstWhere(
+            (d) => d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'),
+            orElse: () => result.documents.first,
+          );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _runCompletionSequence();
+    });
+  }
+
+  /// Re-opens an already-verified document's form so the user can redo
+  /// verification (e.g. fix a typo). PAN just needs its form shown again —
+  /// a new/edited PAN number is verified fresh by the backend regardless.
+  void _editDocument(KycDocumentType doc) {
+    setState(() => _completedDocIds.remove(doc.id));
+  }
+
+  /// Re-opens the Aadhaar form for a redo. `_aadhaarEditing` tells the next
+  /// `_onVerifyAadhaar()` call to pass `allowReverify: true`, since the
+  /// backend otherwise short-circuits any Aadhaar re-verification attempt
+  /// once one is already APPROVED.
+  void _editAadhaar({bool panOnly = false}) {
+    setState(() {
+      _aadhaarEditing = true;
+      _retryingPanOnly = panOnly;
+    });
+    ref.read(aadhaarProvider.notifier).reset();
+  }
+
+  /// PAN has no consent of its own — it's fetched from the SAME DigiLocker
+  /// session as Aadhaar (see `_buildPanInputFields`'s doc comment and
+  /// `MODULE_BRAIN.md` §2). If the user unchecks "PAN Verification Record" on
+  /// DigiLocker's document-selection screen, Aadhaar comes back APPROVED but
+  /// PAN never does — the only way to retry PAN is a fresh DigiLocker consent.
+  /// This re-runs that consent (reusing `_editAadhaar`'s reverify plumbing)
+  /// instead of leaving the user staring at a PAN card whose old copy still
+  /// said "complete Aadhaar verification below" even though Aadhaar was
+  /// already done.
+  Future<void> _onRetryPan() async {
+    _editAadhaar(panOnly: true);
+    // The PAN/Aadhaar cards were showing their verified banners (no Form in
+    // the tree) — wait one frame so `_panFormKey`/`_aadhaarFormKey` are
+    // attached to the now-visible input forms before validating them.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    if (_panFormKey.currentState?.validate() != true ||
+        _aadhaarFormKey.currentState?.validate() != true) {
+      // Aadhaar was approved in an earlier session, so these fields were
+      // never filled in this one — nothing to resubmit yet. Point the user
+      // at the now-reopened PAN/Aadhaar forms below instead of doing nothing.
+      AppToast.show(
+        context,
+        "Re-enter your PAN and Aadhaar details below, then verify again — "
+        "make sure 'PAN Verification Record' is selected on the DigiLocker "
+        "consent screen this time.",
+        type: ToastType.info,
+      );
       return;
     }
 
+    await _onVerifyAadhaar();
+    if (!mounted) return;
+
+    // _onVerifyAadhaar() already surfaces its own toast on failure/timeout,
+    // and already runs the completion sequence if PAN came back this time.
+    // The one gap it doesn't cover: Aadhaar re-approves fine but PAN is
+    // AGAIN missing (user skipped the checkbox a second time) — nothing
+    // else would tell the user that attempt didn't fix it.
+    if (ref.read(aadhaarProvider).phase != AadhaarPhase.approved) return;
+    final docs = ref.read(kycDocumentsProvider(widget.requestFrom)).valueOrNull;
+    final panStillMissing = docs != null && !docs.documents.every((d) => d.alreadyUploaded);
+    if (panStillMissing) {
+      AppToast.show(
+        context,
+        "PAN still isn't verified. Please try again and make sure 'PAN "
+        "Verification Record' is checked before tapping Allow on the "
+        "DigiLocker consent screen.",
+        type: ToastType.error,
+      );
+    }
+  }
+
+  Future<void> _submitDoc(KycDocumentType doc) async {
+    final formKey = _docFormKeys[doc.id];
+    if (formKey?.currentState?.validate() == false) return;
+
+    setState(() => _submittingDocIds.add(doc.id));
     try {
-      // For now, we submit them sequentially as per the current kycSubmitProvider design.
-      // In a real production app, you might want to call them in parallel or have a single "save-all" API.
-      for (var doc in docsToSubmit) {
-        final Map<String, dynamic> fields = {};
-        final controllers = _docControllers[doc.id];
-        controllers?.forEach((key, controller) {
-          fields[key] = controller.text;
-        });
-
-        await ref.read(kycSubmitProvider.notifier).submit(
-              requestFrom: widget.requestFrom,
-              documentId: doc.id,
-              fields: fields,
-            );
-
-        final result = ref.read(kycSubmitProvider);
-        if (result.hasError) {
-          if (mounted) {
-            // Extract the real server message from the exception
-            String errorMsg = result.error.toString();
-            // Strip Dart's 'Exception: ' prefix if present
-            if (errorMsg.startsWith('Exception: ')) {
-              errorMsg = errorMsg.substring('Exception: '.length);
-            }
-            AppToast.show(context, errorMsg, type: ToastType.error);
-            // Stay on the page so the user can correct their input
-          }
-          return;
-        }
+      final fields = <String, dynamic>{};
+      _docControllers[doc.id]?.forEach((key, controller) {
+        fields[key] = controller.text;
+      });
+      // doc.alreadyUploaded means this document was already APPROVED when
+      // the screen loaded — the only way its form is visible again is via
+      // the "Edit" action (see _editDocument), so this is a deliberate redo.
+      // Tells the backend to bypass its already-approved idempotency
+      // short-circuit, which would otherwise silently ignore a corrected
+      // name/number without ever re-verifying via Cashfree.
+      if (doc.alreadyUploaded) {
+        fields['allow_reverify'] = true;
       }
 
-      _handleSuccess();
+      await ref.read(kycSubmitProvider.notifier).submit(
+            requestFrom: widget.requestFrom,
+            documentId: doc.id,
+            fields: fields,
+          );
+
+      final result = ref.read(kycSubmitProvider);
+      if (result.hasError) {
+        if (mounted) {
+          String errorMsg = result.error.toString();
+          if (errorMsg.startsWith('Exception: ')) {
+            errorMsg = errorMsg.substring('Exception: '.length);
+          }
+          AppToast.show(context, errorMsg, type: ToastType.error);
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() => _completedDocIds.add(doc.id));
+        await _checkAndHandleCompletion();
+      }
     } catch (e) {
       if (mounted) {
         String msg = e.toString();
@@ -110,16 +507,460 @@ class _KycScreenState extends ConsumerState<KycScreen> {
         }
         AppToast.show(context, msg, type: ToastType.error);
       }
+    } finally {
+      if (mounted) setState(() => _submittingDocIds.remove(doc.id));
     }
   }
 
-  void _handleSuccess() {
-    if (mounted) {
-      _showSuccessDialog();
+  /// Kicks off (or resumes) the Aadhaar DigiLocker sub-flow. Idempotent on
+  /// the backend — if Aadhaar was already approved in a prior attempt this
+  /// resolves instantly without opening the WebView (see
+  /// `AadhaarNotifier.initiate`).
+  Future<void> _onVerifyAadhaar() async {
+    if (_verifyingAadhaar) return;
+    // Validate BOTH forms — a `null` currentState (form not currently
+    // mounted, e.g. PAN already showing its Verified banner) reads as
+    // `null`, not `false`, so it never blocks this — only a form that IS
+    // mounted and genuinely invalid does.
+    if (_panFormKey.currentState?.validate() == false) return;
+    if (_aadhaarFormKey.currentState?.validate() == false) return;
+
+    setState(() => _verifyingAadhaar = true);
+    try {
+      await _runVerifyAadhaar();
+    } finally {
+      // Unconditional — not gated behind `mounted`. If the SDK-bounce
+      // navigation left this screen unmounted right when _runVerifyAadhaar
+      // finished, the OLD (mounted) reset would never run, and this flag
+      // would stay stuck `true` on this State instance forever. That
+      // wouldn't matter for a genuinely disposed instance — except
+      // Navigator can keep a popped-then-reused KycScreen route's State
+      // alive in some cases, and a stuck guard here means EVERY future tap
+      // on that instance silently no-ops (`if (_verifyingAadhaar) return;`
+      // above), which is exactly the "first tap does nothing" symptom this
+      // fixes. setState still needs `mounted` (calling it on a disposed
+      // State throws) — the field write does not.
+      _verifyingAadhaar = false;
+      if (mounted) setState(() {});
     }
   }
 
-  void _showSuccessDialog() {
+  Future<void> _runVerifyAadhaar() async {
+    final notifier = ref.read(aadhaarProvider.notifier);
+    // DigiLocker (webview or native SDK) can run long enough for the screen
+    // to auto-lock mid-flow — without this, AppLifecycleObserver's resume
+    // handler pushes the MPIN re-lock screen on top the instant the app
+    // regains focus, burying whatever this flow was about to show (most
+    // visibly the CONFIRM_NAME_UPDATE mismatch dialog below). Same pattern
+    // as the payment handlers (see hdfc_payment_handler.dart etc.).
+    AppLifecycleObserver.suppressAppLock = true;
+    // Separately from the app-lock suppression above: SurePass's native SDK
+    // Activity still triggers a genuine onPause/onResume on the host
+    // Activity even with the lock suppressed, and that's enough for
+    // aadhaarProvider (.autoDispose) to lose its listener and be torn down
+    // mid-flow — confirmed via [KYC DEBUG] logging showing mounted=false on
+    // a poll response that otherwise arrived with the correct
+    // CONFIRM_NAME_UPDATE payload. Pausing autoDispose for this same
+    // initiate -> sub-screen -> poll span keeps the notifier alive so the
+    // result actually reaches the UI.
+    notifier.pauseAutoDispose();
+    try {
+      SecureLogger.d(
+        '[KYC DEBUG] initiate() call: _aadhaarEditing=$_aadhaarEditing '
+        '_retryingPanOnly=$_retryingPanOnly '
+        'aadhaarNumberEmpty=${_aadhaarNumberController.text.isEmpty} '
+        'nameEmpty=${_aadhaarNameController.text.isEmpty} '
+        'panNumberEmpty=${_panNumberController.text.isEmpty} '
+        'panNameEmpty=${_panNameController.text.isEmpty}',
+      );
+      await notifier.initiate(
+        widget.requestFrom,
+        aadhaarNumber: AadhaarInputFormatter.unformat(_aadhaarNumberController.text),
+        fullName: _aadhaarNameController.text.trim(),
+        // Sent alongside Aadhaar's fields on the SAME initiate call — PAN
+        // still has no consent of its own (see _buildPanInputFields), this
+        // is just the typed value the backend will eventually cross-check
+        // against what DigiLocker's own PAN fetch returns.
+        panName: _panNameController.text.trim(),
+        panNumber: PanInputFormatter.unformat(_panNumberController.text),
+        allowReverify: _aadhaarEditing,
+      );
+      if (!mounted) return;
+
+      final afterInitiate = ref.read(aadhaarProvider);
+      if (afterInitiate.phase == AadhaarPhase.awaitingConsent &&
+          afterInitiate.consentUrl != null) {
+        // Cashfree — webview consent flow.
+        final consentConfirmed = await Navigator.pushNamed(
+          context,
+          AppRouter.aadhaarVerification,
+          arguments: {'consentUrl': afterInitiate.consentUrl},
+        );
+        if (!mounted) return;
+        // Only poll if the user tapped "I've completed verification" — if
+        // they backed out (hardware back → pops with a null result) there is
+        // nothing new to check yet, so skip the round trip.
+        if (consentConfirmed == true) {
+          // Re-read rather than reuse the `notifier` captured above: aadhaarProvider
+          // is .autoDispose, and the pushed sub-screen can outlive its last
+          // listener long enough for Riverpod to tear it down and recreate it —
+          // calling pollUntilTerminal on the stale instance would silently no-op
+          // via its own `mounted` guard, dropping a real CONFIRM_NAME_UPDATE/
+          // APPROVED/etc. result on the floor with no error shown.
+          await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
+        }
+      } else if (afterInitiate.phase == AadhaarPhase.awaitingSdk &&
+          afterInitiate.sdkToken != null) {
+        // SurePass — native DigiLocker Flutter SDK flow.
+        final sdkConfirmed = await Navigator.pushNamed(
+          context,
+          AppRouter.digilockerSdk,
+          arguments: {
+            'sdkToken': afterInitiate.sdkToken,
+            'clientId': afterInitiate.providerClientId,
+            'environment': afterInitiate.sdkEnvironment,
+          },
+        );
+        if (!mounted) return;
+        if (sdkConfirmed == true) {
+          // Re-read — see the webview branch's comment above. Especially
+          // relevant here: the native SDK renders via a platform view
+          // (PlatformViewsController), which is more likely than a plain
+          // Flutter WebView route to suspend the underlying widget tree long
+          // enough for the autoDispose provider to be torn down.
+          await ref.read(aadhaarProvider.notifier).pollUntilTerminal(widget.requestFrom);
+        }
+      }
+
+      SecureLogger.d('[KYC DEBUG] after poll branches, widget mounted=$mounted');
+      if (!mounted) return;
+      var finalState = ref.read(aadhaarProvider);
+      SecureLogger.d(
+        '[KYC DEBUG] post-poll finalState.phase=${finalState.phase} '
+        'aadhaarMismatchPrompt=${finalState.aadhaarMismatchPrompt != null} '
+        'panMismatchPrompt=${finalState.panMismatchPrompt != null}',
+      );
+
+      // PAN's mismatch prompt (if any) is independent of Aadhaar's own
+      // phase below — it can be set alongside APPROVED, already-approved, or
+      // even REJECTED (see AadhaarState.panMismatchPrompt's doc comment) — so
+      // it's handled first, unconditionally, before branching on phase.
+      if (finalState.panMismatchPrompt != null) {
+        await _maybeShowPanMismatchDialog(finalState.panMismatchPrompt!);
+        if (!mounted) return;
+        finalState = ref.read(aadhaarProvider);
+      }
+      if (finalState.panRejectionMessage != null) {
+        AppToast.show(context, finalState.panRejectionMessage!, type: ToastType.error);
+      }
+
+      if (finalState.phase == AadhaarPhase.expired ||
+          finalState.phase == AadhaarPhase.rejected ||
+          finalState.phase == AadhaarPhase.failed) {
+        _maybeShowAadhaarFailureDialog(finalState);
+        return;
+      }
+
+      // Aadhaar wasn't shared this round, but PAN may have been (backend's
+      // own framing: "not a failure ... report this as a genuine success").
+      // Must refresh document-types here — this is the only phase-branch
+      // that can carry a fresh PAN approval without Aadhaar's own phase
+      // also being `approved`, so it needed its own call to
+      // _checkAndHandleCompletion() rather than falling through to the
+      // generic message-only toast below (which never re-fetches anything).
+      if (finalState.phase == AadhaarPhase.aadhaarNotShared) {
+        if (mounted && finalState.message != null) {
+          AppToast.show(context, finalState.message!, type: ToastType.info);
+        }
+        if (!mounted) return;
+        await _checkAndHandleCompletion();
+        return;
+      }
+
+      if (finalState.phase == AadhaarPhase.approved) {
+        // Claim the SAME shared key MainScreen's own approved-fallback
+        // checks (see AadhaarNotifier.handledApprovedKeys / MainScreen's
+        // _maybeHandleAadhaarApproved) — this branch only runs when THIS
+        // widget is still mounted and is about to handle the approval
+        // itself; without claiming here, nothing ever marks the outcome as
+        // handled (KycScreen never used to claim this key at all), so
+        // MainScreen's listener — reacting to the very same state
+        // transition — always finds it unclaimed after its grace period
+        // and pushes a REDUNDANT fresh KycScreen route on top of this one,
+        // which is why leaving the screen needed two back-presses and the
+        // customer landed on a second, differently-timed fetch of the KYC
+        // status instead of this instance's own freshly-refreshed one.
+        final claimed = AadhaarNotifier.handledApprovedKeys
+            .add(finalState.verificationId ?? 'approved-${finalState.maskedNumber}');
+        SecureLogger.d('[KYC DEBUG] linear chain approved branch: claimed=$claimed, calling _checkAndHandleCompletion');
+        await _checkAndHandleCompletion();
+        return;
+      }
+
+      if (finalState.phase == AadhaarPhase.awaitingNameMismatchConfirm) {
+        await _maybeShowAadhaarMismatchDialog(finalState.aadhaarMismatchPrompt!);
+        return;
+      }
+
+      // pollUntilTerminal exhausted its retries while DigiLocker was still
+      // processing (e.g. the provider's document-fetch/cross-verify chain
+      // outran the client's polling window, or — for Meon — a swallowed 4xx
+      // kept reporting PENDING) — it resets to awaitingConsent with an
+      // explanatory message instead of a terminal phase. Without this, the
+      // user sees the DigiLocker screen close and nothing else: no success,
+      // no error. Surface it so they know to check back / retry.
+      if (finalState.message != null) {
+        if (!mounted) return;
+        AppToast.show(context, finalState.message!, type: ToastType.info);
+      }
+      // The initiate call already wrote a PENDING KYC row, so
+      // digilocker_attempted is true server-side and "Upload manually" is
+      // eligible to show — but docsResult was fetched before this attempt,
+      // so the card wouldn't reveal that option until some unrelated refresh
+      // happened to occur. Invalidate now so "Try again" and "Upload
+      // manually" are both visible immediately instead of leaving the
+      // customer on a stale card with no visible way forward.
+      if (!mounted) return;
+      ref.invalidate(kycDocumentsProvider(widget.requestFrom));
+    } finally {
+      AppLifecycleObserver.suppressAppLock = false;
+      notifier.resumeAutoDispose();
+    }
+  }
+
+  /// Fires after EVERY successful PAN submit and EVERY successful Aadhaar
+  /// approval (first-time or via Edit/reverify — see _submitDoc and
+  /// _onVerifyAadhaar). Re-fetches document-types so the completion check —
+  /// and the names shown in the mandatory popup below — always reflect the
+  /// verification that JUST happened, never stale pre-edit data. Only forms
+  /// call this, so it can never fire from merely viewing an already-verified
+  /// screen (e.g. opened from Profile).
+  /// Thin serializing wrapper — see AadhaarNotifier.completionInFlight's doc
+  /// comment for why this can't just be a plain reentrancy-guard bool: the
+  /// duplicate calls come from DIFFERENT KycScreen instances, so the lock
+  /// has to be shared (static), not per-instance.
+  Future<void> _checkAndHandleCompletion({String? expectDocumentApproved}) async {
+    // Visible "updating..." overlay (see build()'s _completingKyc check) —
+    // without this, the gap between a verify action finishing and this
+    // screen settling into its final state (re-fetch document-types,
+    // decide whether to run the completion sequence) had no on-screen
+    // feedback at all: the customer had no way to tell whether anything
+    // was happening. mounted-guarded since this can be reached after the
+    // widget that started the call is already gone (another instance
+    // handling the same in-flight completion).
+    if (mounted) setState(() => _completingKyc = true);
+    try {
+      if (AadhaarNotifier.completionInFlight != null) {
+        SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: another check already in flight, awaiting it instead');
+        await AadhaarNotifier.completionInFlight;
+        return;
+      }
+      final future = _doCheckAndHandleCompletion(expectDocumentApproved: expectDocumentApproved);
+      AadhaarNotifier.completionInFlight = future;
+      try {
+        await future;
+      } finally {
+        AadhaarNotifier.completionInFlight = null;
+      }
+    } finally {
+      if (mounted) setState(() => _completingKyc = false);
+    }
+  }
+
+  bool _isDocumentApproved(KycDocumentsResult result, String document) {
+    if (document == 'AADHAAR') return result.aadhaarApproved;
+    return result.documents.any(
+      (d) => (d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN')) && d.alreadyUploaded,
+    );
+  }
+
+  Future<void> _doCheckAndHandleCompletion({String? expectDocumentApproved}) async {
+    SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: entered, mounted=$mounted');
+    if (!mounted) return;
+    // Captured BEFORE refreshing — see the kycConfirmed guard below for why
+    // the post-refresh value can no longer be used here.
+    final wasAlreadyConfirmed =
+        ref.read(kycDocumentsProvider(widget.requestFrom)).valueOrNull?.kycConfirmed ?? false;
+    KycDocumentsResult result;
+    try {
+      result = await ref.refresh(kycDocumentsProvider(widget.requestFrom).future);
+    } catch (e) {
+      SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: refresh threw $e');
+      // Explicit failure feedback — previously this failed completely
+      // silently (just a debug log), leaving the customer no way to tell
+      // whether their verification went through or not.
+      if (mounted) {
+        AppToast.show(
+          context,
+          "Couldn't refresh your verification status. Please check your connection and try again.",
+          type: ToastType.error,
+        );
+      }
+      return; // Couldn't refresh — nothing reliable to show, don't block on it.
+    }
+    if (!mounted) return;
+
+    // A mismatch-confirmation write may not have reached the DB replica
+    // this read hits yet — see KycVerificationFlowMixin's identical retry
+    // for the full reasoning. Without this, a customer who just resolved a
+    // name mismatch sees the card still show pending immediately after,
+    // only clearing once they leave and reopen the screen much later.
+    if (expectDocumentApproved != null && !_isDocumentApproved(result, expectDocumentApproved)) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      try {
+        result = await ref.refresh(kycDocumentsProvider(widget.requestFrom).future);
+      } catch (_) {
+        // Keep the first (stale) result rather than losing the whole
+        // completion flow over a retry-only failure.
+      }
+      if (!mounted) return;
+    }
+    SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: wasAlreadyConfirmed=$wasAlreadyConfirmed aadhaarApproved=${result.aadhaarApproved} kycConfirmedNow=${result.kycConfirmed} allDocsUploaded=${result.documents.every((d) => d.alreadyUploaded)}');
+
+    // _initControllers only ever populates _completedDocIds from the VERY
+    // FIRST docs fetch (it's a one-shot init, guarded by _initialized) — so
+    // a document that gets approved DURING this screen's lifetime (exactly
+    // what just happened) never gets added to it by that path. Without this
+    // resync, its card keeps rendering from the stale pre-completion data
+    // forever, e.g. still showing "Retry PAN Verification" right after PAN
+    // was actually just approved. Also clears the Edit/Retry-PAN flags —
+    // they exist only to reopen a form for a redo in progress; once that
+    // redo has genuinely completed, leaving them set forces
+    // _buildDocumentCard's !_aadhaarEditing guards to keep suppressing the
+    // now-correct Verified state for the SAME reason.
+    for (final doc in result.documents) {
+      if (doc.alreadyUploaded) _completedDocIds.add(doc.id);
+    }
+    setState(() {
+      _aadhaarEditing = false;
+      _retryingPanOnly = false;
+    });
+
+    // Sync the Aadhaar card's own display (separate from this dialog) —
+    // pollUntilTerminal's APPROVED case only flips the phase, it doesn't
+    // carry the masked number/name itself.
+    if (result.aadhaarApproved) {
+      ref.read(aadhaarProvider.notifier).updateVerifiedDetails(
+            maskedNumber: result.aadhaarMaskedNumber,
+            name: result.aadhaarName,
+            dob: result.aadhaarDob,
+          );
+    }
+
+    final bothComplete =
+        result.documents.every((d) => d.alreadyUploaded) && result.aadhaarApproved;
+    // Mirrors _checkCompletionRecoveryOnLoad's guard — without this, editing
+    // Aadhaar (e.g. resolving a name mismatch) after KYC was already fully
+    // confirmed re-triggers the ENTIRE mandatory sequence again, including
+    // PAN's "verified details" dialog, even though PAN wasn't touched.
+    //
+    // Uses wasAlreadyConfirmed (the state BEFORE this refresh), not
+    // result.kycConfirmed (the state AFTER it) — the backend now flips
+    // kyc_confirmed the moment a verify call itself succeeds (mirror
+    // synced at verify time, not deferred to the Profile Name Save step
+    // anymore), so by the time this refresh returns, kyc_confirmed is
+    // ALREADY true even for the very first, genuinely-just-completed PAN
+    // or Aadhaar verification. Using the post-refresh value here made this
+    // guard swallow that first completion too: _runCompletionSequence()
+    // (and its trailing Navigator.pop(context, true)) never ran, so the
+    // screen never closed itself and the Profile screen — which only
+    // refreshes its own "Verified" badge when this route pops with
+    // `true` — kept showing stale, unverified status even though the
+    // backend had already approved everything.
+    if (!bothComplete || wasAlreadyConfirmed) {
+      SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: skipping sequence, bothComplete=$bothComplete wasAlreadyConfirmed=$wasAlreadyConfirmed');
+      // Partial-progress feedback — bothComplete's full success animation
+      // covers the "everything just got verified" case below, but a
+      // customer who e.g. just verified Aadhaar with PAN still pending
+      // previously got NO acknowledgement at all beyond the card quietly
+      // changing color. Skipped when wasAlreadyConfirmed — that means
+      // nothing new happened this round (a stale/duplicate re-check), so
+      // there's nothing genuine to announce.
+      if (!wasAlreadyConfirmed && mounted) {
+        final pendingDocs = result.documents.where((d) => !d.alreadyUploaded);
+        final message = !result.aadhaarApproved
+            ? 'PAN verified. Aadhaar verification is still pending.'
+            : pendingDocs.isNotEmpty
+                ? 'Aadhaar verified. ${pendingDocs.first.name} verification is still pending.'
+                : 'Verification status updated.';
+        AppToast.show(context, message, type: ToastType.success);
+      }
+      return;
+    }
+
+    final panDoc = result.documents.isEmpty
+        ? null
+        : result.documents.firstWhere(
+            (d) => d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'),
+            orElse: () => result.documents.first,
+          );
+
+    SecureLogger.d('[KYC DEBUG] _checkAndHandleCompletion: running completion sequence');
+    await _runCompletionSequence();
+  }
+
+  /// Success animation, then close — the customer is finished.
+  ///
+  /// The per-document "PAN Verified"/"Aadhaar Verified" confirmation popup
+  /// (`_VerifiedDetailsDialog`) that used to run here was **removed**
+  /// (2026-09-07, product decision — see `BUSINESS_RULES.md` RULE-KYC-007).
+  /// A verification that already matched has nothing for the customer to
+  /// confirm; the one case where their name/DOB genuinely needs re-entry is a
+  /// mismatch, which `NameMismatchDialog` already handles earlier in the flow.
+  ///
+  /// **Safe to drop the popup's server call.** Its Save was the only client
+  /// trigger for `update_profile_name_from_kyc` → `confirm_and_sync()`, but
+  /// that call is idempotent: `_check_aadhaar_kyc`'s and
+  /// `_try_persist_digilocker_pan`'s APPROVED branches each already run
+  /// `sync_from_kyc_log()` for their own document at verification time, and
+  /// that mirror is what `is_kyc_complete()` reads. The mismatch path keeps
+  /// its own `confirm_and_sync()` in `_finalize_name_mismatch_confirmation`.
+  ///
+  /// With no dialog left to defer, there is no longer a path that finishes
+  /// without popping `true` — the old "confirmation deferred" early-returns
+  /// (which existed so a deferral couldn't tell Withdraw's `KYC_REQUIRED`
+  /// gate that KYC was confirmed) are gone with it. Every caller
+  /// (SIP/Withdrawal/Investment/Profile) still awaits this screen and decides
+  /// what to do next itself.
+  ///
+  /// Consequence to be aware of: on a clean match the profile name/DOB is no
+  /// longer overwritten with the document's version — it keeps what the
+  /// customer already had, which is what "it matched" means.
+  Future<void> _runCompletionSequence() async {
+    SecureLogger.d('[KYC DEBUG] _runCompletionSequence: entered');
+    await _showSuccessAnimation();
+    if (!mounted) {
+      SecureLogger.d('[KYC DEBUG] _runCompletionSequence: unmounted after success animation');
+      return;
+    }
+
+    // Refreshed directly here, not left to the caller's own pop-result
+    // handling — Profile's own "KYC Validation" tap-in DOES await this
+    // push and refresh on `result == true`, but this screen can just as
+    // easily be reached via MainScreen's app-shell fallback navigation
+    // (SDK-bounce recovery — see MainScreen's _navigateToKycAndLetItHandle),
+    // which pushes this route directly and never awaits a result at all.
+    // Without this, that path's customer would see a still-unverified
+    // "KYC Validation" badge on Profile despite everything having just
+    // succeeded, until they happened to revisit another tab that also
+    // invalidates profileProvider.
+    // AWAITED — Navigator.pop is two lines below. fetchProfileDetails() sets
+    // `state` synchronously, so leaving it in flight across the pop notifies
+    // consumers on a tree that is already tearing down, and Riverpod calls
+    // markNeedsBuild on a defunct element.
+    await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    if (!mounted) return;
+
+    SecureLogger.d('[KYC DEBUG] _runCompletionSequence: popping(true)');
+    Navigator.pop(context, true);
+  }
+
+  /// Brief, auto-dismissing checkmark — purely celebratory, does not itself
+  /// close this screen (see _runCompletionSequence).
+  Future<void> _showSuccessAnimation() async {
+    if (!mounted) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -132,12 +973,9 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'PAN Verification',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF643D41),
-                ),
+                'KYC Validation',
+                style: AppTextStyles.titleMedium(isDark)
+                    .copyWith(color: const Color(0xFF643D41)),
               ),
               SizedBox(height: 24.h),
               Container(
@@ -151,14 +989,10 @@ class _KycScreenState extends ConsumerState<KycScreen> {
               ),
               SizedBox(height: 24.h),
               Text(
-                'PAN Verification\nCompleted Successfully',
+                'PAN & Aadhaar Verified\nKYC Completed Successfully',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black,
-                  height: 1.4,
-                ),
+                style: AppTextStyles.titleLarge(isDark)
+                    .copyWith(height: 1.4, color: Colors.black),
               ),
             ],
           ),
@@ -166,181 +1000,1147 @@ class _KycScreenState extends ConsumerState<KycScreen> {
       ),
     );
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        Navigator.pop(context); // Close dialog
-        if (widget.requestFrom == 'instant') {
-          // [LEGACY — kept for reference]
-          // Navigator.pushReplacementNamed(context, '/payment-methods',
-          //     arguments: widget.extraData);
-          //
-          // NEW: Return true to InvestScreen so it can continue payment
-          // directly via PaymentHandler.startPayment() without an extra screen.
-          Navigator.pop(context, true);
-        } else if (widget.requestFrom == 'withdraw') {
-          Navigator.pushReplacementNamed(context, '/upi-selection');
-        } else {
-          Navigator.pop(context, true);
-        }
-      }
-    });
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) Navigator.pop(context); // Close the checkmark dialog only.
+  }
+
+  /// Aadhaar-mismatch entry point shared by the reactive ref.listen in
+  /// build() and the linear await-chain in _runVerifyAadhaar() — see the
+  /// listener's doc comment for why both exist. [_shownMismatchIds] ensures
+  /// only whichever one runs first actually opens the dialog; the other
+  /// becomes a no-op.
+  Future<void> _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) async {
+    if (!_shownMismatchIds.add(prompt.verificationId)) return;
+    final resolved = await _showMismatchDialog(prompt);
+    SecureLogger.d('[KYC DEBUG] _maybeShowAadhaarMismatchDialog: _showMismatchDialog returned resolved=$resolved, mounted=$mounted');
+    if (!mounted) return;
+    if (resolved) await _checkAndHandleCompletion(expectDocumentApproved: prompt.document);
+  }
+
+  /// Shown for EITHER mismatch prompt — AADHAAR's own (CONFIRM_NAME_UPDATE
+  /// from the poll response, resolved via AadhaarNotifier.confirmNameMismatch)
+  /// or PAN's piggybacked one (resolved via KycRepository.confirmPanNameMismatch
+  /// — see NameMismatchPrompt's doc comment for why these are two entirely
+  /// separate requests despite sharing this one dialog). Dismissible, unlike
+  /// _VerifiedDetailsDialog — a genuine identity mismatch may not be
+  /// resolvable by re-typing, so the customer can back out rather than
+  /// being stuck. Returns true only once the submit actually resolves it.
+  Future<bool> _showMismatchDialog(NameMismatchPrompt prompt) async {
+    SecureLogger.d('[KYC DEBUG] _showMismatchDialog entered, mounted=$mounted, document=${prompt.document}');
+    final dialogContext = context;
+    final resolved = await showDialog<bool>(
+      context: dialogContext,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (_) => NameMismatchDialog(
+        prompt: prompt,
+        onSubmit: (name, dob) => prompt.document == 'PAN'
+            ? _confirmPanMismatch(prompt.verificationId, name, dob)
+            : ref.read(aadhaarProvider.notifier).confirmNameMismatch(
+                  widget.requestFrom, name: name, dob: dob,
+                ),
+      ),
+    );
+    SecureLogger.d('[KYC DEBUG] _showMismatchDialog: showDialog future resolved=$resolved');
+    return resolved ?? false;
+  }
+
+  /// PAN-side submit handler for _showMismatchDialog — mirrors
+  /// AadhaarNotifier.confirmNameMismatch's outcome contract but has no
+  /// AadhaarState to update (PAN's mismatch resolution doesn't touch
+  /// Aadhaar's own phase; see KycRepository.confirmPanNameMismatch's doc
+  /// comment for the request shape).
+  Future<(NameMismatchOutcome, String?)> _confirmPanMismatch(
+    String panKycId,
+    String name,
+    String dob,
+  ) async {
+    try {
+      final data = await ref.read(kycRepositoryProvider).confirmPanNameMismatch(
+            panKycId: panKycId,
+            confirm: true,
+            name: name,
+            dob: dob,
+          );
+      final status = (data['status'] ?? '').toString();
+      if (status == 'APPROVED') return (NameMismatchOutcome.resolved, null);
+      return (NameMismatchOutcome.stillMismatched, data['message']?.toString());
+    } catch (e) {
+      String msg = e.toString();
+      if (msg.startsWith('Exception: ')) msg = msg.substring('Exception: '.length);
+      return (NameMismatchOutcome.stillMismatched, msg);
+    }
+  }
+
+  /// PAN counterpart to _maybeShowAadhaarMismatchDialog — same dedupe
+  /// reasoning (shared with the reactive ref.listen in build() and
+  /// MainScreen's own app-shell-level fallback), keyed by
+  /// prompt.verificationId which for PAN actually holds the dedicated PAN
+  /// KYC row id (see _confirmPanMismatch's doc comment).
+  Future<void> _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) async {
+    if (!_shownMismatchIds.add(prompt.verificationId)) return;
+    final resolved = await _showMismatchDialog(prompt);
+    if (!mounted) return;
+    if (resolved) await _checkAndHandleCompletion(expectDocumentApproved: prompt.document);
+  }
+
+  /// Reactive counterpart to the terminal expired/rejected/failed branch in
+  /// _runVerifyAadhaar() — same widget-disposal risk as the mismatch dialogs
+  /// above (confirmed: the backend sends a proper, safe-to-show message —
+  /// e.g. "Your profile name and/or date of birth doesn't match your
+  /// Aadhaar record..." — but the linear chain's `if (!mounted) return;`
+  /// silently swallowed it before this ever ran). A dialog, not a toast — a
+  /// toast auto-dismisses in ~3s, easy to miss entirely if the user's
+  /// attention is elsewhere right after the SDK-bounce navigation this is
+  /// usually paired with; this stays up until the user explicitly closes it.
+  /// [_shownFailureKeys] is keyed by verificationId+phase (falling back to
+  /// message+phase when verificationId is unset) since a failure has no
+  /// per-attempt id the way a mismatch prompt's own verificationId provides.
+  Future<void> _maybeShowAadhaarFailureDialog(AadhaarState state) async {
+    final key = '${state.verificationId ?? state.message}-${state.phase}';
+    if (!_shownFailureKeys.add(key)) return;
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Aadhaar Verification'),
+        content: Text(state.message ?? 'Aadhaar verification failed. Please try again.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    // Silent, in-place refresh — no navigation. A rejection/expiry is a
+    // real state change on the backend (kyc_status flips, which is what
+    // aadhaarRejected below reads), but this path previously never
+    // re-fetched document-types at all: the customer stayed on this exact
+    // screen looking at data from before the failed attempt, so
+    // "Upload manually instead" (gated on aadhaarRejected) wouldn't appear
+    // until something unrelated happened to refresh the provider.
+    ref.invalidate(kycDocumentsProvider(widget.requestFrom));
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final docsAsync = ref.watch(kycDocumentsProvider(widget.requestFrom));
+    final aadhaarState = ref.watch(aadhaarProvider);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
-        children: [
-          const GradientHeader(title: 'Verification'),
-          Expanded(
-            child: docsAsync.when(
-              data: (docs) {
-                _initControllers(docs);
-                return SingleChildScrollView(
-            padding: EdgeInsets.all(24.w),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    // Blocks the customer from backing out of this screen mid-verification —
+    // previously nothing stopped a back-press while _runVerifyAadhaar()'s
+    // Aadhaar+PAN DigiLocker poll was still in flight, so they'd land back
+    // on MainScreen (or wherever) while the request was still pending, then
+    // return to a freshly-built KycScreen showing stale/contradictory state
+    // (the entry form again, or a leftover message) instead of the actual
+    // in-progress verification. Same condition as _buildAadhaarCard's own
+    // `isBusy`, plus any generic doc submit in flight.
+    final verificationInFlight = _verifyingAadhaar ||
+        _completingKyc ||
+        _submittingDocIds.isNotEmpty ||
+        aadhaarState.phase == AadhaarPhase.initiating ||
+        aadhaarState.phase == AadhaarPhase.polling;
+
+    // Reactive fallback for the CONFIRM_NAME_UPDATE mismatch dialog —
+    // primary path when the linear await-chain in _runVerifyAadhaar() can't
+    // deliver it itself: SurePass's native DigiLocker SDK Activity can leave
+    // THIS specific KycScreen State instance unmounted by the time
+    // pollUntilTerminal()'s result comes back (confirmed via [KYC DEBUG]
+    // logging — the aadhaarProvider notifier itself stays alive thanks to
+    // pauseAutoDispose/resumeAutoDispose, but widget.mounted was still false
+    // afterward), silently dropping the dialog via that chain's `if
+    // (!mounted) return;` guards. ref.listen ties its callback to whichever
+    // KycScreen instance is CURRENTLY built and watching aadhaarProvider, so
+    // it fires regardless of which instance's async chain the state change
+    // actually happened under.
+    ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
+      if (next.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
+          next.aadhaarMismatchPrompt != null) {
+        _maybeShowAadhaarMismatchDialog(next.aadhaarMismatchPrompt!);
+      }
+      // Same rationale, PAN side — panMismatchPrompt can be set alongside
+      // APPROVED/already-approved/REJECTED (see AadhaarState.panMismatchPrompt's
+      // doc comment), independent of [phase], so it's checked unconditionally.
+      if (next.panMismatchPrompt != null) {
+        _maybeShowPanMismatchDialog(next.panMismatchPrompt!);
+      }
+      if (next.panRejectionMessage != null &&
+          next.panRejectionMessage != previous?.panRejectionMessage) {
+        AppToast.show(context, next.panRejectionMessage!, type: ToastType.error);
+      }
+      if (next.phase == AadhaarPhase.expired ||
+          next.phase == AadhaarPhase.rejected ||
+          next.phase == AadhaarPhase.failed) {
+        _maybeShowAadhaarFailureDialog(next);
+      }
+      // Same reactive-fallback rationale as above, for the case
+      // _runVerifyAadhaar's own linear chain documents (SurePass SDK
+      // Activity onPause/onResume tearing down this instance before the
+      // poll result lands) — without this, a PAN approval piggybacked on
+      // an aadhaarNotShared outcome is silently dropped exactly like the
+      // mismatch dialog used to be. _checkAndHandleCompletion() is
+      // idempotent (AadhaarNotifier.completionInFlight dedupes concurrent
+      // calls), so this is safe even if the linear chain also reaches it.
+      if (next.phase == AadhaarPhase.aadhaarNotShared) {
+        if (next.message != null) {
+          AppToast.show(context, next.message!, type: ToastType.info);
+        }
+        _checkAndHandleCompletion();
+      }
+    });
+
+    return PopScope(
+      canPop: !verificationInFlight,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        AppToast.show(
+          context,
+          'Please wait — verification is in progress.',
+          type: ToastType.info,
+        );
+      },
+      // Opaque background on this screen itself (same fix as
+      // withdrawal_screen.dart/bank_account_picker_screen.dart) — a
+      // transparent Scaffold here let Home (kept alive underneath by
+      // MainScreen's IndexedStack) bleed through during the pop transition
+      // back to this screen.
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
+        ),
+        child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Stack(
+            children: [
+              Column(
                 children: [
-                  Text('Complete your KYC',
-                      style: GoogleFonts.playfairDisplay(
-                          fontSize: 20.sp,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black)),
-                  SizedBox(height: 32.h),
-                  ...docs.map((doc) => _buildDocumentCard(doc, isDark)),
-                ],
-              ),
-            ),
-          );
-        },
+                  const GradientHeader(title: 'Verification'),
+                Expanded(
+                  child: docsAsync.when(
+                data: (result) {
+                  _initControllers(result.documents);
+                  _seedAadhaarIfApproved(
+                    result.aadhaarApproved,
+                    maskedNumber: result.aadhaarMaskedNumber,
+                    name: result.aadhaarName,
+                    dob: result.aadhaarDob,
+                  );
+                  _reconcileAadhaarWithBackend(result.aadhaarApproved);
+                  _checkCompletionRecoveryOnLoad(result);
+                  // "Upload manually instead" is offered for a NOT-YET-verified
+                  // document once ANY of:
+                  //   (a) DigiLocker has genuinely been tried at least once
+                  //       (result.digilockerAttempted — the original "not on
+                  //       the very first visit" gate).
+                  //   (b) the OTHER document is already verified (by any means
+                  //       — DigiLocker or a prior manual-upload approval) — an
+                  //       already-verified PAN/Aadhaar is itself proof the
+                  //       customer has been through this screen's verification
+                  //       flow before, so the remaining side shouldn't be
+                  //       gated behind a SEPARATE DigiLocker attempt of its own.
+                  //   (c) THIS document's own latest attempt was REJECTED —
+                  //       most relevant for a manual upload that was refused
+                  //       without DigiLocker ever having been tried, which (a)
+                  //       alone would never unlock; the customer needs both
+                  //       retry paths offered right when a rejection happens.
+                  // A verified document's OWN card never reaches this — isDone
+                  // always shows the Verified banner instead, on both cards,
+                  // regardless of these flags.
+                  final panDoc = result.documents.where((d) =>
+                      d.name.toUpperCase().contains('PAN') || d.code.toUpperCase().contains('PAN'));
+                  final panApproved = panDoc.any((d) => d.alreadyUploaded);
+                  final panRejected = panDoc.any((d) => d.status.toUpperCase() == 'REJECTED');
+                  final panAllowManualUpload =
+                      result.digilockerAttempted || result.aadhaarApproved || panRejected;
+                  final aadhaarAllowManualUpload =
+                      result.digilockerAttempted || panApproved || result.aadhaarRejected;
+                  return SingleChildScrollView(
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.fromLTRB(24.w, 24.w, 24.w, 260.h),
+                    child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Complete your KYC',
+                          style: AppTextStyles.titleLarge(isDark)),
+                      SizedBox(height: 8.h),
+                      Text(
+                        'Aadhaar and PAN are verified together via DigiLocker.',
+                        style: AppTextStyles.fieldHelper(isDark),
+                      ),
+                      if (verificationInFlight) ...[
+                        SizedBox(height: 16.h),
+                        _buildVerificationInProgressBanner(isDark),
+                      ],
+                      SizedBox(height: 32.h),
+                      ...result.documents.map((doc) => _buildDocumentCard(
+                            doc, isDark, aadhaarState,
+                            backendAadhaarApproved: result.aadhaarApproved,
+                            allowManualUpload: panAllowManualUpload,
+                          )),
+                      _buildAadhaarCard(
+                        isDark, aadhaarState,
+                        backendApproved: result.aadhaarApproved,
+                        backendMaskedNumber: result.aadhaarMaskedNumber,
+                        backendVerifiedName: result.aadhaarName,
+                        backendUnderReview: result.aadhaarUnderReview,
+                        allowManualUpload: aadhaarAllowManualUpload,
+                      ),
+                    ],
+                  ),
+                );
+              },
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Error: $e')),
             ),
           ),
         ],
+        ),
+            if (_completingKyc) _buildCompletingOverlay(isDark),
+          ],
+        ),
       ),
-      bottomNavigationBar:
-          docsAsync.hasValue ? _buildFooter(isDark, docsAsync.value!) : null,
+      ),
+      ),
     );
   }
 
-  Widget _buildDocumentCard(KycDocumentType doc, bool isDark) {
+  /// Full-page "updating your verification status" overlay shown while
+  /// _checkAndHandleCompletion() is refreshing/deciding what to show next —
+  /// see _completingKyc's doc comment for why this exists.
+  Widget _buildCompletingOverlay(bool isDark) {
+    return Positioned.fill(
+      child: Container(
+        color: (isDark ? Colors.black : Colors.white).withOpacity(0.75),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            SizedBox(height: 16.h),
+            Text(
+              'Updating your verification status…',
+              style: AppTextStyles.fieldHelper(isDark),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// PAN is verified automatically from the same DigiLocker consent used
+  /// for Aadhaar (see backend `KYCService._try_persist_digilocker_pan`,
+  /// which fetches the PAN from DigiLocker then cross-verifies it via
+  /// SurePass's /pan/pan-comprehensive) — there is deliberately no manual
+  /// PAN entry form anymore. Any OTHER future document type still gets the
+  /// generic field-form path below.
+  Widget _buildDocumentCard(
+    KycDocumentType doc,
+    bool isDark,
+    AadhaarState aadhaarState, {
+    required bool backendAadhaarApproved,
+    required bool allowManualUpload,
+  }) {
     final isPan = doc.name.toUpperCase().contains('PAN') ||
         doc.code.toUpperCase().contains('PAN');
+    final isDone = _completedDocIds.contains(doc.id);
+    // PAN rides on the same DigiLocker session as Aadhaar (see
+    // _buildPanInputFields). If Aadhaar already came back APPROVED but
+    // PAN's card is still pending, the user skipped/unchecked PAN in
+    // DigiLocker's document picker — show that explicitly instead of the
+    // generic "complete Aadhaar below" notice, which would be actively wrong
+    // once Aadhaar is done. Checks the backend's own aadhaar_status too, not
+    // just the local aadhaarProvider phase — _seedAadhaarIfApproved seeds
+    // that provider a frame late (see its doc comment), so on first load
+    // this card would otherwise show the generic notice for one frame even
+    // though the backend already confirms Aadhaar is done. Suppressed while
+    // _aadhaarEditing is true — that's the user actively mid-Edit/Retry-PAN
+    // (the Aadhaar card below is showing an input form for it, see
+    // _buildAadhaarCard's matching guard) — showing this "Retry PAN
+    // Verification" card at the same time would be redundant with the form
+    // already open for exactly that.
+    final panSkippedInConsent = isPan &&
+        !isDone &&
+        !_aadhaarEditing &&
+        (aadhaarState.phase == AadhaarPhase.approved || backendAadhaarApproved);
+    final aadhaarRetryBusy = aadhaarState.phase == AadhaarPhase.initiating ||
+        aadhaarState.phase == AadhaarPhase.polling;
 
     return Padding(
       padding: EdgeInsets.only(bottom: 32.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildStatusHeader(doc, isDark),
+          _buildStatusHeader(doc.name, isDark, isDone),
           SizedBox(height: 16.h),
-          if (isPan)
-            _buildPanCard(doc, isDark)
-          else
-            _buildGenericCard(doc, isDark, false),
+          if (isDone)
+            _buildVerifiedBanner(
+              isDark,
+              numberLabel: isPan ? 'PAN Number' : null,
+              maskedValue: doc.maskedValue,
+              nameLabel: isPan ? 'Name as on PAN' : null,
+              verifiedName: doc.verifiedName,
+              // PAN has no manual re-entry path — redo Aadhaar (its own
+              // Edit) to trigger a fresh DigiLocker consent + PAN re-check.
+              onEdit: isPan ? null : () => _editDocument(doc),
+              // Live-session only (see AadhaarState.aadhaarPanLinked) — shows
+              // on the PAN card right after a verification completes this
+              // session; reads as unset again on a fresh screen load, same
+              // as every other field the backend doesn't persist for replay.
+              linkedToAadhaar: isPan ? aadhaarState.aadhaarPanLinked : null,
+            )
+          else if (doc.isUnderReview)
+            _buildUnderReviewNotice(isDark, label: doc.name)
+          else if (panSkippedInConsent)
+            _buildPanSkippedNotice(isDark, isBusy: aadhaarRetryBusy, showManualUpload: allowManualUpload)
+          else if (isPan)
+            _buildPanInputFields(isDark, showManualUpload: allowManualUpload)
+          else ...[
+            Form(
+              key: _docFormKeys[doc.id],
+              child: _buildGenericCard(doc, isDark, false),
+            ),
+            SizedBox(height: 12.h),
+            CustomButton(
+              text: 'Verify ${doc.name}',
+              svgIconPath: 'assets/buttons/tick.svg',
+              isLoading: _submittingDocIds.contains(doc.id),
+              onPressed: () => _submitDoc(doc),
+              gradient: AppTheme.greenGradient,
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildStatusHeader(KycDocumentType doc, bool isDark) {
+  /// Screen-level "something is happening, stay here" indicator for the
+  /// whole span _runVerifyAadhaar()/_submitDoc() are
+  /// awaiting a response — the per-button spinner (CustomButton.isLoading)
+  /// only reads as "this one button is busy", not "don't leave this
+  /// screen". Paired with the PopScope guard in build() that blocks the
+  /// back-press this banner is telling the customer not to use.
+  Widget _buildVerificationInProgressBanner(bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(16.r),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(16.r),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 18.w,
+            height: 18.w,
+            child: const CircularProgressIndicator(strokeWidth: 2.2),
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Text(
+              'Verifying your details — please stay on this screen until it finishes.',
+              style: AppTextStyles.fieldHelper(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Pushes manual_kyc_upload_screen.dart for [docType] ("1"=PAN,
+  /// "2"=AADHAAR) — the "Upload manually instead" alternative to DigiLocker.
+  /// A plain pushed route, not a named one via app_router.dart — this
+  /// screen only ever needs docType/requestFrom, both already in scope here.
+  /// On a successful submit (result == true) invalidates kycDocumentsProvider
+  /// so this screen's cards immediately reflect the new UNDER_REVIEW status.
+  /// Also refreshes profileProvider — previously only _runCompletionSequence
+  /// did that, which never runs for a manual upload (it goes to UNDER_REVIEW,
+  /// not an immediate approval), so any profile-facing screen stayed on
+  /// stale customer data until something else happened to refresh it.
+  Future<void> _openManualUpload(String docType) async {
+    // Carry over what the customer already typed here — same handover the
+    // merged checklist's mixin does. ManualKycUploadScreen's PAN field holds
+    // the RAW 10 characters (this screen's controller is space-grouped by
+    // PanInputFormatter); both Aadhaar fields share AadhaarInputFormatter's
+    // grouping, so that one passes through unchanged.
+    final isPan = docType == '1';
+    final prefillName = isPan
+        ? _panNameController.text.trim()
+        : _aadhaarNameController.text.trim();
+    final prefillNumber = isPan
+        ? PanInputFormatter.unformat(_panNumberController.text)
+        : _aadhaarNumberController.text.trim();
+
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ManualKycUploadScreen(
+          docType: docType,
+          requestFrom: widget.requestFrom,
+          prefillName: prefillName,
+          prefillNumber: prefillNumber,
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      ref.invalidate(kycDocumentsProvider(widget.requestFrom));
+      // Awaited for the same reason as _runCompletionSequence's own call.
+      await ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    }
+  }
+
+  /// Same size/shape/prominence as the "Verify via DigiLocker" CustomButton
+  /// it sits below — a light-green fill (not the green gradient) keeps it
+  /// visually secondary to that primary action while still reading as a
+  /// real, full-width button rather than a small text link.
+  Widget _buildManualUploadButton(bool isDark, {required String docType}) {
+    return CustomButton(
+      text: 'Upload Manually',
+      svgIconPath: 'assets/buttons/folder-add.svg',
+      backgroundColor: const Color(0xFFE3F1E7),
+      textColor: const Color(0xFF0E5723),
+      onPressed: () => _openManualUpload(docType),
+    );
+  }
+
+  /// Shown once a manual upload has been submitted and is awaiting admin
+  /// review — backend reports this as status "UNDER_REVIEW" (see
+  /// KycDocumentType.isUnderReview / KycDocumentsResult.aadhaarUnderReview).
+  /// Same blue "info" palette as AppToast's ToastType.info — this is neither
+  /// a failure nor (yet) a success.
+  Widget _buildUnderReviewNotice(bool isDark, {required String label}) {
+    const infoColor = Color(0xFF2563EB);
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(20.r),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(20.r),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.hourglass_top_rounded, size: 18.sp, color: infoColor),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              "Your manually uploaded $label is under review. We'll notify you once it's verified.",
+              style: AppTextStyles.fieldHelper(isDark).copyWith(color: const Color(0xFF1E3A5F)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// PAN has no consent of its own — it rides on the SAME DigiLocker
+  /// session as Aadhaar (see `_onRetryPan`'s doc comment and
+  /// `MODULE_BRAIN.md` §2). The typed Name/Number here are sent alongside
+  /// the Aadhaar fields in that SAME initiate call (see _runVerifyAadhaar)
+  /// — there's deliberately no button in this card; the single combined
+  /// "Verify via DigiLocker" button lives on the Aadhaar card below, which
+  /// validates THIS form (`_panFormKey`) before firing.
+  Widget _buildPanInputFields(bool isDark, {required bool showManualUpload}) {
+    const cardBg = Color(0xFFEAF3FB);
+    const cardBorder = Color(0xFFBFDDF5);
+    const textColor = Color(0xFF0B3D91);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(16.r),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1F26) : cardBg,
+            border: Border.all(color: isDark ? Colors.white24 : cardBorder),
+            borderRadius: BorderRadius.circular(16.r),
+          ),
+          child: Form(
+            key: _panFormKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildGovIdCardHeader(
+                  hindiTitle: 'आयकर विभाग',
+                  englishTitle: 'INCOME TAX DEPARTMENT',
+                  icon: Icons.verified_outlined,
+                  color: isDark ? Colors.white : textColor,
+                  rightHindiTitle: 'भारत सरकार',
+                  rightEnglishTitle: 'GOVT. OF INDIA',
+                ),
+                SizedBox(height: 16.h),
+                Text('NAME AS ON PAN',
+                    style: AppTextStyles.fieldLabel(isDark)),
+                SizedBox(height: 8.h),
+                TextFormField(
+                  controller: _panNameController,
+                  scrollPadding: EdgeInsets.only(bottom: 140.h),
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+                    _UpperCaseNameFormatter(),
+                    LengthLimitingTextInputFormatter(60),
+                  ],
+                  contextMenuBuilder: SecureClipboard.none,
+                  style: AppTextStyles.kycFieldInput(isDark),
+                  decoration: InputDecoration(
+                    hintText: 'RAHUL SHARMA',
+                    hintStyle: AppTextStyles.kycFieldHint(isDark),
+                    errorStyle: AppTextStyles.fieldError(isDark),
+                    filled: true,
+                    fillColor:
+                        isDark ? Colors.white.withOpacity(0.03) : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide.none),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+                  ),
+                  validator: _validatePanName,
+                ),
+                SizedBox(height: 16.h),
+                Text('PERMANENT ACCOUNT NUMBER',
+                    style: AppTextStyles.fieldLabel(isDark)),
+                SizedBox(height: 8.h),
+                TextFormField(
+                  controller: _panNumberController,
+                  scrollPadding: EdgeInsets.only(bottom: 140.h),
+                  textCapitalization: TextCapitalization.characters,
+                  keyboardType: TextInputType.text,
+                  inputFormatters: [PanInputFormatter()],
+                  contextMenuBuilder: SecureClipboard.none,
+                  style: AppTextStyles.kycFieldInput(isDark),
+                  decoration: InputDecoration(
+                    hintText: 'ABCDE 1234 F',
+                    hintStyle: AppTextStyles.kycFieldHint(isDark),
+                    errorStyle: AppTextStyles.fieldError(isDark),
+                    filled: true,
+                    fillColor:
+                        isDark ? Colors.white.withOpacity(0.03) : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide.none),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+                  ),
+                  validator: _validatePanNumber,
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Offered once EITHER DigiLocker has genuinely been tried at least
+        // once (win, lose, or abandoned mid-consent), OR Aadhaar is already
+        // verified by any means — see build()'s panAllowManualUpload
+        // comment for the full reasoning. Never on the very first visit
+        // with nothing yet attempted or verified.
+        if (showManualUpload) ...[
+          SizedBox(height: 8.h),
+          _buildManualUploadButton(isDark, docType: '1'),
+        ],
+      ],
+    );
+  }
+
+  /// Shown instead of [_buildPanInputFields] once Aadhaar has already
+  /// come back APPROVED but this PAN card is still pending — i.e. the user
+  /// completed DigiLocker consent without "PAN Verification Record" checked.
+  /// Uses the app's existing amber "warning" palette (see `app_toast.dart`'s
+  /// `ToastType.warning` style) so this reads as "needs your attention", not
+  /// a hard failure, since re-running consent with PAN checked resolves it.
+  Widget _buildPanSkippedNotice(bool isDark, {required bool isBusy, required bool showManualUpload}) {
+    const warningColor = Color(0xFFD97706);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(20.r),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(20.r),
+            border: Border.all(color: const Color(0xFFFDE68A)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 18.sp, color: warningColor),
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Text(
+                      "Aadhaar is verified, but PAN wasn't shared during "
+                      "DigiLocker consent, so it couldn't be verified.",
+                      style: AppTextStyles.fieldHelper(isDark).copyWith(color: const Color(0xFF78350F)),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 12.h),
+              // Same label as the Aadhaar card's combined button for consistency
+              // — the handler is _onRetryPan (not _onVerifyAadhaar) because
+              // Aadhaar is already approved here, so the plain verify path
+              // would short-circuit as "already approved" without ever
+              // re-fetching PAN. _onRetryPan reopens the Aadhaar form with
+              // allow_reverify set, specifically to redo DigiLocker for PAN.
+              CustomButton(
+                text: 'Verify via DigiLocker',
+                svgIconPath: 'assets/buttons/tick.svg',
+                isLoading: isBusy,
+                onPressed: isBusy ? null : _onRetryPan,
+                gradient: AppTheme.greenGradient,
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                "On the next DigiLocker screen, select 'PAN Verification "
+                "Record' before tapping Allow.",
+                style: AppTextStyles.fieldHelper(isDark)
+                    .copyWith(color: const Color(0xFF78350F), fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+        // Always true in practice here (this state only shows once Aadhaar
+        // is APPROVED, which itself proves DigiLocker was attempted) — the
+        // param is still threaded through rather than hardcoded so this
+        // stays correct if that invariant ever changes.
+        if (showManualUpload) ...[
+          SizedBox(height: 8.h),
+          _buildManualUploadButton(isDark, docType: '1'),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAadhaarCard(
+    bool isDark,
+    AadhaarState state, {
+    required bool backendApproved,
+    String? backendMaskedNumber,
+    String? backendVerifiedName,
+    bool backendUnderReview = false,
+    bool allowManualUpload = false,
+  }) {
+    // Falls back to the backend's own aadhaar_status (from get_document_types
+    // / kyc/document-types, always current) when the local provider hasn't
+    // caught up yet — _seedAadhaarIfApproved seeds it a frame late (see its
+    // doc comment). Without this, a customer whose Aadhaar the backend
+    // already reports as approved briefly sees the fresh "enter your
+    // Aadhaar number" form instead of the Verified banner — and if they
+    // type into it and submit during that window, the backend's own
+    // idempotency short-circuit rejects it as a no-op (`allow_reverify`
+    // wasn't set, since this wasn't reached through the Edit/Retry-PAN
+    // flow that sets it), which reads as "my first tap did nothing."
+    // Was restricted to phase == idle specifically, to avoid two things:
+    // overriding a genuinely in-progress/current reverify attempt, and
+    // collapsing the freshly-reopened Edit/Retry-PAN form. Both are still
+    // guarded below (isBusy, !_aadhaarEditing) — but idle-only additionally
+    // meant a TERMINAL phase (failed/expired/rejected) left over from an
+    // earlier, already-abandoned retry attempt kept suppressing the
+    // Verified banner forever afterward, on every future visit to this
+    // screen, even once nothing is in-flight and the user isn't editing —
+    // because aadhaarProvider persists across navigations (kept alive
+    // app-wide by MainScreen's listener) while a fresh KycScreen's
+    // _aadhaarEditing resets to false. A customer whose Aadhaar the
+    // backend genuinely approved would see the entry form again on every
+    // later visit, exactly the PAN card's already-fixed problem (see
+    // panSkippedInConsent above) but for Aadhaar's own card this time.
+    final isBusy = _verifyingAadhaar ||
+        state.phase == AadhaarPhase.initiating ||
+        state.phase == AadhaarPhase.polling;
+    final isDone = state.phase == AadhaarPhase.approved ||
+        (backendApproved && !_aadhaarEditing && !isBusy);
+    // Error/failure text is surfaced only via AppToast (see
+    // _onVerifyAadhaar) — never rendered inline on the card, so no backend
+    // exception, provider error, or technical message can ever appear here.
+    final isErrorPhase = state.phase == AadhaarPhase.failed ||
+        state.phase == AadhaarPhase.expired ||
+        state.phase == AadhaarPhase.rejected;
+    const defaultHelperText =
+        'Enter your Aadhaar number, then verify via DigiLocker to complete KYC.';
+    // Shown instead of the generic helper (and instead of any backend
+    // message) whenever this form reopened via "Retry PAN Verification" —
+    // Aadhaar itself doesn't need re-entry, this round trip through
+    // DigiLocker exists only to fetch PAN. Takes priority over isErrorPhase
+    // too: a stale REJECTED/EXPIRED message from a much earlier Aadhaar
+    // attempt has no bearing on this PAN-only retry.
+    const panRetryHelperText =
+        "Your Aadhaar is already verified — this step only redoes DigiLocker "
+        "consent so PAN can be fetched. Select 'PAN Verification Record' "
+        "this time before tapping Allow.";
+    // Broader than just `_retryingPanOnly` (the dedicated "Retry PAN
+    // Verification" button) — ANY path that reopens this form while the
+    // backend already reports Aadhaar approved (e.g. re-verifying PAN from
+    // its plain "not yet uploaded" state, which reopens the SAME shared
+    // Aadhaar+PAN form via _aadhaarEditing without going through the
+    // retry-PAN button) should reassure the customer their Aadhaar isn't
+    // actually being un-verified, not just the one specific entry point.
+    final showAadhaarAlreadyVerifiedHint = backendApproved && _aadhaarEditing;
+    final helperText = showAadhaarAlreadyVerifiedHint
+        ? panRetryHelperText
+        : (isErrorPhase ? defaultHelperText : (state.message ?? defaultHelperText));
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: 32.h),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header icon reflects the BACKEND's verified status specifically
+          // (not `isDone`, which the !_aadhaarEditing guard above forces
+          // false while this card is reopened for a PAN-only DigiLocker
+          // retry) — otherwise a customer whose Aadhaar is genuinely already
+          // approved sees a "not verified" grey icon the instant PAN retry
+          // starts, which reads as Aadhaar having been un-verified. Which
+          // body renders below (banner vs form) still uses `isDone` as
+          // before; only this status icon is decoupled from it.
+          _buildStatusHeader('Aadhaar', isDark, isDone || backendApproved),
+          SizedBox(height: 16.h),
+          if (isDone)
+            _buildVerifiedBanner(
+              isDark,
+              numberLabel: 'Aadhaar Number',
+              maskedValue: state.maskedNumber ?? backendMaskedNumber,
+              nameLabel: 'Name as on Aadhaar',
+              verifiedName: state.verifiedName ?? backendVerifiedName,
+              onEdit: _editAadhaar,
+            )
+          else if (backendUnderReview && !_aadhaarEditing)
+            _buildUnderReviewNotice(isDark, label: 'Aadhaar')
+          else ...[
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(16.r),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1A1F26) : const Color(0xFFFCF3E3),
+                border: Border.all(color: isDark ? Colors.white24 : const Color(0xFFEEDDBB)),
+                borderRadius: BorderRadius.circular(16.r),
+              ),
+              child: Form(
+                key: _aadhaarFormKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildGovIdCardHeader(
+                      hindiTitle: 'भारत सरकार',
+                      englishTitle: 'GOVERNMENT OF INDIA',
+                      icon: Icons.qr_code_scanner_outlined,
+                      color: isDark ? Colors.white : const Color(0xFF5A3E1B),
+                    ),
+                    SizedBox(height: 16.h),
+                    if (showAadhaarAlreadyVerifiedHint) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.check_circle, size: 16.sp, color: const Color(0xFF16A34A)),
+                          SizedBox(width: 6.w),
+                          Text(
+                            'Aadhaar Verified',
+                            style: AppTextStyles.fieldLabel(isDark).copyWith(color: const Color(0xFF16A34A)),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8.h),
+                    ],
+                    Text(
+                      helperText,
+                      style: AppTextStyles.fieldHelper(isDark),
+                    ),
+                    SizedBox(height: 16.h),
+                    Text('NAME AS ON AADHAAR',
+                        style: AppTextStyles.fieldLabel(isDark)),
+                    SizedBox(height: 8.h),
+                    TextFormField(
+                      controller: _aadhaarNameController,
+                      scrollPadding: EdgeInsets.only(bottom: 140.h),
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+                        _UpperCaseNameFormatter(),
+                        LengthLimitingTextInputFormatter(60),
+                      ],
+                      contextMenuBuilder: SecureClipboard.none,
+                      style: AppTextStyles.kycFieldInput(isDark),
+                      decoration: InputDecoration(
+                        hintText: 'RAHUL SHARMA',
+                        hintStyle: AppTextStyles.kycFieldHint(isDark),
+                        errorStyle: AppTextStyles.fieldError(isDark),
+                        filled: true,
+                        fillColor: isDark
+                            ? Colors.white.withOpacity(0.03)
+                            : Colors.white,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12.r),
+                            borderSide: BorderSide.none),
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16.w, vertical: 14.h),
+                      ),
+                      validator: _validateAadhaarName,
+                    ),
+                    SizedBox(height: 16.h),
+                    Text('AADHAAR NUMBER',
+                        style: AppTextStyles.fieldLabel(isDark)),
+                    SizedBox(height: 8.h),
+                    TextFormField(
+                      controller: _aadhaarNumberController,
+                      scrollPadding: EdgeInsets.only(bottom: 140.h),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [AadhaarInputFormatter()],
+                      contextMenuBuilder: SecureClipboard.none,
+                      style: AppTextStyles.kycFieldInput(isDark),
+                      decoration: InputDecoration(
+                        hintText: 'XXXX XXXX XXXX',
+                        hintStyle: AppTextStyles.kycFieldHint(isDark),
+                        errorStyle: AppTextStyles.fieldError(isDark),
+                        filled: true,
+                        fillColor: isDark
+                            ? Colors.white.withOpacity(0.03)
+                            : Colors.white,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12.r),
+                            borderSide: BorderSide.none),
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16.w, vertical: 14.h),
+                      ),
+                      validator: _validateAadhaarNumber,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: 12.h),
+            CustomButton(
+              text: 'Verify via DigiLocker',
+              svgIconPath: 'assets/buttons/tick.svg',
+              isLoading: isBusy,
+              onPressed: _onVerifyAadhaar,
+              gradient: AppTheme.greenGradient,
+            ),
+            if (!showAadhaarAlreadyVerifiedHint && allowManualUpload) ...[
+              SizedBox(height: 8.h),
+              _buildManualUploadButton(isDark, docType: '2'),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Header row for the PAN/Aadhaar input cards — plain bilingual
+  /// department-name text (Hindi + English, e.g. "आयकर विभाग / INCOME TAX
+  /// DEPARTMENT") plus a generic Material icon, all in one flat color on
+  /// the card's own tinted background (see `_buildPanInputFields`/
+  /// `_buildAadhaarCard`'s `cardBg`). Deliberately just text + a stock
+  /// icon — NOT a reproduction of the State Emblem of India, the UIDAI
+  /// Aadhaar logo, or any official card artwork/texture, which this app
+  /// has no business copying.
+  Widget _buildGovIdCardHeader({
+    required String hindiTitle,
+    required String englishTitle,
+    required IconData icon,
+    required Color color,
+    String? rightHindiTitle,
+    String? rightEnglishTitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                hindiTitle,
+                style: GoogleFonts.lora(
+                  color: color,
+                  fontSize: 10.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 2.h),
+              Text(
+                englishTitle,
+                style: GoogleFonts.playfairDisplay(
+                  color: color,
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(width: 8.w),
+        Icon(icon, color: color, size: 18.sp),
+        if (rightHindiTitle != null && rightEnglishTitle != null) ...[
+          SizedBox(width: 10.w),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                rightHindiTitle,
+                style: GoogleFonts.lora(
+                  color: color,
+                  fontSize: 10.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 2.h),
+              Text(
+                rightEnglishTitle,
+                style: GoogleFonts.playfairDisplay(
+                  color: color,
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStatusHeader(String name, bool isDark, bool isDone) {
     return Row(
       children: [
         Container(
           padding: EdgeInsets.all(4.r),
           decoration: BoxDecoration(
-              color: isDark ? Colors.white12 : Colors.black12,
+              color: isDone
+                  ? const Color(0xFF0E5723).withOpacity(0.15)
+                  : (isDark ? Colors.white12 : Colors.black12),
               shape: BoxShape.circle),
-          child: Icon(Icons.check, color: Colors.transparent, size: 14.sp),
+          child: Icon(Icons.check,
+              color: isDone ? const Color(0xFF0E5723) : Colors.transparent,
+              size: 14.sp),
         ),
         SizedBox(width: 8.w),
-        Text('${doc.name} Required',
-            style: GoogleFonts.playfairDisplay(
-                fontSize: 15.sp,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white : Colors.black)),
+        Text('$name Required', style: AppTextStyles.fieldLabel(isDark)),
       ],
     );
   }
 
-
-  Widget _buildPanCard(KycDocumentType doc, bool isDark) {
+  /// Same green "Verified" styling used on the Profile screen's KYC menu
+  /// item (see profile_screen.dart), extended with the masked document
+  /// number + verified name (when available) and an "Edit" action that
+  /// re-opens the form to redo verification.
+  Widget _buildVerifiedBanner(
+    bool isDark, {
+    String? numberLabel,
+    String? maskedValue,
+    String? nameLabel,
+    String? verifiedName,
+    VoidCallback? onEdit,
+    // PAN–Aadhaar link result for this session (see AadhaarState.aadhaarPanLinked's
+    // doc comment) — null (not shown) whenever it isn't known yet, true/false
+    // once the backend's PAN check has resolved it.
+    bool? linkedToAadhaar,
+  }) {
+    final labelColor = const Color(0xFF0E5723).withOpacity(0.65);
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(24.r),
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E3A8A).withOpacity(0.2)
-            : const Color(0xFFE2F1FF),
-        borderRadius: BorderRadius.circular(24.r),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 20,
-              offset: const Offset(0, 8))
-        ],
+        color: const Color(0xFF0E5723).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: const Color(0xFF0E5723).withOpacity(0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('आयकर विभाग',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.notoSans(
-                            fontSize: 11.sp,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black)),
-                    Text('INCOME TAX DEPARTMENT',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 9.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white70 : Colors.black54)),
-                  ],
+              Icon(Icons.verified_user_rounded,
+                  color: const Color(0xFF0E5723), size: 16.sp),
+              SizedBox(width: 8.w),
+              Text(
+                'Verified',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF0E5723),
+                  letterSpacing: 0.3,
                 ),
               ),
-              Icon(Icons.account_balance_rounded,
-                  size: 32.sp, color: isDark ? Colors.white38 : Colors.black45),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('भारत सरकार',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.notoSans(
-                            fontSize: 11.sp,
+              const Spacer(),
+              if (onEdit != null)
+                InkWell(
+                  onTap: onEdit,
+                  borderRadius: BorderRadius.circular(8.r),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.edit_outlined,
+                            size: 14.sp, color: const Color(0xFF0E5723)),
+                        SizedBox(width: 4.w),
+                        Text(
+                          'Edit',
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 12.sp,
                             fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black)),
-                    Text('GOVT OF INDIA',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.playfairDisplay(
-                            fontSize: 9.sp,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white70 : Colors.black54)),
-                  ],
+                            color: const Color(0xFF0E5723),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
-          SizedBox(height: 24.h),
-          _buildDocInputs(doc, isDark, false, true),
+          if (maskedValue != null && maskedValue.isNotEmpty) ...[
+            SizedBox(height: 12.h),
+            Text(numberLabel ?? 'Number',
+                style: GoogleFonts.playfairDisplay(
+                    fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
+            SizedBox(height: 2.h),
+            Text(maskedValue,
+                style: GoogleFonts.lora(
+                    fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+          ],
+          if (verifiedName != null && verifiedName.isNotEmpty) ...[
+            SizedBox(height: 10.h),
+            Text(nameLabel ?? 'Name',
+                style: GoogleFonts.playfairDisplay(
+                    fontSize: 11.sp, color: labelColor, fontWeight: FontWeight.w600)),
+            SizedBox(height: 2.h),
+            Text(verifiedName,
+                style: GoogleFonts.playfairDisplay(
+                    fontSize: 14.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+          ],
+          if (linkedToAadhaar != null) ...[
+            SizedBox(height: 10.h),
+            Row(
+              children: [
+                Icon(
+                  linkedToAadhaar ? Icons.link_rounded : Icons.link_off_rounded,
+                  size: 14.sp,
+                  color: linkedToAadhaar ? const Color(0xFF0E5723) : Colors.orange[800],
+                ),
+                SizedBox(width: 6.w),
+                Text(
+                  linkedToAadhaar ? 'Linked to your Aadhaar' : 'Not linked to your Aadhaar',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w700,
+                    color: linkedToAadhaar ? const Color(0xFF0E5723) : Colors.orange[800],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -392,6 +2192,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             return <TextInputFormatter>[
               FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
               _UpperCaseNameFormatter(),
+              LengthLimitingTextInputFormatter(60),
             ];
           } else if (!isNumeric) {
             return <TextInputFormatter>[UpperCaseFormatter()];
@@ -405,11 +2206,7 @@ class _KycScreenState extends ConsumerState<KycScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (!stylized)
-                Text(field.label,
-                    style: GoogleFonts.playfairDisplay(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white60 : Colors.black54)),
+                Text(field.label, style: AppTextStyles.fieldLabel(isDark)),
               if (!stylized) SizedBox(height: 8.h),
               TextFormField(
                 controller: _docControllers[doc.id]?[field.name],
@@ -419,17 +2216,12 @@ class _KycScreenState extends ConsumerState<KycScreen> {
                     ? TextCapitalization.characters
                     : TextCapitalization.none,
                 inputFormatters: formatters,
-                style: GoogleFonts.playfairDisplay(
-                    color: stylized
-                        ? Colors.black87
-                        : (isDark ? Colors.white : Colors.black),
-                    fontWeight:
-                        stylized ? FontWeight.w600 : FontWeight.normal),
+                contextMenuBuilder: SecureClipboard.none,
+                style: AppTextStyles.kycFieldInput(isDark),
                 decoration: InputDecoration(
                   hintText: field.label,
-                  hintStyle: GoogleFonts.playfairDisplay(
-                      fontSize: 16.sp,
-                      color: isDark ? Colors.white38 : Colors.black38),
+                  hintStyle: AppTextStyles.kycFieldHint(isDark),
+                  errorStyle: AppTextStyles.fieldError(isDark),
                   filled: true,
                   fillColor: stylized
                       ? Colors.white
@@ -469,19 +2261,320 @@ class _KycScreenState extends ConsumerState<KycScreen> {
     );
   }
 
-  Widget _buildFooter(bool isDark, List<KycDocumentType> docs) {
-    final submitState = ref.watch(kycSubmitProvider);
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(24.w, 16.h, 24.w, 16.h),
-        decoration: const BoxDecoration(color: Colors.transparent),
-        child: CustomButton(
-          text: 'Continue',
-          svgIconPath: 'assets/buttons/tick.svg',
-          isLoading: submitState.isLoading,
-          onPressed: () => _submit(docs),
-          gradient: AppTheme.greenGradient,
+}
+
+// Shared by both _VerifiedDetailsDialog and NameMismatchDialog below — DOB
+// display/entry always goes through these two so the format stays paired
+// with the backend's KYCService._parse_flexible_date.
+DateTime? _parseKycDob(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  final ddmmyyyy = RegExp(r'^(\d{2})-(\d{2})-(\d{4})$').firstMatch(raw);
+  if (ddmmyyyy != null) {
+    return DateTime(
+      int.parse(ddmmyyyy.group(3)!),
+      int.parse(ddmmyyyy.group(2)!),
+      int.parse(ddmmyyyy.group(1)!),
+    );
+  }
+  return DateTime.tryParse(raw);
+}
+
+// DD-MM-YYYY, not ISO — this is the one format KYCService._parse_flexible_date
+// (backend) tries first. Every DOB payload/display string in this file must
+// stay in that format; switching to ISO breaks the pairing with the
+// server-side parser.
+String _formatKycDob(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
+
+// Read-only DOB rows (Current Profile Date of Birth, etc.) get their raw
+// value straight from the backend, which serializes Customer.cus_dob as
+// ISO (YYYY-MM-DD) — shown as-is that reads wrong for an Indian audience
+// expecting DD-MM-YYYY, and inconsistent with the editable field right next
+// to it (which always displays via _formatKycDob). Re-parses through the
+// same _parseKycDob so ISO and DD-MM-YYYY inputs both land on one display
+// format; falls back to the raw string only if it's neither.
+String? _formatDisplayDob(String? raw) {
+  if (raw == null || raw.isEmpty) return raw;
+  final parsed = _parseKycDob(raw);
+  return parsed == null ? raw : _formatKycDob(parsed);
+}
+
+InputDecoration _kycInputBoxDecoration(bool isDark) {
+  final borderColor = isDark ? Colors.white24 : Colors.black12;
+  return InputDecoration(
+    filled: true,
+    fillColor: isDark ? Colors.white.withOpacity(0.06) : Colors.white,
+    contentPadding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r), borderSide: BorderSide(color: borderColor)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r), borderSide: BorderSide(color: borderColor)),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12.r),
+      borderSide: const BorderSide(color: Color(0xFF52B76E), width: 1.5),
+    ),
+  );
+}
+
+/// Shown by _KycScreenState._showMismatchDialog for either mismatch
+/// prompt — AADHAAR's own or PAN's piggybacked one (see
+/// NameMismatchPrompt's doc comment in kyc_controller.dart; [prompt]
+/// carries which via [prompt.document]). Unlike _VerifiedDetailsDialog this
+/// is dismissible (Cancel / back button) — a genuine identity mismatch may
+/// not be resolvable by re-typing, so the customer isn't forced to stay
+/// stuck here. [onSubmit] does the actual resolution — AADHAAR resubmits
+/// the same verification_id (AadhaarNotifier.confirmNameMismatch), PAN
+/// targets its own dedicated KYC row (KycRepository.confirmPanNameMismatch)
+/// — and returns the same outcome contract either way; a continued
+/// mismatch re-shows this same dialog with an inline error instead of
+/// closing.
+class NameMismatchDialog extends StatefulWidget {
+  final NameMismatchPrompt prompt;
+  final Future<(NameMismatchOutcome, String?)> Function(String name, String dob) onSubmit;
+
+  const NameMismatchDialog({
+    required this.prompt,
+    required this.onSubmit,
+  });
+
+  @override
+  State<NameMismatchDialog> createState() => NameMismatchDialogState();
+}
+
+class NameMismatchDialogState extends State<NameMismatchDialog> {
+  late final TextEditingController _nameController;
+  DateTime? _selectedDob;
+  bool _saving = false;
+  String? _errorText;
+
+  // Backend only ever asks for DOB confirmation when the document itself
+  // carried one (KYCService._validate_mismatch_resubmission's dob_ok
+  // short-circuits otherwise) — mirror that here instead of demanding a
+  // value the customer was never shown.
+  bool get _hasDob => widget.prompt.verifiedDob != null && widget.prompt.verifiedDob!.isNotEmpty;
+
+  // Only ask for the field that actually failed. The server decides which
+  // (prompt.nameMismatch/dobMismatch — the name check is fuzzy and scored, so
+  // it can't be re-derived here); the other field is still submitted, just
+  // pre-filled from the verified value rather than re-typed. Both flags false
+  // shouldn't happen — the prompt only exists because something mismatched —
+  // but if it ever did, showing both beats showing an empty dialog with no
+  // way forward.
+  bool get _bothOrNeither =>
+      widget.prompt.nameMismatch == widget.prompt.dobMismatch;
+  bool get _showName => _bothOrNeither || widget.prompt.nameMismatch;
+  bool get _showDob => (_bothOrNeither || widget.prompt.dobMismatch) && _hasDob;
+
+  String get _documentLabel => widget.prompt.document == 'PAN' ? 'PAN' : 'Aadhaar';
+
+  /// Names the field(s) in the fallback body copy. The server normally sends
+  /// its own already-tailored `message`; this only fills in when it doesn't.
+  String get _mismatchedFieldLabel {
+    if (_showName && _showDob) return 'name and date of birth';
+    return _showDob ? 'date of birth' : 'name';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.prompt.verifiedName ?? '');
+    _selectedDob = _parseKycDob(widget.prompt.verifiedDob);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDob() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDob ?? DateTime(now.year - 25, now.month, now.day),
+      firstDate: DateTime(now.year - 100),
+      lastDate: DateTime(now.year - 18, now.month, now.day),
+    );
+    if (picked != null) setState(() => _selectedDob = picked);
+  }
+
+  Future<void> _submit() async {
+    // Validate only what the customer was actually asked for. Both values are
+    // still sent below — a hidden field carries the verified value initState
+    // pre-filled it with, which is exactly what the server re-checks it
+    // against, so it passes without the customer retyping it.
+    final typedName = _nameController.text.trim();
+    if (_showName && typedName.isEmpty) {
+      setState(() => _errorText = 'Name cannot be empty.');
+      return;
+    }
+    if (_showDob && _selectedDob == null) {
+      setState(() => _errorText = 'Please select your date of birth.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _errorText = null;
+    });
+    SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: calling onSubmit, document=${widget.prompt.document}');
+    final (outcome, msg) = await widget.onSubmit(
+      typedName,
+      _selectedDob != null ? _formatKycDob(_selectedDob!) : '',
+    );
+    SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: onSubmit returned outcome=$outcome, dialog mounted=$mounted');
+    if (!mounted) return;
+    if (outcome == NameMismatchOutcome.resolved) {
+      SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: popping dialog(true), canPop=${Navigator.of(context, rootNavigator: true).canPop()}');
+      Navigator.of(context, rootNavigator: true).pop(true);
+      SecureLogger.d('[KYC DEBUG] NameMismatchDialog._submit: pop() call returned');
+      return;
+    }
+    setState(() {
+      _saving = false;
+      _errorText = msg ?? _stillMismatchedFallback;
+    });
+  }
+
+  /// Only used when the server sends no message of its own — named for the
+  /// field the customer was actually asked to correct, so a name-only prompt
+  /// never tells them their DOB is wrong.
+  String get _stillMismatchedFallback {
+    final what = _showName && _showDob
+        ? 'name and date of birth'
+        : (_showDob ? 'date of birth' : 'name');
+    return "The $what you entered still doesn't match your $_documentLabel "
+        'record. Please re-enter exactly as on your $_documentLabel.';
+  }
+
+  Widget _buildVerifiedRow(String label, String? value, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label:', style: AppTextStyles.fieldLabel(isDark)),
+        SizedBox(height: 2.h),
+        Text(
+          (value == null || value.isEmpty) ? '—' : value,
+          style: AppTextStyles.kycFieldInput(isDark).copyWith(fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final borderColor = isDark ? Colors.white24 : Colors.black12;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24.r)),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(24.r),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              // Kept as the single fixed title regardless of which field is
+              // being corrected — the dialog's own wording/layout is
+              // deliberately unchanged; only WHICH fields render is new.
+              'Name / DOB Mismatch',
+              style: AppTextStyles.titleMedium(isDark).copyWith(color: const Color(0xFF643D41)),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              widget.prompt.message ??
+                  "The $_mismatchedFieldLabel on your $_documentLabel record doesn't match your "
+                      'profile details. Please re-enter exactly as on your $_documentLabel record.',
+              style: AppTextStyles.fieldHelper(isDark),
+            ),
+            SizedBox(height: 16.h),
+            // Verified name/DOB used to be shown here too, duplicating what
+            // the editable fields below are already pre-filled with (see
+            // initState) — dropped so the customer isn't shown the exact
+            // same values twice for no reason. Only what's actually
+            // DIFFERENT (the current, about-to-be-replaced profile values)
+            // is worth a read-only row here — and only for the field being
+            // corrected, so a name-only prompt doesn't display a DOB the
+            // customer isn't being asked about.
+            if (_showName)
+              _buildVerifiedRow('Current Profile Name', widget.prompt.profileName, isDark),
+            if (_showDob && widget.prompt.profileDob != null && widget.prompt.profileDob!.isNotEmpty) ...[
+              if (_showName) SizedBox(height: 12.h),
+              _buildVerifiedRow(
+                'Current Profile Date of Birth',
+                _formatDisplayDob(widget.prompt.profileDob),
+                isDark,
+              ),
+            ],
+            SizedBox(height: 20.h),
+            if (_showName) ...[
+              Text('Your Name', style: AppTextStyles.fieldLabel(isDark)),
+              SizedBox(height: 6.h),
+              TextField(
+                controller: _nameController,
+                textCapitalization: TextCapitalization.characters,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
+                  _UpperCaseNameFormatter(),
+                  LengthLimitingTextInputFormatter(60),
+                ],
+                style: AppTextStyles.kycFieldInput(isDark),
+                decoration: _kycInputBoxDecoration(isDark),
+              ),
+            ],
+            if (_showDob) ...[
+              if (_showName) SizedBox(height: 16.h),
+              Text('Date of Birth', style: AppTextStyles.fieldLabel(isDark)),
+              SizedBox(height: 6.h),
+              InkWell(
+                onTap: _pickDob,
+                borderRadius: BorderRadius.circular(12.r),
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.06) : Colors.white,
+                    borderRadius: BorderRadius.circular(12.r),
+                    border: Border.all(color: borderColor),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _selectedDob == null ? 'Select date of birth' : _formatKycDob(_selectedDob!),
+                        style: AppTextStyles.kycFieldInput(isDark).copyWith(
+                          color: _selectedDob == null ? (isDark ? Colors.white38 : Colors.black38) : null,
+                        ),
+                      ),
+                      Icon(Icons.calendar_today, size: 18.sp, color: isDark ? Colors.white54 : Colors.black45),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (_errorText != null) ...[
+              SizedBox(height: 10.h),
+              Text(_errorText!, style: TextStyle(color: Colors.red, fontSize: 12.sp)),
+            ],
+            SizedBox(height: 20.h),
+            CustomButton(
+              text: 'Submit',
+              isLoading: _saving,
+              onPressed: _saving ? null : _submit,
+              gradient: AppTheme.greenGradient,
+            ),
+            SizedBox(height: 8.h),
+            Center(
+              child: TextButton(
+                onPressed: _saving ? null : () => Navigator.pop(context, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white60 : Colors.black54,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -525,4 +2618,3 @@ class _UpperCaseNameFormatter extends TextInputFormatter {
     );
   }
 }
-

@@ -4,18 +4,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import 'package:pinput/pinput.dart';
-import 'package:screen_protector/screen_protector.dart';
+import '../../../core/security/screenshot_security_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../controller/auth_controller.dart';
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/animations.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/localization/language_provider.dart';
 import '../../../core/utils/masking_utils.dart';
 import '../../../core/utils/navigation_utils.dart';
+import '../../../core/security/secure_storage_service.dart';
 
 class OtpScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -51,13 +54,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   Future<void> _secureScreen() async {
-    await ScreenProtector.preventScreenshotOn();
-    await ScreenProtector.protectDataLeakageWithBlur();
+    await ScreenshotSecurityService.secureScreen();
   }
 
   Future<void> _releaseScreen() async {
-    await ScreenProtector.preventScreenshotOff();
-    await ScreenProtector.protectDataLeakageWithBlurOff();
+    await ScreenshotSecurityService.releaseScreen();
   }
 
   void _startTimer() {
@@ -85,7 +86,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
     if (success && mounted) {
       _startTimer();
-      AppToast.show(context, ref.tr('otpResendSuccess'),
+      AppToast.show(context, 'OTP Resend Successfully!',
           type: ToastType.success);
     }
   }
@@ -200,18 +201,33 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                                     color: primaryTextColor,
                                   ),
                                 ),
-                                if (!isFromAppLock)
-                                  GestureDetector(
-                                    onTap: () => NavigationUtils.safePop(context),
-                                    child: Text(
-                                      'Edit',
-                                      style: GoogleFonts.playfairDisplay(
-                                        fontSize: 16.sp,
-                                        fontWeight: FontWeight.bold,
-                                        color: accentOrange,
-                                      ),
+                                GestureDetector(
+                                  onTap: () {
+                                    if (isFromAppLock) {
+                                      // From Forgot PIN flow → clear everything & go to login
+                                      SecureStorageService.logout().then((_) {
+                                        if (mounted) {
+                                          Navigator.pushNamedAndRemoveUntil(
+                                            context,
+                                            AppRouter.login,
+                                            (route) => false,
+                                          );
+                                        }
+                                      });
+                                    } else {
+                                      // Normal flow → pop back to login/previous screen
+                                      NavigationUtils.safePop(context);
+                                    }
+                                  },
+                                  child: Text(
+                                    'Edit',
+                                    style: GoogleFonts.playfairDisplay(
+                                      fontSize: 16.sp,
+                                      fontWeight: FontWeight.bold,
+                                      color: accentOrange,
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ],
@@ -246,6 +262,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                               length: 6,
                               controller: _otpController,
                               keyboardType: TextInputType.number,
+                              contextMenuBuilder: SecureClipboard.none,
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly
                               ],
@@ -253,7 +270,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                                   MainAxisAlignment.spaceEvenly,
                               preFilledWidget: Text(
                                 '•',
-                                style: GoogleFonts.playfairDisplay(
+                                style: GoogleFonts.lora(
                                   fontSize: 22.sp,
                                   color:
                                       primaryTextColor.withOpacity(0.25),
@@ -272,11 +289,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                               focusedPinTheme: PinTheme(
                                 width: 45.w,
                                 height: 52.h,
-                                textStyle: GoogleFonts.lora(
-                                  fontSize: 20.sp,
-                                  fontWeight: FontWeight.w800,
-                                  color: accentGreen,
-                                ),
+                                textStyle: AppTextStyles.valueLarge(isDark)
+                                    .copyWith(color: accentGreen),
                                 decoration: BoxDecoration(
                                   border: Border(
                                       bottom: BorderSide(

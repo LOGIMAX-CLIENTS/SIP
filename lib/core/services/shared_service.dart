@@ -98,7 +98,7 @@ class SharedService {
             name: 'India',
             code: 'IN',
             prefix: '+91',
-            flag: 'ðŸ‡®ðŸ‡³')
+            flag: '\u{1F1EE}\u{1F1F3}')
       ]; // Fallback
     } catch (e) {
       return [
@@ -107,7 +107,7 @@ class SharedService {
             name: 'India',
             code: 'IN',
             prefix: '+91',
-            flag: 'ðŸ‡®ðŸ‡³')
+            flag: '\u{1F1EE}\u{1F1F3}')
       ]; // Fallback
     }
   }

@@ -1,12 +1,19 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/profile_service.dart';
 import '../../core/providers/user_provider.dart';
+import '../../core/security/secure_storage_service.dart';
 
 class UserProfile {
   final String id;
   final String name;
+  final String firstName;
+  final String lastName;
   final String email;
+  final bool isEmailVerified;
+  final bool isNameVerified;
+  final bool isDobVerified;
   final String phone;
   final String dob;
   final String pincode;
@@ -19,11 +26,18 @@ class UserProfile {
   final String? photoUrl;
   final int kycStatus;
   final String referralMessage; // from API referral_message field
+  final String? lastLoginAt; // VAPT Finding 6: last login timestamp
+  final String? lastFailedLoginAt; // VAPT Finding 6: last failed login timestamp
 
   UserProfile({
     required this.id,
     required this.name,
+    this.firstName = '',
+    this.lastName = '',
     this.email = '',
+    this.isEmailVerified = false,
+    this.isNameVerified = false,
+    this.isDobVerified = false,
     required this.phone,
     required this.dob,
     required this.pincode,
@@ -36,11 +50,18 @@ class UserProfile {
     this.photoUrl,
     this.kycStatus = 0,
     this.referralMessage = '',
+    this.lastLoginAt,
+    this.lastFailedLoginAt,
   });
 
   UserProfile copyWith({
     String? name,
+    String? firstName,
+    String? lastName,
     String? email,
+    bool? isEmailVerified,
+    bool? isNameVerified,
+    bool? isDobVerified,
     String? phone,
     String? dob,
     String? pincode,
@@ -53,11 +74,18 @@ class UserProfile {
     String? photoUrl,
     int? kycStatus,
     String? referralMessage,
+    String? lastLoginAt,
+    String? lastFailedLoginAt,
   }) {
     return UserProfile(
       id: this.id,
       name: name ?? this.name,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
       email: email ?? this.email,
+      isEmailVerified: isEmailVerified ?? this.isEmailVerified,
+      isNameVerified: isNameVerified ?? this.isNameVerified,
+      isDobVerified: isDobVerified ?? this.isDobVerified,
       phone: phone ?? this.phone,
       dob: dob ?? this.dob,
       pincode: pincode ?? this.pincode,
@@ -70,6 +98,8 @@ class UserProfile {
       photoUrl: photoUrl ?? this.photoUrl,
       kycStatus: kycStatus ?? this.kycStatus,
       referralMessage: referralMessage ?? this.referralMessage,
+      lastLoginAt: lastLoginAt ?? this.lastLoginAt,
+      lastFailedLoginAt: lastFailedLoginAt ?? this.lastFailedLoginAt,
     );
   }
 }
@@ -114,7 +144,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       : super(ProfileState(
           user: UserProfile(
             id: _customerId,
-            name: 'Investor',
+            name: '',
             phone: '',
             dob: '',
             pincode: '',
@@ -126,19 +156,56 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
             idCity: '',
           ),
         )) {
-    fetchProfileDetails();
+    // The watched customer id is empty until auth resolves. Fetching then
+    // both wastes a round trip on `id_customer: ''` and lands its reply on
+    // this notifier after the id arrives and the provider replaces it.
+    if (_customerId.isNotEmpty) {
+      fetchProfileDetails();
+    }
+  }
+
+  /// Safely parse nullable API fields.
+  /// Returns null for: null, empty string, or literal "null" string.
+  static String? _parseNullableField(dynamic value) {
+    if (value == null) return null;
+    final str = value.toString().trim();
+    if (str.isEmpty || str == 'null') return null;
+    return str;
   }
 
   Future<void> fetchProfileDetails() async {
+    if (!mounted || _customerId.isEmpty) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final data = await _profileService.getProfileDetails(_customerId);
+      // This provider is rebuilt whenever the watched customer id changes
+      // (login / logout), which disposes this notifier. A request already in
+      // flight still completes here, and writing `state` on a disposed
+      // notifier throws, so bail out instead.
+      if (!mounted) return;
       if (data != null) {
+        // ── Sync server-side MPIN lock timing preference ──────────────────
+        // cus_mpin_lock_timeout_seconds syncs across the customer's devices
+        // (Profile > Security > "MPIN & Biometric Timing"); null means the
+        // customer never set one, so the local cache keeps whatever it has
+        // (server default) rather than being overwritten with null.
+        final serverTimeout = data['mpin_lock_timeout_seconds'];
+        if (serverTimeout != null) {
+          final parsed = int.tryParse(serverTimeout.toString());
+          if (parsed != null) {
+            SecureStorageService.setMpinLockTimeoutSeconds(parsed);
+          }
+        }
         state = state.copyWith(
           user: UserProfile(
             id: _customerId,
-            name: data['name'] ?? data['full_name'] ?? 'Investor',
+            name: data['name'] ?? data['full_name'] ?? '',
+            firstName: data['first_name'] ?? '',
+            lastName: data['last_name'] ?? '',
             email: data['email'] ?? '',
+            isEmailVerified: data['email_verified'] == true,
+            isNameVerified: data['name_verified'] == true,
+            isDobVerified: data['dob_verified'] == true,
             phone: data['mobile'] ?? data['phone'] ?? '',
             dob: data['dob'] ?? '',
             pincode: data['pincode'] ?? '',
@@ -153,6 +220,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
                 ? int.tryParse(data['kyc_status'].toString()) ?? 0
                 : 0,
             referralMessage: data['referral_message']?.toString() ?? '',
+            lastLoginAt: _parseNullableField(data['last_login_at']),
+            lastFailedLoginAt: _parseNullableField(data['last_failed_login_at']),
           ),
           isLoading: false,
         );
@@ -160,11 +229,13 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         state = state.copyWith(isLoading: false);
       }
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(isLoading: false, error: 'Failed to load profile');
     }
   }
 
   void setEditing(bool editing) {
+    if (!mounted) return;
     state = state.copyWith(isEditing: editing, error: null);
   }
 
@@ -201,6 +272,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     required String idState,
     required String idCity,
   }) {
+    if (!mounted) return;
     state = state.copyWith(
       user: state.user.copyWith(
         state: stateVal,
@@ -213,7 +285,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   }
 
   Future<bool> updateProfile({
-    required String name,
+    required String firstName,
+    String? lastName,
     required String email,
     required String dob,
     required String pincode,
@@ -226,7 +299,8 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     try {
       final result = await _profileService.updateProfile(
         customerId: _customerId,
-        name: name,
+        firstName: firstName,
+        lastName: lastName,
         email: email,
         dob: dob,
         pincode: pincode,
@@ -237,11 +311,20 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         idState: state.user.idState,
         idCity: state.user.idCity,
       );
+      if (!mounted) return result['success'] == true;
 
       if (result['success'] == true) {
+        // A verification stamp belongs to the mailbox it verified — mirrors
+        // the backend's identity.py reset so a changed-but-unsaved-refetch
+        // email doesn't keep showing "Verified" locally.
+        final emailChanged =
+            email.trim().toLowerCase() != state.user.email.trim().toLowerCase();
         final updatedUser = state.user.copyWith(
-          name: name,
+          name: '$firstName ${lastName ?? ''}'.trim(),
+          firstName: firstName,
+          lastName: lastName ?? '',
           email: email,
+          isEmailVerified: emailChanged ? false : state.user.isEmailVerified,
           dob: dob,
           pincode: pincode,
           state: stateVal,
@@ -263,6 +346,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         return false;
       }
     } catch (e) {
+      if (!mounted) return false;
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to update profile. Please try again.',
@@ -275,20 +359,25 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     state = state.copyWith(isPhotoLoading: true, error: null);
 
     try {
+      final customerId = state.user.id.isNotEmpty ? state.user.id : _customerId;
       final success = await _profileService.updateProfilePhoto(
         photo: photo,
-        customerId: state.user.id,
+        customerId: customerId,
       );
+      if (!mounted) return success;
 
       if (success) {
         // Re-fetch profile to get the updated photo_url from server
         await fetchProfileDetails();
+        if (!mounted) return true;
         state = state.copyWith(isPhotoLoading: false);
         return true;
       } else {
         throw Exception('Upload failed');
       }
     } catch (e) {
+      if (kDebugMode) debugPrint('[ProfileNotifier] Photo upload error: $e');
+      if (!mounted) return false;
       state = state.copyWith(
         isPhotoLoading: false,
         error: 'Failed to upload photo. Please try again.',
@@ -301,7 +390,15 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
 final profileProvider =
     StateNotifierProvider<ProfileNotifier, ProfileState>((ref) {
   final service = ref.watch(profileServiceProvider);
-  final user = ref.watch(userProvider);
-  final customerId = user?.id ?? '';
+  // Scoped to just the customer id — `userProvider` is a plain Provider
+  // that rebuilds a brand-new (non-equal) UserProfile object on EVERY
+  // authControllerProvider state change, including unrelated actions like
+  // sendEmailOtp()'s isLoading toggle. Watching the whole object here would
+  // tear down and recreate ProfileNotifier on every one of those, blanking
+  // this screen back to its empty initial state while it silently
+  // re-fetches — e.g. tapping "Verify" on the e-mail field would flash the
+  // whole Account Details page blank. Selecting just the id means this
+  // notifier only rebuilds on an actual login/logout (id change).
+  final customerId = ref.watch(userProvider.select((u) => u?.id)) ?? '';
   return ProfileNotifier(service, customerId);
 });

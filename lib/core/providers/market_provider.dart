@@ -2,9 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../network/native_socket_service.dart';
 import '../../features/market/models/market_rates.dart';
 import '../services/shared_service.dart';
+import 'environment_provider.dart';
 
 // Provides the singleton instance of the service
 final socketIOServiceProvider = Provider<NativeSocketService>((ref) {
+  ref.watch(environmentProvider); // Recreate service when environment changes
   final service = NativeSocketService();
   ref.onDispose(() => service.dispose());
   return service;

@@ -18,11 +18,22 @@ import '../features/auth/pin/pin_screen.dart';
 import '../features/auth/registration/registration_screen.dart';
 import '../features/auth/registration/registration_success_screen.dart';
 import '../features/profile/account_details_screen.dart';
+import '../features/profile/bank_details_screen.dart';
+import '../features/profile/screens/bank_verification_hub_screen.dart';
+import '../features/profile/screens/bav_history_screen.dart';
+import '../features/profile/screens/penny_verify_history_screen.dart';
+import '../features/profile/screens/refund_history_screen.dart';
 import '../features/withdrawal/screens/withdrawal_screen.dart';
 import '../features/withdrawal/screens/withdrawal_confirmation_screen.dart';
 import '../features/withdrawal/screens/upi_selection_screen.dart';
 import '../features/withdrawal/screens/withdrawal_success_screen.dart';
 import '../features/kyc/screens/kyc_screen.dart' as dynamic_kyc;
+import '../features/kyc/screens/kyc_verification_screen.dart';
+import '../features/kyc/screens/kyc_id_verification_screen.dart';
+import '../features/kyc/widgets/aadhaar_digilocker_webview.dart';
+import '../features/kyc/widgets/digilocker_sdk_screen.dart';
+import '../features/kyc/widgets/meon_digilocker_sdk_screen.dart';
+import '../features/profile/screens/reverse_penny_drop_screen.dart';
 import '../features/instant_saving/screens/payment_methods_screen.dart';
 import '../features/history/screens/transaction_history_screen.dart';
 import '../features/history/screens/transaction_details_screen.dart';
@@ -34,6 +45,7 @@ import '../features/support/screens/enquiry_list_screen.dart';
 import '../features/main/main_screen.dart';
 import '../core/services/content_service.dart';
 import '../features/mpin/change_mpin_screen.dart';
+import '../features/profile/screens/mpin_lock_timing_screen.dart';
 import '../features/maintenance/maintenance_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/notifications/notifications_screen.dart';
@@ -41,6 +53,8 @@ import '../features/profile/screens/delete_account_screen.dart';
 import '../features/referral/referee_list_screen.dart';
 import '../features/sip/screens/auto_savings_screen.dart';
 import '../features/sip/screens/manage_savings_screen.dart';
+import '../features/sip/screens/manage_custom_savings_screen.dart';
+import '../features/sip/screens/bank_account_picker_screen.dart';
 import '../features/sip/screens/sip_cancel_screen.dart';
 import '../features/sip/screens/sip_payment_screen.dart';
 import '../features/sip/screens/sip_success_screen.dart';
@@ -49,6 +63,9 @@ import '../features/sip/screens/sip_transaction_history_screen.dart';
 import '../features/sip/screens/sip_transaction_details_screen.dart';
 import '../features/sip/screens/sip_overview_screen.dart';
 import '../features/nominee/screens/nominee_screen.dart';
+import '../shared/theme/app_theme.dart';
+import '../features/invoice/invoice_viewer_screen.dart';
+import '../features/jewellery/jewellery_screen.dart';
 
 class AppRouter {
   static const String splash = '/splash';
@@ -56,9 +73,13 @@ class AppRouter {
   static const String login = '/login';
   static const String otp = '/otp';
   static const String mpin = '/mpin';
-  static const String kyc = '/kyc';
+  static const String kycVerification = '/kyc-verification';
+  static const String kycIdVerification = '/kyc-id-verification';
   static const String panVerification = '/pan-verification';
   static const String aadhaarVerification = '/aadhaar-verification';
+  static const String digilockerSdk = '/digilocker-sdk';
+  static const String meonDigilockerSdk = '/meon-digilocker-sdk';
+  static const String reversePennyDrop = '/reverse-penny-drop';
   static const String bankVerification = '/bank-verification';
   static const String instantSaving = '/instant-saving';
   static const String dailySavings = '/daily-savings';
@@ -87,15 +108,23 @@ class AppRouter {
   static const String withdrawalSuccess = '/withdrawal-success';
   static const String registrationSuccess = '/registration-success';
   static const String accountDetails = '/accountdetails';
+  static const String bankDetails = '/bank-details';
   static const String transactionHistory = '/transaction-history';
   static const String transactionDetails = '/transaction-details';
   static const String changeMpin = '/change-mpin';
+  static const String mpinLockTiming = '/mpin-lock-timing';
   static const String maintenance = '/maintenance';
   static const String notifications = '/notifications';
   static const String deleteAccount = '/delete-account';
   static const String refereeList = '/referee-list';
   static const String autoSavings = '/auto-savings';
   static const String sipManage = '/sip-manage';
+  static const String customSipManage = '/custom-sip-manage';
+  static const String bankAccountPicker = '/bank-account-picker';
+  static const String bankVerificationHub = '/bank-verification-hub';
+  static const String bavHistory = '/bank-verification/bav-history';
+  static const String pennyVerifyHistory = '/bank-verification/penny-history';
+  static const String refundHistory = '/bank-verification/refund-history';
   static const String sipCancel = '/sip-cancel';
   static const String sipPayment = '/sip-payment';
   static const String sipSuccess = '/sip-success';
@@ -105,6 +134,8 @@ class AppRouter {
   static const String sipTransactions = '/sip-transactions';
   static const String sipTransactionDetails = '/sip-transaction-details';
   static const String sipOverview = '/sip-overview';
+  static const String invoiceViewer = '/invoice-viewer';
+  static const String jewellery = '/jewellery';
 
   static Map<String, WidgetBuilder> get routes => {
         splash: (context) => const SplashScreen(),
@@ -122,18 +153,58 @@ class AppRouter {
         },
         mpin: (context) => const MpinScreen(),
         changeMpin: (context) => const ChangeMpinScreen(),
-        kyc: (context) {
+        mpinLockTiming: (context) => const MpinLockTimingScreen(),
+        kycVerification: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??
               {};
-          return dynamic_kyc.KycScreen(
+          return KycVerificationScreen(
             requestFrom: args['request_from'] ?? 'instant',
             extraData: args,
+            popWhenIdVerified: args['pop_when_id_verified'] == true,
+          );
+        },
+        kycIdVerification: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>? ??
+              {};
+          return KycIdVerificationScreen(
+            requestFrom: args['request_from'] ?? 'instant',
           );
         },
         panVerification: (context) => const PanVerificationScreen(),
-        aadhaarVerification: (context) =>
-            const Scaffold(body: Center(child: Text('Aadhaar Verification'))),
+        aadhaarVerification: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return AadhaarDigilockerWebView(
+            consentUrl: args['consentUrl'] as String,
+          );
+        },
+        digilockerSdk: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return DigilockerSdkScreen(
+            sdkToken: args['sdkToken'] as String,
+            clientId: args['clientId'] as String?,
+            environment: args['environment'] as String?,
+          );
+        },
+        meonDigilockerSdk: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return MeonDigilockerSdkScreen(
+            companyName: args['companyName'] as String,
+            secretToken: args['secretToken'] as String,
+            redirectUrl: args['redirectUrl'] as String,
+            panName: args['panName'] as String?,
+            panNo: args['panNo'] as String?,
+          );
+        },
+        reversePennyDrop: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return ReversePennyDropScreen(cbankId: args['cbankId'] as String);
+        },
         bankVerification: (context) =>
             const Scaffold(body: Center(child: Text('Bank Verification'))),
         instantSaving: (context) => const InstantSavingScreen(),
@@ -142,6 +213,7 @@ class AppRouter {
         main: (context) => const MainScreen(),
         profile: (context) => const ProfileScreen(),
         accountDetails: (context) => const AccountDetailsScreen(),
+        bankDetails: (context) => const BankDetailsScreen(),
         transactionHistory: (context) => const TransactionHistoryScreen(),
         transactionDetails: (context) {
           final tx = ModalRoute.of(context)!.settings.arguments
@@ -157,7 +229,8 @@ class AppRouter {
               {};
           return PinCreationScreen(
             mobile: args['mobile'] ?? '',
-            fullName: args['fullName'] ?? '',
+            firstName: args['firstName'] ?? '',
+            lastName: args['lastName'] ?? '',
             email: args['email'] ?? '',
             dob: args['dob'] ?? '',
             referralCode: args['referralCode'] ?? '',
@@ -201,7 +274,7 @@ class AppRouter {
                   const SizedBox(height: 8),
                   Text(
                       'Plan: ${args['type'] == 'daily_sip' ? 'Daily Savings' : 'One-time'}',
-                      style: const TextStyle(color: Colors.grey)),
+                      style: GoogleFonts.playfairDisplay(color: Colors.grey)),
                   const SizedBox(height: 48),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
@@ -253,6 +326,8 @@ class AppRouter {
               {};
           return EnquiryFormScreen(
             initialType: args['initial_type'] as String?,
+            initialSubject: args['initial_subject'] as String?,
+            initialMessage: args['initial_message'] as String?,
           );
         },
         enquiryList: (context) => const EnquiryListScreen(),
@@ -264,7 +339,7 @@ class AppRouter {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??
               {};
-          return RegistrationSuccessScreen(fullName: args['fullName'] ?? '');
+          return RegistrationSuccessScreen(firstName: args['firstName'] ?? '');
         },
         maintenance: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
@@ -286,12 +361,35 @@ class AppRouter {
             subscriptionId: args['subscription_id'] ?? '',
           );
         },
+        customSipManage: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>? ??
+              {};
+          return ManageCustomSavingsScreen(
+            schemeId: int.tryParse(args['scheme_id']?.toString() ?? '0') ?? 0,
+          );
+        },
+        bankAccountPicker: (context) => const BankAccountPickerScreen(),
+        bankVerificationHub: (context) => const BankVerificationHubScreen(),
+        bavHistory: (context) => const BavHistoryScreen(),
+        pennyVerifyHistory: (context) => const PennyVerifyHistoryScreen(),
+        refundHistory: (context) => const RefundHistoryScreen(),
         sipCancel: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
                   as Map<String, dynamic>? ??
               {};
           return SipCancelScreen(
             subscriptionId: args['subscription_id'] ?? '',
+            cancelEligibleAt:
+                DateTime.tryParse(args['cancel_eligible_at']?.toString() ?? '')
+                    ?.toLocal(),
+            canCancelNow: args['can_cancel_now'] == null
+                ? true
+                : args['can_cancel_now'] == true,
+            isCustom: args['is_custom'] == true,
+            schemeId: args['scheme_id'] == null
+                ? null
+                : int.tryParse(args['scheme_id'].toString()),
           );
         },
         sipPayment: (context) {
@@ -317,12 +415,44 @@ class AppRouter {
           return SipTransactionDetailsScreen(transactionData: tx);
         },
         sipOverview: (context) => const SipOverviewScreen(),
+        invoiceViewer: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>;
+          return InvoiceViewerScreen(
+            filePath: args['file_path'] as String,
+            title: args['title'] as String? ?? 'Invoice',
+          );
+        },
+        jewellery: (context) => const JewelleryScreen(),
       };
+
+  /// Paints the app gradient behind a route's own widgets.
+  ///
+  /// The theme sets `scaffoldBackgroundColor: Colors.transparent` so screens
+  /// can let MaterialApp's single global gradient show through. That works
+  /// while one route is on screen, but Android's predictive back draws the
+  /// outgoing route and its destination in the same frame: held mid-gesture,
+  /// the destination showed through every transparent gap in the route on top
+  /// -- Transaction History's rows appearing between Transaction Details'
+  /// cards, Home appearing inside Withdrawal. A few screens had already been
+  /// given their own opaque background one at a time (eda35aa); doing it here
+  /// covers every route at once, and keeps the gradient identical because it
+  /// is the same one MaterialApp paints.
+  static Widget _withOpaqueBackground(BuildContext context, Widget child) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
+      ),
+      child: child,
+    );
+  }
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     if (routes.containsKey(settings.name)) {
       return MaterialPageRoute(
-        builder: (context) => routes[settings.name]!(context),
+        builder: (context) =>
+            _withOpaqueBackground(context, routes[settings.name]!(context)),
         settings: settings,
       );
     }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../core/utils/navigation_utils.dart';
+import '../theme/app_text_styles.dart';
 
 /// Reusable green-gradient page header matching the app-wide design system.
 ///
@@ -52,11 +52,8 @@ class GradientHeader extends StatelessWidget {
                 child: Text(
                   title,
                   textAlign: TextAlign.left,
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
+                  style: AppTextStyles.titleMedium(false)
+                      .copyWith(color: Colors.white),
                 ),
               ),
               if (trailing != null) trailing!,

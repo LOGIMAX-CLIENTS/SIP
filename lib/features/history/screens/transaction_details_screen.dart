@@ -8,10 +8,11 @@ import '../../../routes/app_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../controller/history_controller.dart';
 import '../models/history_models.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../invoice/invoice_service.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/app_text_styles.dart';
 
 class TransactionDetailsScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> transactionData;
@@ -100,6 +101,8 @@ class _TransactionDetailsScreenState
     final bool isSaving = routeType == 'purchase' || isSip;
     final bool isReferral = routeType == 'referral' ||
         details.title.toLowerCase().contains('referral');
+    final bool isOffer = routeType == 'offer' ||
+        details.title.toLowerCase().contains('offer');
     final textColor = isDark ? Colors.white : const Color(0xFF1E293B);
     final mutedTextColor = isDark ? Colors.white54 : const Color(0xFF64748B);
     final cardColor = isDark ? Colors.white.withOpacity(0.04) : Colors.white;
@@ -107,13 +110,13 @@ class _TransactionDetailsScreenState
         isDark ? Colors.white10 : Colors.black.withOpacity(0.05);
 
     return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 80.h),
       child: Column(
         children: [
-          _buildTopCard(details, isSaving, isSip, isReferral, cardColor, borderColor,
+          _buildTopCard(details, isSaving, isSip, isReferral, isOffer, cardColor, borderColor,
               textColor, mutedTextColor, isDark),
           SizedBox(height: 16.h),
-          _buildStatusCard(details, isSaving, isSip, cardColor, borderColor, textColor,
+          _buildStatusCard(details, isSaving, isSip, isOffer, cardColor, borderColor, textColor,
               mutedTextColor, isDark),
           if (isSip && details.schemeInfo != null) ...[
             SizedBox(height: 16.h),
@@ -121,7 +124,7 @@ class _TransactionDetailsScreenState
                 textColor, mutedTextColor, isDark),
           ],
           SizedBox(height: 16.h),
-          _buildOrderDetails(details, isSaving, isSip, isReferral, cardColor, borderColor,
+          _buildOrderDetails(details, isSaving, isSip, isReferral, isOffer, cardColor, borderColor,
               textColor, mutedTextColor, isDark),
           SizedBox(height: 16.h),
         ],
@@ -134,18 +137,21 @@ class _TransactionDetailsScreenState
       bool isSaving,
       bool isSip,
       bool isReferral,
+      bool isOffer,
       Color cardColor,
       Color borderColor,
       Color textColor,
       Color mutedTextColor,
       bool isDark) {
     final typeLabel = isSip
-        ? 'SIP Autopay'
+        ? 'AutoGold Autopay'
         : isSaving
             ? 'Instant Saving'
             : isReferral
                 ? 'Referral Reward'
-                : 'Withdrawal';
+                : isOffer
+                    ? 'Offer Reward'
+                    : 'Withdrawal';
 
     final typeColor = isSip
         ? const Color(0xFF0D9488)  // teal
@@ -153,7 +159,9 @@ class _TransactionDetailsScreenState
             ? const Color(0xFF1B882C)
             : isReferral
                 ? const Color(0xFF7C3AED)
-                : const Color(0xFFDC2626);
+                : isOffer
+                    ? const Color(0xFF0D9488) // teal (same as SIP)
+                    : const Color(0xFFDC2626);
 
     return Container(
       padding: EdgeInsets.all(20.w),
@@ -191,16 +199,45 @@ class _TransactionDetailsScreenState
                     color: typeColor,
                   ),
                 ),
-                if (isSip && details.subtitle.isNotEmpty) ...[
+                if ((isSip || isOffer) && details.subtitle.isNotEmpty) ...[
                   SizedBox(height: 2.h),
-                  Text(
-                    details.subtitle,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 11.sp,
-                      fontWeight: FontWeight.w500,
-                      color: mutedTextColor,
-                    ),
-                  ),
+                  Builder(builder: (_) {
+                    final parts = RegExp(r'(\d+)').allMatches(details.subtitle);
+                    final spans = <TextSpan>[];
+                    int lastEnd = 0;
+                    for (final m in parts) {
+                      if (m.start > lastEnd) {
+                        spans.add(TextSpan(
+                          text: details.subtitle.substring(lastEnd, m.start),
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 11.sp,
+                            fontWeight: FontWeight.w500,
+                            color: mutedTextColor,
+                          ),
+                        ));
+                      }
+                      spans.add(TextSpan(
+                        text: m.group(0),
+                        style: GoogleFonts.lora(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w600,
+                          color: mutedTextColor,
+                        ),
+                      ));
+                      lastEnd = m.end;
+                    }
+                    if (lastEnd < details.subtitle.length) {
+                      spans.add(TextSpan(
+                        text: details.subtitle.substring(lastEnd),
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w500,
+                          color: mutedTextColor,
+                        ),
+                      ));
+                    }
+                    return RichText(text: TextSpan(children: spans));
+                  }),
                 ],
               ],
             ),
@@ -218,7 +255,7 @@ class _TransactionDetailsScreenState
               ),
               SizedBox(height: 4.h),
               Text(
-                '${details.weightGrams} g',
+                '${details.weightGrams.toStringAsFixed(6)} gm',
                 style: GoogleFonts.lora(
                   fontSize: 13.sp,
                   color: mutedTextColor,
@@ -236,11 +273,21 @@ class _TransactionDetailsScreenState
       TransactionDetailResponse details,
       bool isSaving,
       bool isSip,
+      bool isOffer,
       Color cardColor,
       Color borderColor,
       Color textColor,
       Color mutedTextColor,
       bool isDark) {
+    // Tone the footer status message off the LATEST timeline step (e.g.
+    // amber for "Processing: Pending", green once everything succeeds) —
+    // plain muted-gray text was too low-contrast to read at a glance
+    // against the card, especially for a message this important.
+    final footerTone = _statusTone(
+      details.timeline.isNotEmpty ? details.timeline.last.status : '',
+      isDark,
+    );
+
     return Container(
       padding: EdgeInsets.all(20.w),
       decoration: BoxDecoration(
@@ -271,13 +318,33 @@ class _TransactionDetailsScreenState
           SizedBox(height: 8.h),
           Divider(color: borderColor, height: 1),
           SizedBox(height: 8.h),
-          Text(
-            details.footerMessage,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 13.sp,
-              color: mutedTextColor,
+          if (details.footerMessage.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+              decoration: BoxDecoration(
+                color: footerTone.badgeBgColor,
+                borderRadius: BorderRadius.circular(10.r),
+                border: Border.all(color: footerTone.color.withOpacity(0.3)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(footerTone.icon, size: 16.sp, color: footerTone.color),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: Text(
+                      details.footerMessage,
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w600,
+                        color: footerTone.badgeTextColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           SizedBox(height: 12.h),
           Row(
             children: [
@@ -286,19 +353,41 @@ class _TransactionDetailsScreenState
                   flex: isSaving ? 4 : 10,
                   child: OutlinedButton.icon(
                     onPressed: () async {
-                      final url = Uri.parse(details.invoiceUrl);
+                      // Show loading overlay
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => const Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF167525)),
+                          ),
+                        ),
+                      );
                       try {
-                        final launched = await launchUrl(
-                          url,
-                          mode: LaunchMode.externalApplication,
+                        final file = await InvoiceService.downloadInvoice(
+                          details.invoiceUrl,
                         );
-                        if (!launched && context.mounted) {
-                          AppToast.show(
-                              context, 'No app found to open the invoice',
-                              type: ToastType.warning);
+                        if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
+                          Navigator.pushNamed(
+                            context,
+                            AppRouter.invoiceViewer,
+                            arguments: {
+                              'file_path': file.path,
+                              'title': 'Invoice',
+                            },
+                          );
+                        }
+                      } on InvoiceException catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
+                          AppToast.show(context, e.message,
+                              type: ToastType.error);
                         }
                       } catch (e) {
                         if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
                           AppToast.show(context, 'Could not open invoice',
                               type: ToastType.error);
                         }
@@ -307,7 +396,7 @@ class _TransactionDetailsScreenState
                     icon: Icon(Icons.download_rounded,
                         color: textColor, size: 20.sp),
                     label: Text('Invoice',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                             color: textColor,
                             fontSize: 13.sp,
                             fontWeight: FontWeight.bold)),
@@ -322,7 +411,7 @@ class _TransactionDetailsScreenState
                 ),
                 if (isSaving) SizedBox(width: 12.w),
               ],
-              if (isSaving && !isSip)
+              if (isSaving && !isSip && !isOffer)
                 Expanded(
                   flex: details.invoiceUrl.isNotEmpty ? 6 : 10,
                   child: DecoratedBox(
@@ -346,7 +435,7 @@ class _TransactionDetailsScreenState
                         elevation: 0,
                       ),
                       child: Text('Save ₹${details.amount} Again',
-                          style: TextStyle(
+                          style: GoogleFonts.playfairDisplay(
                               color: Colors.white,
                               fontSize: 13.sp,
                               fontWeight: FontWeight.bold)),
@@ -360,46 +449,66 @@ class _TransactionDetailsScreenState
     );
   }
 
+  /// Status -> (line/icon color, badge background, badge text, icon),
+  /// shared between each timeline step and the footer status message so
+  /// both agree on what "pending"/"failed"/"success" look like.
+  ({Color color, Color badgeBgColor, Color badgeTextColor, IconData icon})
+      _statusTone(String status, bool isDark) {
+    final statusLower = status.toLowerCase();
+    final bool isFailed = statusLower == 'failed' ||
+        statusLower == 'failure' ||
+        statusLower == 'cancelled' ||
+        statusLower == 'rejected';
+    final bool isPending =
+        statusLower == 'pending' || statusLower == 'processing';
+    final bool isOnHold = statusLower == 'on hold';
+
+    if (isFailed) {
+      return (
+        color: const Color(0xFFDC2626),
+        badgeBgColor: const Color(0xFFDC2626).withOpacity(0.12),
+        badgeTextColor:
+            isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+        icon: Icons.cancel_rounded,
+      );
+    } else if (isPending) {
+      return (
+        color: const Color(0xFFF59E0B),
+        badgeBgColor: const Color(0xFFF59E0B).withOpacity(0.12),
+        badgeTextColor:
+            isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+        icon: Icons.schedule_rounded,
+      );
+    } else if (isOnHold) {
+      return (
+        color: const Color(0xFFD97706),
+        badgeBgColor: const Color(0xFFD97706).withOpacity(0.12),
+        badgeTextColor:
+            isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+        icon: Icons.pause_circle_rounded,
+      );
+    }
+    // Success / default
+    return (
+      color: const Color(0xFF10B981),
+      badgeBgColor: const Color(0xFF10B981).withOpacity(0.15),
+      badgeTextColor:
+          isDark ? const Color(0xFF10B981) : const Color(0xFF059669),
+      icon: Icons.check_circle,
+    );
+  }
+
   Widget _buildTimelineStep(TimelineStep step,
       {bool isFirst = false,
       bool isLast = false,
       required Color textColor,
       required Color mutedTextColor,
       required bool isDark}) {
-    // Determine colors and icon based on status
-    final statusLower = step.status.toLowerCase();
-    final bool isFailed = statusLower == 'failed' ||
-        statusLower == 'failure' ||
-        statusLower == 'cancelled';
-    final bool isPending =
-        statusLower == 'pending' || statusLower == 'processing';
-
-    // Status-specific styling
-    final Color stepColor;
-    final Color badgeBgColor;
-    final Color badgeTextColor;
-    final IconData stepIcon;
-
-    if (isFailed) {
-      stepColor = const Color(0xFFDC2626);
-      badgeBgColor = const Color(0xFFDC2626).withOpacity(0.12);
-      badgeTextColor =
-          isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
-      stepIcon = Icons.cancel_rounded;
-    } else if (isPending) {
-      stepColor = const Color(0xFFF59E0B);
-      badgeBgColor = const Color(0xFFF59E0B).withOpacity(0.12);
-      badgeTextColor =
-          isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
-      stepIcon = Icons.schedule_rounded;
-    } else {
-      // Success / default
-      stepColor = const Color(0xFF10B981);
-      badgeBgColor = const Color(0xFF10B981).withOpacity(0.15);
-      badgeTextColor =
-          isDark ? const Color(0xFF10B981) : const Color(0xFF059669);
-      stepIcon = Icons.check_circle;
-    }
+    final tone = _statusTone(step.status, isDark);
+    final stepColor = tone.color;
+    final stepIcon = tone.icon;
+    final badgeBgColor = tone.badgeBgColor;
+    final badgeTextColor = tone.badgeTextColor;
 
     return IntrinsicHeight(
       child: Row(
@@ -460,6 +569,17 @@ class _TransactionDetailsScreenState
                     style: GoogleFonts.lora(
                         fontSize: 12.sp, color: mutedTextColor),
                   ),
+                  if (step.reason.isNotEmpty) ...[
+                    SizedBox(height: 4.h),
+                    Text(
+                      step.reason,
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 12.sp,
+                        color: stepColor,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -496,7 +616,7 @@ class _TransactionDetailsScreenState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'SIP Plan Details',
+                'AutoGold Plan Details',
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 14.sp,
                   fontWeight: FontWeight.bold,
@@ -522,12 +642,13 @@ class _TransactionDetailsScreenState
             ],
           ),
           SizedBox(height: 14.h),
+          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor,
+              isNumericValue: false),
           _buildDetailRow(
-              'Plan', scheme.label, textColor, mutedTextColor),
+              'Frequency', scheme.frequency, textColor, mutedTextColor,
+              isNumericValue: false),
           _buildDetailRow(
-              'Frequency', scheme.frequency, textColor, mutedTextColor),
-          _buildDetailRow(
-              'SIP Amount', '₹${scheme.amount}', textColor, mutedTextColor),
+              'AutoGold Amount', '₹${scheme.amount}', textColor, mutedTextColor),
           _buildDetailRow(
               'Total Saved', '₹${scheme.totalSaved}', textColor, mutedTextColor),
           _buildDetailRow(
@@ -542,6 +663,7 @@ class _TransactionDetailsScreenState
       bool isSaving,
       bool isSip,
       bool isReferral,
+      bool isOffer,
       Color cardColor,
       Color borderColor,
       Color textColor,
@@ -549,25 +671,30 @@ class _TransactionDetailsScreenState
       bool isDark) {
     // Section title
     final String sectionTitle = isSip
-        ? 'SIP Order Details'
+        ? 'AutoGold Order Details'
         : isSaving
             ? 'Order Details'
             : isReferral
                 ? 'Referral Reward Details'
-                : 'Withdrawal Details';
+                : isOffer
+                    ? 'Offer Details'
+                    : 'Withdrawal Details';
 
-    // Row labels
+    // Row labels — use metal-appropriate labels for offer
+    final String baseMetal = details.metalName.toLowerCase().contains('silver') ? 'Silver' : 'Gold';
     final String rateLabel = isSip
-        ? '${details.metalName} Rate'
+        ? '$baseMetal Rate'
         : isSaving
-            ? 'Gold Purchased At'
+            ? '$baseMetal Purchased At'
             : isReferral
-                ? 'Gold Credited At'
-                : 'Gold Sold At';
+                ? '$baseMetal Credited At'
+                : isOffer
+                    ? '$baseMetal Rate'
+                    : '$baseMetal Sold At';
 
     final String subSectionTitle = isSaving
         ? 'Transaction Details'
-        : isReferral
+        : (isReferral || isOffer)
             ? 'Reward Details'
             : 'Settlement Details';
 
@@ -617,12 +744,16 @@ class _TransactionDetailsScreenState
             SizedBox(height: 4.h),
             _buildDetailRow(rateLabel,
                 details.priceBreakdown.rate, textColor, mutedTextColor),
-            _buildDetailRow('Gold Quantity', details.priceBreakdown.quantity,
+            _buildDetailRow('$baseMetal Quantity', details.priceBreakdown.quantity,
                 textColor, mutedTextColor),
-            _buildDetailRow('Gold Value', details.priceBreakdown.value,
+            _buildDetailRow('$baseMetal Value', details.priceBreakdown.value,
                 textColor, mutedTextColor),
-            _buildDetailRow(
-                'GST', details.priceBreakdown.gst, textColor, mutedTextColor),
+            _buildDetailRow('CGST', details.priceBreakdown.cgst, textColor,
+                mutedTextColor,
+                percentText: '(${details.priceBreakdown.cgstPercent}%)'),
+            _buildDetailRow('SGST', details.priceBreakdown.sgst, textColor,
+                mutedTextColor,
+                percentText: '(${details.priceBreakdown.sgstPercent}%)'),
             Divider(color: borderColor, height: 16.h),
             _buildDetailRow(
                 isReferral ? 'Reward Amount' : 'Amount',
@@ -642,7 +773,7 @@ class _TransactionDetailsScreenState
             ),
             SizedBox(height: 8.h),
             _buildDetailRow(
-                isReferral ? 'Reward ID' : 'Order ID',
+                (isReferral || isOffer) ? 'Reward ID' : 'Order ID',
                 details.orderId, textColor, mutedTextColor,
                 showCopy: true),
             _buildDetailRow(
@@ -653,44 +784,74 @@ class _TransactionDetailsScreenState
                 showCopy: true),
             _buildDetailRow('Placed On', details.technicalDetails.placedOn,
                 textColor, mutedTextColor),
-            if (!isReferral)
+            if (!isReferral && !isOffer)
               _buildDetailRow('Paid Via',
-                  details.technicalDetails.paidVia, textColor, mutedTextColor),
+                  details.technicalDetails.paidVia, textColor, mutedTextColor,
+                  isNumericValue: false),
           ]
         ],
       ),
     );
   }
 
+  /// [percentText] (e.g. "(1.50%)") renders in Lora, same as [value] —
+  /// Playfair/AppTextStyles' stylized digits look mismatched next to Lora's
+  /// plain numerals when a rate is embedded in the label itself.
   Widget _buildDetailRow(
       String label, String value, Color textColor, Color mutedTextColor,
-      {bool isBold = false, bool showCopy = false}) {
+      {bool isBold = false, bool showCopy = false, bool isNumericValue = true,
+      String? percentText}) {
     // Hide row when server returns empty / placeholder data
     if (value.isEmpty || value == 'N/A' || value == 'null') {
       return const SizedBox.shrink();
     }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 5.h),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 13.sp,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-              color: isBold ? textColor : mutedTextColor,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                label,
+                style: isBold
+                    ? GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      )
+                    : AppTextStyles.bodySmall(isDark)
+                        .copyWith(color: mutedTextColor),
+              ),
+              if (percentText != null) ...[
+                SizedBox(width: 4.w),
+                Text(percentText,
+                    style: GoogleFonts.lora(
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                      color: mutedTextColor,
+                    )),
+              ],
+            ],
           ),
           Row(
             children: [
               Text(
                 value,
-                style: GoogleFonts.lora(
-                  fontSize: 13.sp,
-                  fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-                  color: textColor,
-                ),
+                style: isNumericValue
+                    ? GoogleFonts.lora(
+                        fontSize: 13.sp,
+                        fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+                        color: textColor,
+                      )
+                    : GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp,
+                        fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+                        color: textColor,
+                      ),
               ),
               if (showCopy) ...[
                 SizedBox(width: 8.w),
@@ -728,6 +889,8 @@ class _TransactionDetailsScreenState
             : 'assets/withdraw/sip_silver.svg';
       case 'referral':
         return 'assets/withdraw/trans_referal.svg';
+      case 'offer':
+        return 'assets/withdraw/offer-reward-silver.svg';
       default: // withdrawal
         return isGold
             ? 'assets/withdraw/with_gold.svg'

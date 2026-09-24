@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 import '../../../core/network/api_client.dart';
 import '../models/saving_models.dart';
 import '../../../core/security/secure_logger.dart';
@@ -45,6 +43,7 @@ class SavingService {
     required double rate,
     required double weight,
     String? couponCode,
+    String? paymentMethod, // "upi", "card", "netbanking" — gateway routing hint
   }) async {
     SecureLogger.d(
         '[INITIATE] buy_type → $buyType (${buyType == 1 ? 'AMOUNT' : 'GRAMS'})');
@@ -59,13 +58,22 @@ class SavingService {
       'device_id': 'device-id-placeholder',
       'coupon_code': couponCode,
       'request_from': 'instant',
+      if (paymentMethod != null) 'payment_method': paymentMethod,
     });
     return PurchaseInitiateResponse.fromJson(response.data['data']);
   }
 
-  Future<Map<String, dynamic>> confirmPayment(String orderId) async {
+  Future<Map<String, dynamic>> confirmPayment(
+    String orderId, {
+    String? razorpayPaymentId,
+    String? razorpaySignature,
+    String? razorpayOrderId,
+  }) async {
     final response = await _apiClient.post('savings/confirm-payment', data: {
       'order_id': orderId,
+      if (razorpayPaymentId != null) 'razorpay_payment_id': razorpayPaymentId,
+      if (razorpaySignature != null) 'razorpay_signature': razorpaySignature,
+      if (razorpayOrderId != null) 'razorpay_order_id': razorpayOrderId,
     });
     return response.data;
   }

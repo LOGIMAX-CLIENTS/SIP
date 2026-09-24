@@ -41,7 +41,16 @@ class WithdrawalState {
 class WithdrawalNotifier extends StateNotifier<WithdrawalState> {
   WithdrawalNotifier() : super(WithdrawalState());
 
+  /// No-ops once a withdrawal is already in flight (isProcessing) — a
+  /// customer who keeps typing (e.g. "5" -> "50") in the same instant they
+  /// tap Withdrawal could otherwise land on the confirmation screen with an
+  /// amount the policy/eligibility checks never actually validated, since
+  /// those screens re-read this same live amount rather than a value
+  /// captured at validation time. This guard is a synchronous check against
+  /// the CURRENT state, so it holds regardless of whether the calling
+  /// screen's TextField has re-rendered as disabled yet.
   void updateAmount(double value) {
+    if (state.isProcessing) return;
     state = state.copyWith(amount: value, error: null);
   }
 

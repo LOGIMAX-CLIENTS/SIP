@@ -2,9 +2,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../config/app_config.dart';
 import '../models/app_control_model.dart';
 import '../services/app_control_service.dart';
 import '../security/certificate_pinning.dart';
+import '../security/screenshot_security_service.dart';
+import 'environment_provider.dart';
 
 // ─── Intervals ────────────────────────────────────────────────────────────────
 const _kAlertPollInterval = Duration(minutes: 1); // check every 1 min globally
@@ -122,6 +125,27 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
         final pins = rawPins.cast<String>();
         await CertificatePinning.updatePins(pins);
       }
+
+      // ── Dynamic Screenshot Protection Update ──
+      final security = dataMap is Map ? dataMap['security'] : null;
+      if (security is Map) {
+        final enableSec = security['enable_screenshot_protection'];
+        if (enableSec is bool) {
+          if (AppConfig.enableScreenshotProtection != enableSec) {
+            AppConfig.enableScreenshotProtection = enableSec;
+            await ScreenshotSecurityService.initialize();
+          }
+        }
+      }
+
+      // ── MPIN Lock Timing / Biometric Kill-Switch Update ──
+      // Server-driven options for Profile > Security > "MPIN & Biometric
+      // Timing" — see MpinLockConfig's docstring.
+      final mpinLock = controlData.mpinLock;
+      AppConfig.mpinLockTimeoutOptionsSeconds =
+          mpinLock.sessionTimeoutOptionsSeconds;
+      AppConfig.mpinLockDefaultTimeoutSeconds = mpinLock.defaultTimeoutSeconds;
+      AppConfig.biometricLoginEnabled = mpinLock.biometricLoginEnabled;
 
       if (kDebugMode) {
         debugPrint(
@@ -295,12 +319,17 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
   }
 }
 
-final _appControlServiceProvider =
-    Provider<AppControlService>((ref) => AppControlService());
+final _appControlServiceProvider = Provider<AppControlService>((ref) {
+  ref.watch(environmentProvider);
+  return AppControlService();
+});
 
 final appControlProvider =
     StateNotifierProvider<AppControlNotifier, AppControlState>(
-  (ref) => AppControlNotifier(ref.read(_appControlServiceProvider)),
+  (ref) {
+    ref.watch(environmentProvider);
+    return AppControlNotifier(ref.read(_appControlServiceProvider));
+  },
 );
 
 /// Result of a [checkBeforeAction] call.

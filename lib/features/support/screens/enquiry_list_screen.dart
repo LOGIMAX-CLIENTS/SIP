@@ -8,6 +8,7 @@ import 'package:startgold/shared/theme/app_theme.dart';
 import 'package:startgold/shared/widgets/animations.dart';
 import 'package:startgold/shared/widgets/gradient_header.dart';
 import 'package:startgold/routes/app_router.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 
 class EnquiryListScreen extends ConsumerWidget {
   const EnquiryListScreen({super.key});
@@ -49,11 +50,7 @@ class EnquiryListScreen extends ConsumerWidget {
             icon: const Icon(Icons.add_rounded, color: Colors.white),
             label: Text(
               'New Enquiry',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 15.sp,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
+              style: AppTextStyles.button(false),
             ),
           ),
         ),
@@ -63,17 +60,34 @@ class EnquiryListScreen extends ConsumerWidget {
           // ── Gradient Header ─────────────────────────────────────────────
           GradientHeader(
             title: 'My Enquiries',
-            trailing: IconButton(
-              onPressed: () => Navigator.pushNamed(context, AppRouter.enquiryForm)
-                  .then((_) => ref.refresh(enquiriesProvider)),
-              icon: Container(
-                padding: EdgeInsets.all(8.w),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10.r),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: () => ref.refresh(enquiriesProvider),
+                  icon: Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                    child: Icon(Icons.refresh_rounded, color: Colors.white, size: 20.sp),
+                  ),
                 ),
-                child: Icon(Icons.add_comment_outlined, color: Colors.white, size: 20.sp),
-              ),
+                SizedBox(width: 4.w),
+                IconButton(
+                  onPressed: () => Navigator.pushNamed(context, AppRouter.enquiryForm)
+                      .then((_) => ref.refresh(enquiriesProvider)),
+                  icon: Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                    child: Icon(Icons.add_comment_outlined, color: Colors.white, size: 20.sp),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -130,6 +144,7 @@ class EnquiryListScreen extends ConsumerWidget {
   }
 
   Widget _buildEmpty(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Center(
       child: Padding(
         padding: EdgeInsets.all(40.w),
@@ -149,11 +164,7 @@ class EnquiryListScreen extends ConsumerWidget {
             SizedBox(height: 20.h),
             Text(
               'No Enquiries Yet',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 18.sp,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF1A2332),
-              ),
+              style: AppTextStyles.titleMedium(isDark),
             ),
             SizedBox(height: 8.h),
             Text(
@@ -282,6 +293,51 @@ class EnquiryListScreen extends ConsumerWidget {
                   ),
                 ),
               ],
+            ),
+          ],
+
+          // ── Admin response (sr_comments) ────────────────────────────
+          // Empty until an admin actually replies — see PM-STG-0526, the
+          // list API previously never sent this field to the app at all.
+          if (enquiry.comments.isNotEmpty) ...[
+            SizedBox(height: 12.h),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(12.w),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGreen.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12.r),
+                border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.support_agent_rounded,
+                          size: 14.sp, color: AppTheme.primaryGreen),
+                      SizedBox(width: 6.w),
+                      Text(
+                        'Response from support',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 11.sp,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primaryGreen,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 6.h),
+                  Text(
+                    enquiry.comments,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 13.sp,
+                      color: isDark ? Colors.white70 : const Color(0xFF333333),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
 

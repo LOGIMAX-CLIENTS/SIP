@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:startgold/shared/theme/app_text_styles.dart';
 import '../../shared/widgets/numeric_styled_text.dart';
 import 'package:startgold/core/providers/market_provider.dart';
 import 'package:startgold/core/providers/commodity_provider.dart';
@@ -22,9 +24,15 @@ import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/gradient_header.dart';
 import '../../shared/widgets/loaders.dart';
 import '../../core/security/secure_logger.dart';
+import '../../core/security/app_lifecycle_observer.dart';
 import '../../core/error/failures.dart';
 import '../../shared/utils/no_leading_zeros_formatter.dart';
+import '../../shared/widgets/secure_clipboard.dart';
 import 'payment_handler.dart';
+import 'widgets/payment_method_sheet.dart';
+import '../kyc/kyc_flow.dart';
+import '../kyc/bank_verification_flow.dart';
+import '../../core/providers/countdown_offer_provider.dart';
 
 class InstantSavingScreen extends ConsumerStatefulWidget {
   const InstantSavingScreen({super.key});
@@ -35,7 +43,7 @@ class InstantSavingScreen extends ConsumerStatefulWidget {
 }
 
 class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _amountController = TextEditingController();
   late AnimationController _pulseController;
   String _selectedAmount = '';
@@ -43,9 +51,53 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
   bool _isProcessing = false;
 
+  // True only while we're waiting on a payment-gateway SDK callback
+  // (Cashfree/HDFC/Razorpay) — as opposed to `_isProcessing` alone, which is
+  // also briefly true for the local check-eligibility call. Used to scope
+  // the didChangeAppLifecycleState fallback below to the gateway leg only.
+  bool _awaitingPaymentCallback = false;
+  Timer? _paymentWatchdogTimer;
+
+  void _startPaymentLoading() {
+    _paymentWatchdogTimer?.cancel();
+    setState(() {
+      _isProcessing = true;
+      _awaitingPaymentCallback = true;
+    });
+    // Safety watchdog: after 45 seconds, if the gateway SDK hasn't called back, auto-clear
+    _paymentWatchdogTimer = Timer(const Duration(seconds: 45), () {
+      if (mounted && (_isProcessing || _awaitingPaymentCallback)) {
+        SecureLogger.d(
+            'INSTANT SAVING: Payment watchdog timer expired — clearing stuck loading state');
+        AppLifecycleObserver.suppressAppLock = false;
+        setState(() {
+          _isProcessing = false;
+          _awaitingPaymentCallback = false;
+        });
+        AppToast.show(
+          context,
+          'Payment status could not be verified automatically. Please check your order history.',
+          type: ToastType.warning,
+          position: ToastPosition.center,
+        );
+      }
+    });
+  }
+
+  void _stopPaymentLoading() {
+    _paymentWatchdogTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _isProcessing = false;
+        _awaitingPaymentCallback = false;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -89,9 +141,44 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _paymentWatchdogTimer?.cancel();
     _pulseController.dispose();
     _amountController.dispose();
     super.dispose();
+  }
+
+  /// Fallback: if the app resumes (e.g. the user returns from the Cashfree/
+  /// HDFC/Razorpay checkout) while we're still waiting on that gateway's SDK
+  /// callback, the callback may simply never arrive — the checkout activity
+  /// can be dismissed by a back-swipe, the process can be killed by the OS
+  /// while backgrounded for a UPI app switch, etc. Without this, `_isProcessing`
+  /// stays stuck `true` forever (this screen lives inside an IndexedStack, so
+  /// re-visiting the tab keeps showing the same stuck "Processing Payment..."
+  /// overlay). A short delay gives the real callback a chance to land first.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed ||
+        !_isProcessing ||
+        !_awaitingPaymentCallback) {
+      return;
+    }
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted || !_isProcessing || !_awaitingPaymentCallback) return;
+      SecureLogger.d(
+          'INSTANT SAVING: Resumed without a gateway callback — clearing stuck loading state');
+      // The callback that would normally clear this never fired, so make
+      // sure app-lock suppression (set before launching the gateway) doesn't
+      // stay stuck on too.
+      AppLifecycleObserver.suppressAppLock = false;
+      _stopPaymentLoading();
+      AppToast.show(
+        context,
+        'We could not confirm your payment status. Please check Order History before retrying.',
+        type: ToastType.warning,
+        position: ToastPosition.center,
+      );
+    });
   }
 
   @override
@@ -277,6 +364,139 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         ? AsyncData<MarketRates>(displayRates)
         : liveMarket; // still loading on first open
 
+    if (_isProcessing) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment(-0.87, -0.5),
+                  end: Alignment(0.87, 0.5),
+                  colors: [Color(0xFF003716), Color(0xFF167525)],
+                  stops: [0.0223, 0.9399],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(24.w, 12.h, 16.w, 12.h),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        ref.tr('Secure Payment'),
+                        textAlign: TextAlign.left,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        tooltip: 'Cancel',
+                        onPressed: () {
+                          AppLifecycleObserver.suppressAppLock = false;
+                          _stopPaymentLoading();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 32.w),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 50.w,
+                        height: 50.w,
+                        child: const CircularProgressIndicator(
+                          color: Color(0xFF1B882C),
+                          strokeWidth: 4,
+                        ),
+                      ),
+                      SizedBox(height: 32.h),
+                      Text(
+                        ref.tr('Processing Payment...'),
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 20.sp,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF003716),
+                        ),
+                      ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        ref.tr('Please do not press back or close the app while we secure your transaction.'),
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 13.sp,
+                          color: Colors.black45,
+                          height: 1.4,
+                        ),
+                      ),
+                      SizedBox(height: 24.h),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          AppLifecycleObserver.suppressAppLock = false;
+                          _stopPaymentLoading();
+                        },
+                        icon: const Icon(Icons.close, size: 16, color: Color(0xFF91411D)),
+                        label: Text(
+                          ref.tr('Cancel Payment'),
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 13.sp,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF91411D),
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF91411D), width: 1.2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                          ),
+                          padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 8.h),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 24.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.shield_outlined,
+                        color: const Color(0xFF91411D), size: 14.sp),
+                    SizedBox(width: 6.w),
+                    Text(
+                      ref.tr('100% Secure Transaction'),
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 11.sp,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF91411D).withOpacity(0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
@@ -342,6 +562,9 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                   SizedBox(height: 10.h),
                   _buildAmountInputCard(isDark, type, marketState, configAsync,
                       amountDenoms, weightDenoms),
+                  // ── Best Offer block (Gold only, when countdown offer is enabled & silver market open) ──
+                  if (type == CommodityType.gold && marketStatusMap['3'] != false)
+                    _buildBestOfferBlock(isDark, marketState, configAsync),
                   SizedBox(height: 16.h),
                 ],
               ),
@@ -384,7 +607,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 children: [
                   Text(
                     'Live Selling Price',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                       fontSize: 14.sp,
                       color: Colors.black45,
                       fontWeight: FontWeight.w600,
@@ -429,7 +652,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       SizedBox(width: 4.w),
                       Text(
                         'Market Closed',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           fontSize: 11.sp,
                           color: const Color(0xFFD97706),
                           fontWeight: FontWeight.w700,
@@ -598,7 +821,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         child: Center(
           child: Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 14.sp,
               fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
               color: isActive
@@ -637,7 +860,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           ),
           SizedBox(width: 10.w),
           Text(label,
-              style: TextStyle(
+              style: GoogleFonts.playfairDisplay(
                   fontSize: 14.sp,
                   fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                   color: isActive ? Colors.black : Colors.black45)),
@@ -662,10 +885,9 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
       if (_isAmountMode) {
         final double gstRate = configAsync.valueOrNull?.gst ?? 3.0;
-        final double goldValue = inputVal / (1 + (gstRate / 100));
-        conversion = rate > 0 ? goldValue / rate : 0.0;
+        conversion = _amountSplit(inputVal, rate, gstRate)['grams']!;
       } else {
-        conversion = inputVal * rate;
+        conversion = _trunc2(inputVal * rate);
       }
     }
 
@@ -682,10 +904,10 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       }
       if (comparable < config.minAmount) {
         errorMsg =
-            'Minimum investment amount is ₹${config.minAmount.toStringAsFixed(0)}';
+            'Minimum savings amount is ₹${config.minAmount.toStringAsFixed(0)}';
       } else if (comparable > config.maxAmount) {
         errorMsg =
-            'Maximum investment amount is ₹${config.maxAmount.toStringAsFixed(0)}';
+            'Maximum savings amount is ₹${config.maxAmount.toStringAsFixed(0)}';
       }
     }
     final bool hasError = errorMsg != null;
@@ -701,9 +923,9 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Select invest type ──
-            Text('Select Invest Type',
-                style: TextStyle(
+            // ── Select savings type ──
+            Text('Select Purchase Type',
+                style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                     fontWeight: FontWeight.w600)),
@@ -761,7 +983,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
             // ── Enter your saving amount ──
             Text('Enter Your Saving Amount',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                     fontWeight: FontWeight.w600)),
@@ -797,14 +1019,29 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                   Expanded(
                     child: TextField(
                       controller: _amountController,
+                      contextMenuBuilder: SecureClipboard.none,
+                      enableSuggestions: false,
+                      autocorrect: false,
                       onChanged: (v) => setState(() => _selectedAmount = v),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*\.?\d*')),
-                        const NoLeadingZerosFormatter(),
-                      ],
+                      keyboardType: TextInputType.numberWithOptions(
+                          decimal: !_isAmountMode),
+                      // Rupees mode: whole numbers only (matches SIP's rule).
+                      // Grams mode: decimals allowed, capped at 6 places —
+                      // matching the app's own display/calculation precision
+                      // (see _trunc6) so the field never accepts more
+                      // precision than is actually used downstream.
+                      inputFormatters: _isAmountMode
+                          ? [
+                              FilteringTextInputFormatter.digitsOnly,
+                              const NoLeadingZerosFormatter(allowDecimal: false),
+                              LengthLimitingTextInputFormatter(8),
+                            ]
+                          : [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d*\.?\d{0,6}')),
+                              const NoLeadingZerosFormatter(),
+                              LengthLimitingTextInputFormatter(12),
+                            ],
                       style: GoogleFonts.lora(
                           fontSize: 20.sp,
                           fontWeight: FontWeight.w700,
@@ -817,7 +1054,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                   if (inputVal > 0)
                     Text(
                       _isAmountMode
-                          ? '${conversion.toStringAsFixed(4)}gm'
+                          ? '${conversion.toStringAsFixed(6)}gm'
                           : '\u20b9${conversion.toStringAsFixed(2)}',
                       style: GoogleFonts.lora(
                           fontSize: 12.sp,
@@ -845,7 +1082,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                     Expanded(
                       child: Text(
                         errorMsg!,
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           fontSize: 12.sp,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFFE53935),
@@ -869,6 +1106,210 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Best Offer block — shows FREE SILVER reward info.
+  /// Only rendered when:
+  ///   1. Countdown offer is enabled (server settings)
+  ///   2. Gold commodity is selected (not Silver)
+  Widget _buildBestOfferBlock(
+      bool isDark,
+      AsyncValue<MarketRates> marketState,
+      AsyncValue<SavingConfig> configAsync) {
+    final offerAsync = ref.watch(countdownOfferProvider);
+
+    return offerAsync.maybeWhen(
+      data: (offer) {
+        if (!offer.enabled) return const SizedBox.shrink();
+
+        // Determine reward percentage from the offer
+        // For NEW customers: if input amount >= benchmark_amount, use
+        // benchmark_percentage; otherwise use reward_percentage.
+        final double inputVal =
+            double.tryParse(_amountController.text) ?? 0.0;
+        final int rewardPercentage;
+        if (offer.customerType == 'EXISTING' && offer.existingOffer != null) {
+          rewardPercentage = offer.existingOffer!.currentRewardPercentage;
+        } else if (offer.customerType == 'NEW' && offer.newOffer != null) {
+          final newOffer = offer.newOffer!;
+          if (newOffer.benchmarkEnabled &&
+              newOffer.benchmarkAmount > 0 &&
+              inputVal >= newOffer.benchmarkAmount) {
+            rewardPercentage = newOffer.benchmarkPercentage;
+          } else {
+            rewardPercentage = newOffer.rewardPercentage;
+          }
+        } else {
+          return const SizedBox.shrink();
+        }
+
+        // Calculate silver reward step-by-step.
+        // Precision rules (matching backend):
+        //   - Amounts (₹) → truncate to 2 decimals
+        //   - Weights (gm) → truncate to 6 decimals
+        //
+        // Backend formula:
+        //   so_qty       = gold weight in grams                    (6 decimals)
+        //   target_wt    = so_qty × (reward_pct / 100)             (6 decimals)
+        //   reward_amt   = target_wt × silver_sell_rate             (2 decimals)
+        //   reward_net   = reward_amt / (1 + gst / 100)            (2 decimals)
+        //   reward_qty   = reward_net / silver_sell_rate            (6 decimals)
+        final double goldRate =
+            marketState.valueOrNull?.goldSell ?? 0.0;
+        final double silverRate =
+            marketState.valueOrNull?.silverSell ?? 0.0;
+        final double gstRate = configAsync.valueOrNull?.gst ?? 3.0;
+
+        // Step 0: Determine gold quantity (so_qty) in grams → 6 decimals
+        double goldQty = 0.0;
+        if (inputVal > 0 && goldRate > 0) {
+          if (_isAmountMode) {
+            // ₹ mode → remove GST → convert to grams
+            goldQty = _amountSplit(inputVal, goldRate, gstRate)['grams']!;
+          } else {
+            // Grams mode → user entered gold grams directly
+            goldQty = _trunc6(inputVal);
+          }
+        }
+
+        // Steps 1–3: Silver reward with proper precision at each step
+        double silverGrams = 0.0;
+        if (goldQty > 0 && silverRate > 0) {
+          final targetWt   = _trunc6(goldQty * rewardPercentage / 100);
+          final rewardAmt  = _trunc2(targetWt * silverRate);
+          final rewardNet  = _trunc2(rewardAmt / (1 + (gstRate / 100)));
+          silverGrams      = _trunc6(rewardNet / silverRate);
+        }
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24.w, 16.h, 24.w, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // "Best Offer" label
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 6.h),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [Color(0xFF1B882C), Color(0xFF003716)],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(12.r),
+                    topRight: Radius.circular(12.r),
+                  ),
+                ),
+                child: Text(
+                  'Best Offer',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              // Offer content card
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(16.w),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FFF4),
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(16.r),
+                    bottomLeft: Radius.circular(16.r),
+                    bottomRight: Radius.circular(16.r),
+                  ),
+                  border: Border.all(
+                    color: const Color(0xFF1B882C).withValues(alpha: 0.15),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 32.w,
+                      height: 32.w,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B882C).withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.card_giftcard_rounded,
+                        size: 18.sp,
+                        color: const Color(0xFF1B882C),
+                      ),
+                    ),
+                    SizedBox(width: 12.w),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'FREE SILVER',
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 14.sp,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF064E3B),
+                            ),
+                          ),
+                          SizedBox(height: 4.h),
+                          if (silverGrams > 0) ...[
+                            RichText(
+                              text: TextSpan(
+                                style: GoogleFonts.playfairDisplay(
+                                  fontSize: 12.sp,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF064E3B).withValues(alpha: 0.7),
+                                  height: 1.5,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'You will receive '),
+                                  TextSpan(
+                                    text: '${silverGrams.toStringAsFixed(6)} gm',
+                                    style: GoogleFonts.lora(
+                                      fontSize: 12.sp,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF064E3B),
+                                    ),
+                                  ),
+                                  const TextSpan(
+                                      text: ' of silver rewards equivalent to your gold investment.'),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: 2.h),
+                            Text(
+                              'Incl. 3% GST',
+                              style: GoogleFonts.lora(
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF064E3B).withValues(alpha: 0.45),
+                              ),
+                            ),
+                          ] else ...[
+                            Text(
+                              'Get free silver rewards equivalent to your gold investment.',
+                              style: GoogleFonts.playfairDisplay(
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF064E3B).withValues(alpha: 0.7),
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 
@@ -970,7 +1411,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       ),
                       child: Text(
                         'POPULAR',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                           color: Colors.white,
                           fontSize: 8.sp,
                           letterSpacing: 0.5,
@@ -987,12 +1428,31 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     );
   }
 
+  /// Splits a combined GST amount into CGST/SGST using the config's own
+  /// cgst:sgst rate ratio (not necessarily an even half — mirrors the
+  /// backend's TaxSplitService). SGST is the residual (total - CGST) so the
+  /// two always sum back to exactly the total shown, the same guarantee the
+  /// backend's split makes on the invoice.
+  static Map<String, double> _splitGstAmount(
+      double totalGst, double cgstRate, double sgstRate) {
+    final double sumRate = cgstRate + sgstRate;
+    final double cgstRatio = sumRate > 0 ? cgstRate / sumRate : 0.5;
+    final double cgstAmount =
+        double.parse((totalGst * cgstRatio).toStringAsFixed(2));
+    final double sgstAmount =
+        double.parse((totalGst - cgstAmount).toStringAsFixed(2));
+    return {'cgst': cgstAmount, 'sgst': sgstAmount};
+  }
+
   // ── Breakdown helpers (used in bottom sheet) ────────────────────
   Map<String, double> _computeBreakdown(AsyncValue<dynamic> market,
       CommodityType type, AsyncValue<SavingConfig> configAsync) {
     final config = configAsync.valueOrNull;
     if (config == null || !market.hasValue) {
-      return {'total': 0, 'metalValue': 0, 'gst': 0, 'grams': 0, 'gstRate': 3};
+      return {
+        'total': 0, 'metalValue': 0, 'gst': 0, 'grams': 0, 'gstRate': 3,
+        'cgstRate': 1.5, 'sgstRate': 1.5, 'cgst': 0, 'sgst': 0,
+      };
     }
     final inputVal = double.tryParse(_selectedAmount) ?? 0.0;
     final double gstRate = config.gst / 100;
@@ -1001,22 +1461,30 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         : market.value.silverSell;
     double totalPayable, metalValue, gstAmount, grams;
     if (_isAmountMode) {
-      totalPayable = inputVal;
-      metalValue = totalPayable / (1 + gstRate);
-      gstAmount = totalPayable - metalValue;
-      grams = rate > 0 ? metalValue / rate : 0.0;
+      final split = _amountSplit(inputVal, rate, config.gst);
+      totalPayable = split['total']!;
+      gstAmount = split['gst']!;
+      metalValue = split['metalValue']!;
+      grams = split['grams']!;
     } else {
-      grams = inputVal;
-      metalValue = grams * rate;
-      gstAmount = metalValue * gstRate;
+      grams = _trunc6(inputVal);
+      metalValue = _trunc2(grams * rate);
+      gstAmount = _roundTaxToEvenPaisa(metalValue * gstRate);
+      // Same reasoning as above — metalValue and gstAmount are already
+      // exact to the paisa, so sum them directly instead of re-flooring.
       totalPayable = metalValue + gstAmount;
     }
+    final gstSplit = _splitGstAmount(gstAmount, config.cgst, config.sgst);
     return {
       'total': totalPayable,
       'metalValue': metalValue,
       'gst': gstAmount,
       'grams': grams,
       'gstRate': config.gst,
+      'cgstRate': config.cgst,
+      'sgstRate': config.sgst,
+      'cgst': gstSplit['cgst']!,
+      'sgst': gstSplit['sgst']!,
     };
   }
 
@@ -1035,6 +1503,10 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
         gstAmount: b['gst']!,
         grams: b['grams']!,
         gstRate: b['gstRate']!,
+        cgstRate: b['cgstRate']!,
+        sgstRate: b['sgstRate']!,
+        cgstAmount: b['cgst']!,
+        sgstAmount: b['sgst']!,
         metalLabel: metalLabel,
         isInvalid: b['total']! <= 0 ||
             b['total']! < (configAsync.valueOrNull?.minAmount ?? 0) ||
@@ -1042,9 +1514,10 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 (configAsync.valueOrNull?.maxAmount ?? double.infinity),
         isProcessing: _isProcessing,
         onPayNow: () {
-          Navigator.pop(context); // close sheet
-          final config = configAsync.valueOrNull!;
-          _handleConfirmOrder(market, type, b['total']!, config, b['grams']!);
+          Navigator.pop(context); // close breakdown sheet
+          // Show payment method selection before proceeding
+          _showPaymentMethodSheet(
+            market, type, b['total']!, configAsync.valueOrNull!, b['grams']!);
         },
       ),
     );
@@ -1096,7 +1569,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
               SizedBox(width: 6.w),
               Text(
                 '100% Secure Transaction & Bank Grade Storage',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                   fontSize: 11.sp,
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF91411D).withOpacity(0.75),
@@ -1130,7 +1603,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '₹${totalPayable > 0 ? totalPayable.toStringAsFixed(0) : '0'}',
+                          '₹${totalPayable > 0 ? totalPayable.toStringAsFixed(2) : '0'}',
                           style: GoogleFonts.lora(
                             fontSize: 18.sp,
                             fontWeight: FontWeight.w700,
@@ -1148,7 +1621,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 GestureDetector(
                   onTap: (isInvalid || _isProcessing)
                       ? null
-                      : () => _handleConfirmOrder(
+                      : () => _showPaymentMethodSheet(
                           market, type, totalPayable, config, grams),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
@@ -1191,7 +1664,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                           SizedBox(width: 8.w),
                           Text(
                             'Pay Now',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 16.sp,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
@@ -1211,9 +1684,31 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     );
   }
 
+  /// Shows the payment method bottom sheet and then calls _handleConfirmOrder
+  /// with the selected method once the user taps "Proceed to Pay".
+  void _showPaymentMethodSheet(
+    AsyncValue<dynamic> market,
+    CommodityType type,
+    double totalPayable,
+    SavingConfig config,
+    double grams,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => PaymentMethodSheet(
+        onProceed: (String paymentMethod) {
+          _handleConfirmOrder(
+              market, type, totalPayable, config, grams, paymentMethod);
+        },
+      ),
+    );
+  }
+
   Future<void> _handleConfirmOrder(AsyncValue<dynamic> market,
       CommodityType type, double totalPayable, SavingConfig config,
-      [double grams = 0.0]) async {
+      [double grams = 0.0, String? paymentMethod]) async {
     SecureLogger.d(
         'ORDER FLOW: Starting confirmation for $type - total: $totalPayable');
     setState(() => _isProcessing = true);
@@ -1258,18 +1753,15 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       if (mounted) setState(() => _isProcessing = false);
 
       if (eligibility.nextStep == 'KYC_REQUIRED') {
-        // Push KYC and AWAIT the result (true = KYC completed successfully).
-        // KycScreen now does Navigator.pop(context, true) on 'instant' flow
-        // instead of navigating to PaymentMethodsScreen.
-        //
-        // [LEGACY — kept for reference]
-        // Navigator.pushNamed(context, '/kyc', arguments: {...});
-        //   └─ previously KycScreen did pushReplacementNamed('/payment-methods')
-        final kycDone = await Navigator.pushNamed(
+        // Push the unified KYC hub (PAN + Aadhaar) and AWAIT the result
+        // (true = both approved). Routed through KycVerificationFlow so
+        // this uses the same entry point as SIP/Withdrawal instead of
+        // pushing the route directly.
+        final kycDone = await KycVerificationFlow.start(
           context,
-          '/kyc',
-          arguments: {
-            'request_from': 'instant',
+          ref,
+          requestFrom: 'instant',
+          extraData: {
             'amount': totalPayable,
             'metal_id': metalId,
             'rate': rate,
@@ -1278,7 +1770,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           },
         );
 
-        if (kycDone == true && mounted) {
+        if (kycDone && mounted) {
           SecureLogger.d(
               'ORDER FLOW: KYC completed → continuing to PaymentHandler');
           // KYC done — continue to Cashfree payment directly from here.
@@ -1289,10 +1781,31 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
             rate: rate,
             buyType: _isAmountMode ? 1 : 2,
             weight: grams,
-            onLoadingStart: () => setState(() => _isProcessing = true),
-            onLoadingEnd: () {
-              if (mounted) setState(() => _isProcessing = false);
-            },
+            paymentMethod: paymentMethod,
+            onLoadingStart: _startPaymentLoading,
+            onLoadingEnd: _stopPaymentLoading,
+          );
+        }
+      } else if (eligibility.nextStep == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as the KYC_REQUIRED branch above, routed through
+        // BankVerificationFlow instead — see its doc comment for why this
+        // is a genuinely separate gate from KYC (identity vs. destination
+        // account verification).
+        final bankDone = await BankVerificationFlow.start(context, ref);
+
+        if (bankDone && mounted) {
+          SecureLogger.d(
+              'ORDER FLOW: Bank verification completed → continuing to PaymentHandler');
+          final handler = PaymentHandler(ref: ref, context: context);
+          await handler.startPayment(
+            amount: totalPayable,
+            metalId: metalId,
+            rate: rate,
+            buyType: _isAmountMode ? 1 : 2,
+            weight: grams,
+            paymentMethod: paymentMethod,
+            onLoadingStart: _startPaymentLoading,
+            onLoadingEnd: _stopPaymentLoading,
           );
         }
       } else if (eligibility.nextStep == 'PAYMENT') {
@@ -1309,10 +1822,9 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           rate: rate,
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
-          onLoadingStart: () => setState(() => _isProcessing = true),
-          onLoadingEnd: () {
-            if (mounted) setState(() => _isProcessing = false);
-          },
+          paymentMethod: paymentMethod,
+          onLoadingStart: _startPaymentLoading,
+          onLoadingEnd: _stopPaymentLoading,
         );
       } else if (eligibility.nextStep == 'UPI_LIST') {
         // UPI selection flow — unchanged.
@@ -1337,10 +1849,9 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           rate: rate,
           buyType: _isAmountMode ? 1 : 2,
           weight: grams,
-          onLoadingStart: () => setState(() => _isProcessing = true),
-          onLoadingEnd: () {
-            if (mounted) setState(() => _isProcessing = false);
-          },
+          paymentMethod: paymentMethod,
+          onLoadingStart: _startPaymentLoading,
+          onLoadingEnd: _stopPaymentLoading,
         );
       }
     } catch (e) {
@@ -1356,6 +1867,48 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
       }
     }
   }
+
+  // ── Truncation helpers (floor, NOT round) ─────────────────────────────
+  // Match backend precision: weights → 6 decimals, amounts → 2 decimals.
+  static double _trunc6(double v) => (v * 1000000).floorToDouble() / 1000000;
+  static double _trunc2(double v) => (v * 100).floorToDouble() / 100;
+
+  // Match backend `round_tax_to_even_paisa`: nudge the GST amount up by
+  // ₹0.01 if its paisa digit is odd, so it always ends in an even paisa digit.
+  static double _roundTaxToEvenPaisa(double v) {
+    int paisa = (v * 100).round();
+    if (paisa % 2 != 0) paisa += 1;
+    return paisa / 100;
+  }
+
+  /// Splits an amount-mode purchase into metal value, GST and grams exactly
+  /// the way the server does in SavingsService.initiate_purchase (AMOUNT
+  /// branch), so every screen that shows any part of the split agrees with
+  /// what is actually bought:
+  ///
+  ///   gross = the amount typed          (paise, truncated)
+  ///   tax   = evenPaisa(gross - gross / (1 + gst))
+  ///   net   = gross - tax
+  ///   grams = net / rate                (6 dp, truncated)
+  ///
+  /// The net is DERIVED from the tax rather than computed as
+  /// `trunc(gross / (1 + gst))`. That matters: the tax is nudged up to an
+  /// even paisa, so the leftover net can land a paisa higher than a plain
+  /// truncation would give, which at 6 dp is a whole microgram. Deriving it
+  /// this way is also what keeps `net + tax == gross` exact.
+  static Map<String, double> _amountSplit(
+      double amount, double rate, double gstPercent) {
+    final double gross = _trunc2(amount);
+    final double tax =
+        _roundTaxToEvenPaisa(gross - gross / (1 + gstPercent / 100));
+    final double net = gross - tax;
+    return {
+      'total': gross,
+      'gst': tax,
+      'metalValue': net,
+      'grams': rate > 0 ? _trunc6(net / rate) : 0.0,
+    };
+  }
 }
 
 /// Wise-style breakdown bottom sheet
@@ -1365,6 +1918,10 @@ class _BreakdownSheet extends StatelessWidget {
   final double gstAmount;
   final double grams;
   final double gstRate;
+  final double cgstRate;
+  final double sgstRate;
+  final double cgstAmount;
+  final double sgstAmount;
   final String metalLabel;
   final bool isInvalid;
   final bool isProcessing;
@@ -1376,6 +1933,10 @@ class _BreakdownSheet extends StatelessWidget {
     required this.gstAmount,
     required this.grams,
     required this.gstRate,
+    required this.cgstRate,
+    required this.sgstRate,
+    required this.cgstAmount,
+    required this.sgstAmount,
     required this.metalLabel,
     required this.isInvalid,
     required this.isProcessing,
@@ -1384,6 +1945,7 @@ class _BreakdownSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1411,11 +1973,8 @@ class _BreakdownSheet extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Breakdown',
-                      style: GoogleFonts.lora(
-                        fontSize: 20.sp,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black,
-                      )),
+                      style: AppTextStyles.titleLarge(isDark)
+                          .copyWith(color: Colors.black)),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Container(
@@ -1441,7 +2000,7 @@ class _BreakdownSheet extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    _row('Total Amount', '₹${totalPayable.toStringAsFixed(0)}',
+                    _row('Total Amount', '₹${totalPayable.toStringAsFixed(2)}',
                         subtitle: 'Incl. GST', isBold: true),
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 10.h),
@@ -1450,14 +2009,17 @@ class _BreakdownSheet extends StatelessWidget {
                     ),
                     _row(metalLabel, '₹${metalValue.toStringAsFixed(2)}'),
                     SizedBox(height: 12.h),
-                    _row('GST (${gstRate.toStringAsFixed(0)}%)',
-                        '₹${gstAmount.toStringAsFixed(2)}'),
+                    _row('CGST', '₹${cgstAmount.toStringAsFixed(2)}',
+                        percentText: '(${cgstRate.toStringAsFixed(2)}%)'),
+                    SizedBox(height: 8.h),
+                    _row('SGST', '₹${sgstAmount.toStringAsFixed(2)}',
+                        percentText: '(${sgstRate.toStringAsFixed(2)}%)'),
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 10.h),
                       child: Divider(
                           height: 1, color: Colors.black.withOpacity(0.06)),
                     ),
-                    _row('Quantity', '${grams.toStringAsFixed(4)}gm'),
+                    _row('Quantity', '${grams.toStringAsFixed(6)}gm'),
                   ],
                 ),
               ),
@@ -1495,12 +2057,8 @@ class _BreakdownSheet extends StatelessWidget {
                           color: Colors.white, size: 22.sp),
                       SizedBox(width: 10.w),
                       Text('Pay Now',
-                          style: TextStyle(
-                            fontSize: 18.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.3,
-                          )),
+                          style: AppTextStyles.button(isDark)
+                              .copyWith(letterSpacing: 0.3)),
                     ],
                   ),
                 ),
@@ -1512,8 +2070,11 @@ class _BreakdownSheet extends StatelessWidget {
     );
   }
 
+  /// [percentText] (e.g. "(1.50%)") renders in the same font as [value] —
+  /// Playfair Display's stylized digits look mismatched next to Lora's
+  /// plain numerals when a rate is embedded in the label itself.
   Widget _row(String label, String value,
-      {String? subtitle, bool isBold = false}) {
+      {String? subtitle, bool isBold = false, String? percentText}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1521,15 +2082,30 @@ class _BreakdownSheet extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: TextStyle(
-                  fontSize: isBold ? 16.sp : 14.sp,
-                  fontWeight: isBold ? FontWeight.w700 : FontWeight.w600,
-                  color: Colors.black,
-                )),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(label,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: isBold ? 16.sp : 14.sp,
+                      fontWeight: isBold ? FontWeight.w700 : FontWeight.w600,
+                      color: Colors.black,
+                    )),
+                if (percentText != null) ...[
+                  SizedBox(width: 4.w),
+                  Text(percentText,
+                      style: GoogleFonts.lora(
+                        fontSize: isBold ? 16.sp : 14.sp,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black54,
+                      )),
+                ],
+              ],
+            ),
             if (subtitle != null)
               Text(subtitle,
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black38,
                     fontWeight: FontWeight.w500,

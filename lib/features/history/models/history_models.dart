@@ -1,10 +1,15 @@
 class HistoryResponse {
   final List<TransactionItem> transactions;
   final Map<String, List<TransactionItem>> groupedData;
+  /// From the backend `pagination.has_next` flag — true while more pages
+  /// remain to be lazy-loaded. Defaults to false for any response that
+  /// omits `pagination` (keeps older/other callers safe).
+  final bool hasMore;
 
   HistoryResponse({
     required this.transactions,
     required this.groupedData,
+    this.hasMore = false,
   });
 
   factory HistoryResponse.fromJson(Map<String, dynamic> json) {
@@ -14,6 +19,7 @@ class HistoryResponse {
         : json;
     final groupedJson =
         data['grouped_transactions'] as Map<String, dynamic>? ?? {};
+    final pagination = data['pagination'] as Map<String, dynamic>?;
 
     final List<TransactionItem> flatList = [];
     final Map<String, List<TransactionItem>> groupedMap = {};
@@ -30,6 +36,7 @@ class HistoryResponse {
     return HistoryResponse(
       transactions: flatList,
       groupedData: groupedMap,
+      hasMore: pagination?['has_next'] == true,
     );
   }
 
@@ -43,11 +50,12 @@ class TransactionItem {
   final String type;
   final int soType;
   final double amount;
-  final String weightGrams;
+  final double weightGrams;
   final String displayDate;
   final String status;
   final String metalName;
   final String date; // Keep date key for grouping if needed
+  final String invoiceNumber;
 
   TransactionItem({
     required this.transactionId,
@@ -61,6 +69,7 @@ class TransactionItem {
     required this.status,
     required this.metalName,
     required this.date,
+    this.invoiceNumber = '',
   });
 
   factory TransactionItem.fromJson(Map<String, dynamic> json,
@@ -72,11 +81,12 @@ class TransactionItem {
       type: json['type'] ?? '',
       soType: json['so_type'] ?? 0,
       amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0.0,
-      weightGrams: json['weight_grams']?.toString() ?? '0',
+      weightGrams: double.tryParse(json['weight_grams']?.toString() ?? '0') ?? 0.0,
       displayDate: json['display_date'] ?? '',
       status: json['status'] ?? '',
       metalName: json['metal_name'] ?? 'Gold 24K',
       date: dateKey,
+      invoiceNumber: json['invoice_number']?.toString() ?? '',
     );
   }
 }
@@ -87,7 +97,7 @@ class TransactionDetailResponse {
   final String title;
   final String subtitle;
   final String amount;
-  final String weightGrams;
+  final double weightGrams;
   final String metalName;
   final String scheduledDate;
   final String paymentMethod;
@@ -131,7 +141,7 @@ class TransactionDetailResponse {
       title: root['title'] ?? '',
       subtitle: root['subtitle'] ?? '',
       amount: root['amount']?.toString() ?? '0',
-      weightGrams: root['weight_grams']?.toString() ?? '0',
+      weightGrams: double.tryParse(root['weight_grams']?.toString() ?? '0') ?? 0.0,
       metalName: root['metal_name'] ?? 'Gold 24K',
       scheduledDate: root['scheduled_date'] ?? '',
       paymentMethod: root['payment_method'] ?? '',
@@ -153,11 +163,15 @@ class TimelineStep {
   final String stepName;
   final String status;
   final String time;
+  /// Failure reason (e.g. "Invalid IFSC code") — only ever populated on a
+  /// "Failed" step; empty for every other step.
+  final String reason;
 
   TimelineStep({
     required this.stepName,
     required this.status,
     required this.time,
+    this.reason = '',
   });
 
   factory TimelineStep.fromJson(Map<String, dynamic> json) {
@@ -165,6 +179,7 @@ class TimelineStep {
       stepName: json['step_name'] ?? '',
       status: json['status'] ?? '',
       time: json['time'] ?? '',
+      reason: json['reason'] ?? '',
     );
   }
 }
@@ -173,28 +188,42 @@ class PriceBreakdown {
   final String quantity;
   final String rate;
   final String value;
-  final String gst;
+  final String cgstPercent;
+  final String cgst;
+  final String sgstPercent;
+  final String sgst;
   final String totalAmount;
 
   PriceBreakdown({
     required this.quantity,
     required this.rate,
     required this.value,
-    required this.gst,
+    required this.cgstPercent,
+    required this.cgst,
+    required this.sgstPercent,
+    required this.sgst,
     required this.totalAmount,
   });
 
   factory PriceBreakdown.fromJson(Map<String, dynamic> json) {
-    final qty = json['quantity']?.toString() ?? json['gold_quantity']?.toString() ?? '0';
+    final qtyRaw = json['quantity']?.toString() ?? json['gold_quantity']?.toString() ?? '0';
+    // Strip any existing unit suffix (e.g. "0.0005 g") to parse pure number
+    final qtyNum = double.tryParse(qtyRaw.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0.0;
     final rate = json['rate']?.toString() ?? json['gold_rate']?.toString() ?? '0';
     final val = json['value']?.toString() ?? json['gold_value']?.toString() ?? '0';
-    final gst = json['gst']?.toString() ?? '0.00';
+    final cgstPercent = json['cgst_percent']?.toString() ?? '0.00';
+    final cgst = json['cgst_value']?.toString() ?? '0.00';
+    final sgstPercent = json['sgst_percent']?.toString() ?? '0.00';
+    final sgst = json['sgst_value']?.toString() ?? '0.00';
     final total = json['total_amount']?.toString() ?? '0';
     return PriceBreakdown(
-      quantity: '$qty g',
+      quantity: '${qtyNum.toStringAsFixed(6)} gm',
       rate: '₹$rate',
       value: '₹$val',
-      gst: '₹$gst',
+      cgstPercent: cgstPercent,
+      cgst: '₹$cgst',
+      sgstPercent: sgstPercent,
+      sgst: '₹$sgst',
       totalAmount: '₹$total',
     );
   }

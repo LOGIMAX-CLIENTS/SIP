@@ -14,13 +14,22 @@ import '../../instant_saving/controller/saving_controller.dart';
 import '../../instant_saving/models/saving_models.dart';
 import '../providers/withdrawal_provider.dart';
 import '../services/withdrawal_service.dart';
+import '../models/withdrawal_balance.dart';
+import '../models/withdrawal_method.dart';
 import '../../../routes/app_router.dart';
+import '../../profile/models/bank_account.dart';
+import '../../sip/screens/bank_account_picker_screen.dart';
+import '../../kyc/kyc_flow.dart';
+import '../../kyc/bank_verification_flow.dart';
 import '../../market/models/market_rates.dart';
 import '../../../shared/widgets/loaders.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/custom_button.dart';
+import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/utils/no_leading_zeros_formatter.dart';
+import '../../../shared/theme/app_text_styles.dart';
+import '../../../shared/theme/app_theme.dart';
 
 class WithdrawalScreen extends ConsumerStatefulWidget {
   const WithdrawalScreen({super.key});
@@ -77,7 +86,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
     final portfolio = ref.watch(portfolioProvider);
     final withdrawalState = ref.watch(withdrawalProvider);
     final timerState = ref.watch(buyRateTimerProvider);
-    final rewardAsync = ref.watch(rewardBalanceProvider);
+    final balanceAsync = ref.watch(withdrawalBalanceProvider);
 
     // Watch config to trigger the API fetch
     final configAsync = ref.watch(savingConfigProvider);
@@ -208,7 +217,19 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       return AppLoaders.fullScreenLoader(context);
     }
 
-    return Scaffold(
+    // Opaque background on this screen itself, not just a transparent
+    // Scaffold relying on MaterialApp's global gradient Container showing
+    // through — that gap let the previous route (Home, kept alive
+    // underneath by MainScreen's IndexedStack) paint through during the
+    // in-flight pop transition back to this screen, producing the
+    // overlapping-layout bug on back navigation. Same fix pattern already
+    // used by sip_overview_screen.dart etc.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
+      ),
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
@@ -266,7 +287,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   SizedBox(height: 24.h),
                   _buildMainInputCard(
                       selectedCommodity, market, withdrawalState,
-                      rewardAsync),
+                      balanceAsync),
                   SizedBox(height: 16.h),
                 ],
               ),
@@ -275,8 +296,9 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
           // ── Pinned Footer ─────────────────────────────────────────
           _buildFooter(
               withdrawalState, market, selectedCommodity,
-              isCurrentMarketClosed, rewardAsync),
+              isCurrentMarketClosed, balanceAsync),
         ],
+      ),
       ),
     );
   }
@@ -284,6 +306,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
   Widget _buildLiveRateSection(CommodityType type,
       AsyncValue<MarketRates> market, TimerState timerState,
       bool isCurrentMarketClosed) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return market.when(
       data: (rates) {
         final price =
@@ -308,7 +331,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                         Flexible(
                           child: Text(
                             'Live Withdrawal Price',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 14.sp,
                               color: Colors.black45,
                               fontWeight: FontWeight.w600,
@@ -359,7 +382,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                           SizedBox(width: 4.w),
                           Text(
                             'Market Closed',
-                            style: TextStyle(
+                            style: GoogleFonts.playfairDisplay(
                               fontSize: 11.sp,
                               color: const Color(0xFFD97706),
                               fontWeight: FontWeight.w700,
@@ -407,9 +430,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               SizedBox(height: 8.h),
               Text(
                 '₹${price.toStringAsFixed(2)}/gm',
-                style: GoogleFonts.lora(
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.w700,
+                style: AppTextStyles.numericLarge(isDark).copyWith(
                   color: Colors.black,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
@@ -442,7 +463,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
         padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 16.h),
         child: Text(
           err.toString().replaceAll('Exception: ', ''),
-          style: TextStyle(fontSize: 14.sp, color: Colors.redAccent),
+          style: GoogleFonts.playfairDisplay(fontSize: 14.sp, color: Colors.redAccent),
         ),
       ),
     );
@@ -555,7 +576,8 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       CommodityType type,
       AsyncValue<MarketRates> market,
       WithdrawalState state,
-      AsyncValue<Map<String, dynamic>> rewardAsync) {
+      AsyncValue<WithdrawalBalance> balanceAsync) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 24.w),
       child: Container(
@@ -578,13 +600,13 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Withdrawable Balance',
-                    style: TextStyle(
+                    style: GoogleFonts.playfairDisplay(
                         fontSize: 12.sp,
                         color: Colors.black45,
                         fontWeight: FontWeight.w600)),
-                rewardAsync.maybeWhen(
-                  data: (reward) => GestureDetector(
-                    onTap: () => _showHoldingInfoSheet(context, reward, type),
+                balanceAsync.maybeWhen(
+                  data: (balance) => GestureDetector(
+                    onTap: () => _showHoldingInfoSheet(context, balance, type),
                     child: Container(
                       padding: EdgeInsets.all(5.r),
                       decoration: BoxDecoration(
@@ -603,33 +625,27 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               ],
             ),
             SizedBox(height: 8.h),
-            // ── Withdrawable balance from reward-balance API ──
-            rewardAsync.when(
-              data: (reward) {
-                final withdrawable = double.tryParse(
-                        reward['withdrawable_qty']?.toString() ?? '0') ??
-                    0.0;
+            // ── Withdrawable balance from GET /withdrawal/eligibility ──
+            balanceAsync.when(
+              data: (balance) {
+                final withdrawable = balance.withdrawable;
                 final rate = type == CommodityType.gold
                     ? market.valueOrNull?.goldBuy ?? 0
                     : market.valueOrNull?.silverBuy ?? 0;
                 final inrValue = withdrawable * rate;
                 return Row(
                   children: [
-                    Text('${withdrawable.toStringAsFixed(4)} gm',
-                        style: GoogleFonts.lora(
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black)),
+                    Text('${withdrawable.toStringAsFixed(6)} gm',
+                        style: AppTextStyles.numericLarge(isDark)
+                            .copyWith(color: Colors.black)),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12.w),
                       child: Container(
                           width: 1.5, height: 20.h, color: Colors.black12),
                     ),
                     Text('\u20b9 ${inrValue.toStringAsFixed(2)}',
-                        style: GoogleFonts.lora(
-                            fontSize: 20.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black)),
+                        style: AppTextStyles.numericLarge(isDark)
+                            .copyWith(color: Colors.black)),
                   ],
                 );
               },
@@ -650,13 +666,20 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   ),
                 ],
               ),
-              error: (_, __) => Text('Error loading holding',
-                  style: TextStyle(fontSize: 13.sp, color: Colors.black45)),
+              error: (err, stack) {
+                // The UI text is intentionally generic — log the real cause
+                // so it's visible in device/debug logs instead of only ever
+                // showing "Error loading holding" with no way to diagnose it.
+                debugPrint('withdrawalBalanceProvider failed: $err\n$stack');
+                return Text('Error loading holding',
+                    style: GoogleFonts.playfairDisplay(
+                        fontSize: 13.sp, color: Colors.black45));
+              },
             ),
             Divider(color: Colors.black.withOpacity(0.05)),
             SizedBox(height: 24.h),
             Text('Enter your amount',
-                style: TextStyle(
+                style: GoogleFonts.playfairDisplay(
                     fontSize: 12.sp,
                     color: Colors.black45,
                     fontWeight: FontWeight.w600)),
@@ -676,18 +699,33 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                     child: Row(
                       children: [
                         Text('₹',
-                            style: GoogleFonts.lora(
-                                fontSize: 20.sp,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black)),
+                            style: AppTextStyles.numericLarge(isDark)
+                                .copyWith(color: Colors.black)),
                         SizedBox(width: 8.w),
                         Expanded(
                           child: TextField(
                             controller: _amountController,
-                            keyboardType: TextInputType.number,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
+                            contextMenuBuilder: SecureClipboard.none,
+                            // Locked once a withdrawal is in flight — the
+                            // amount typed here is what the Withdrawal
+                            // button's tap validated against the policy/
+                            // eligibility checks. Leaving this editable
+                            // during that async gap let a customer keep
+                            // typing (e.g. "5" -> "50") after tapping and
+                            // land on the confirmation screen with an
+                            // amount that was never actually validated,
+                            // since downstream screens re-read the live
+                            // amount off withdrawalProvider rather than the
+                            // value _handleWithdraw checked.
+                            enabled: !state.isProcessing,
                             inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              const NoLeadingZerosFormatter(allowDecimal: false),
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d*\.?\d{0,2}')),
+                              const NoLeadingZerosFormatter(),
+                              LengthLimitingTextInputFormatter(11),
                             ],
                             onChanged: (val) {
                               final doubleValue = val.isEmpty
@@ -705,10 +743,8 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                                 setState(() => _policyError = null);
                               }
                             },
-                            style: GoogleFonts.lora(
-                                fontSize: 20.sp,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black),
+                            style: AppTextStyles.numericLarge(isDark)
+                                .copyWith(color: Colors.black),
                             decoration: const InputDecoration(
                                 border: InputBorder.none, hintText: '0'),
                           ),
@@ -721,7 +757,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                                   : rates.silverBuy;
                               final grams =
                                   price > 0 ? state.amount / price : 0.0;
-                              return Text('${grams.toStringAsFixed(4)}gm',
+                              return Text('${grams.toStringAsFixed(6)}gm',
                                   style: GoogleFonts.lora(
                                       fontSize: 12.sp,
                                       color: Colors.black45,
@@ -743,17 +779,23 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       AsyncValue<MarketRates> market,
       CommodityType type,
       bool isCurrentMarketClosed,
-      AsyncValue<Map<String, dynamic>> rewardAsync) {
+      AsyncValue<WithdrawalBalance> balanceAsync) {
     // ── Client-side balance check ──────────────────────────────────────
-    final reward = rewardAsync.valueOrNull;
-    final withdrawableQty =
-        double.tryParse(reward?['withdrawable_qty']?.toString() ?? '0') ?? 0.0;
+    // Withdrawable is the authoritative figure for both display and
+    // validation here — the server re-validates against its own locked
+    // Withdrawable at submission time regardless (see initiate_withdrawal).
+    final withdrawableQty = balanceAsync.valueOrNull?.withdrawable ?? 0.0;
     final liveRate = type == CommodityType.gold
         ? market.valueOrNull?.goldBuy ?? 0.0
         : market.valueOrNull?.silverBuy ?? 0.0;
     final maxInr = withdrawableQty * liveRate;
-    final exceedsBalance =
-        withdrawalState.amount > 0 && maxInr > 0 && withdrawalState.amount > maxInr;
+    // Balance/market not loaded yet (maxInr <= 0) must NOT be treated as "no
+    // limit" — that silently let a large amount typed before this data
+    // arrived through to the server-side check with the button still
+    // enabled. Block submission until we actually know the real limit.
+    final balanceKnown = balanceAsync.hasValue && market.hasValue && maxInr > 0;
+    final exceedsBalance = withdrawalState.amount > 0 &&
+        (!balanceKnown || withdrawalState.amount > maxInr);
 
     // Button enabled when: amount > 0, not processing, market open,
     // no balance exceeded, and no pending policy error.
@@ -795,7 +837,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   Expanded(
                     child: Text(
                       'Only one withdrawal request per metal is allowed per calendar day for security purposes.',
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 11.sp,
                         color: const Color(0xFF92400E),
                         height: 1.5,
@@ -842,15 +884,14 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
   }
 
   void _showHoldingInfoSheet(
-      BuildContext context, Map<String, dynamic> reward, CommodityType type) {
-    final withdrawable =
-        double.tryParse(reward['withdrawable_qty']?.toString() ?? '0') ?? 0.0;
-    final totalQty =
-        double.tryParse(reward['total_qty']?.toString() ?? '0') ?? 0.0;
-    final onHold =
-        double.tryParse(reward['on_hold_qty']?.toString() ?? '0') ?? 0.0;
-    final commodityName = reward['commodity_name']?.toString() ??
-        (type == CommodityType.gold ? 'Gold 24K' : 'Silver 999');
+      BuildContext context, WithdrawalBalance balance, CommodityType type) {
+    final withdrawable = balance.withdrawable;
+    final totalHolding = balance.totalHolding;
+    final onHold = balance.onHold;
+    final requested = balance.requested;
+    final commodityName = balance.commodity.isNotEmpty
+        ? balance.commodity
+        : (type == CommodityType.gold ? 'Gold 24K' : 'Silver 999');
     final isGold = type == CommodityType.gold;
 
     showModalBottomSheet(
@@ -949,16 +990,30 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       iconColor: const Color(0xFF1B882C),
                       bgColor: const Color(0xFF1B882C).withOpacity(0.08),
                       label: 'Withdrawable',
-                      value: '${withdrawable.toStringAsFixed(4)} gm',
+                      value: '${withdrawable.toStringAsFixed(6)} gm',
                       valueColor: const Color(0xFF1B882C),
                     ),
+                    // Requested only shows once the customer actually has an
+                    // open, not-yet-approved withdrawal request against this
+                    // commodity — a zero row here would just be noise.
+                    if (requested > 0) ...[
+                      Divider(height: 1, color: Colors.black.withOpacity(0.05)),
+                      _holdingRow(
+                        icon: Icons.hourglass_top_rounded,
+                        iconColor: const Color(0xFF1D4ED8),
+                        bgColor: const Color(0xFF1D4ED8).withOpacity(0.08),
+                        label: 'Requested',
+                        value: '${requested.toStringAsFixed(6)} gm',
+                        valueColor: const Color(0xFF1D4ED8),
+                      ),
+                    ],
                     Divider(height: 1, color: Colors.black.withOpacity(0.05)),
                     _holdingRow(
                       icon: Icons.lock_clock_outlined,
                       iconColor: const Color(0xFFD97706),
                       bgColor: const Color(0xFFD97706).withOpacity(0.08),
                       label: 'On Hold',
-                      value: '${onHold.toStringAsFixed(4)} gm',
+                      value: '${onHold.toStringAsFixed(6)} gm',
                       valueColor: const Color(0xFFD97706),
                     ),
                     Divider(height: 1, color: Colors.black.withOpacity(0.05)),
@@ -967,7 +1022,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       iconColor: const Color(0xFF5C3300),
                       bgColor: const Color(0xFFEF9B00).withOpacity(0.10),
                       label: 'Total Holding',
-                      value: '${totalQty.toStringAsFixed(4)} gm',
+                      value: '${totalHolding.toStringAsFixed(6)} gm',
                       valueColor: Colors.black87,
                     ),
                   ],
@@ -986,7 +1041,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   Expanded(
                     child: Text(
                       'On-hold qty reflects pending orders or locks',
-                      style: TextStyle(
+                      style: GoogleFonts.playfairDisplay(
                         fontSize: 11.sp,
                         color: Colors.black38,
                         fontStyle: FontStyle.italic,
@@ -1070,7 +1125,12 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       if (!mounted) return;
 
       if (!policy.validation.isValid) {
+        // setProcessing(false) MUST come before updateAmount(0) — the
+        // notifier no-ops updateAmount while isProcessing is true (see its
+        // doc comment), so clearing in the wrong order would silently fail.
         notifier.setProcessing(false);
+        notifier.updateAmount(0);
+        _amountController.clear();
         final errorMsg = policy.validation.message ??
             'Invalid withdrawal amount. Please check the limits.';
         setState(() => _policyError = errorMsg);
@@ -1098,10 +1158,36 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       notifier.setProcessing(false);
 
       if (nextStep == 'KYC_REQUIRED') {
-        Navigator.pushNamed(context, AppRouter.dynamicKyc,
-            arguments: {'request_from': 'withdraw'});
+        // Await the unified KYC hub (PAN + Aadhaar) instead of firing and
+        // forgetting — once both are APPROVED, automatically resume the
+        // withdrawal exactly where it would have gone had KYC already been
+        // complete (bank selection), instead of the old behavior where
+        // the KYC screen itself hardcoded that navigation.
+        final verified = await KycVerificationFlow.start(
+          context,
+          ref,
+          requestFrom: 'withdraw',
+        );
+        if (!mounted) return;
+        if (verified) {
+          await _selectBankAndProceed();
+        }
+      } else if (nextStep == 'BANK_VERIFICATION_REQUIRED') {
+        // Same shape as KYC_REQUIRED above, routed through
+        // BankVerificationFlow instead — see its doc comment. The actual
+        // withdrawal-initiation gate (backend: bank_payability(settle_bank))
+        // still checks whichever account the customer ultimately selects
+        // in _selectBankAndProceed(), so this pre-check is a heuristic
+        // (checked against the primary account) same as KYC_REQUIRED is —
+        // not the final word, just avoids sending someone with clearly no
+        // verified account into bank selection first.
+        final verified = await BankVerificationFlow.start(context, ref);
+        if (!mounted) return;
+        if (verified) {
+          await _selectBankAndProceed();
+        }
       } else {
-        Navigator.pushNamed(context, AppRouter.upiSelection);
+        await _selectBankAndProceed();
       }
     } catch (e) {
       if (mounted) {
@@ -1111,5 +1197,35 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
             type: ToastType.error, position: ToastPosition.center);
       }
     }
+  }
+
+  /// Bank-account selection for withdrawal payout — reuses the same
+  /// full-page picker as Auto Savings setup (BankAccountPickerScreen)
+  /// instead of the list+submit-button UpiSelectionScreen. Selecting a
+  /// verified account there pops it back immediately, so there's no
+  /// separate "Withdrawal" submit step here — picking IS confirming,
+  /// and we move straight to the confirmation screen.
+  Future<void> _selectBankAndProceed() async {
+    final account = await Navigator.push<BankAccount>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const BankAccountPickerScreen(
+          subtitle: 'Withdrawals are credited to this registered bank account.',
+        ),
+      ),
+    );
+    if (account == null || !mounted) return;
+
+    ref.read(withdrawalProvider.notifier).selectMethod(
+          WithdrawalMethod(
+            id: account.idBank,
+            identifier: account.accountNumberMasked,
+            title: account.bankName,
+            subtitle: account.ifscCode,
+            isUpi: false,
+            isVerified: account.isVerified,
+          ),
+        );
+    Navigator.pushNamed(context, AppRouter.withdrawalConfirmation);
   }
 }

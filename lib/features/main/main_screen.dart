@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../home/home_screen.dart';
 import '../instant_saving/instant_saving_screen.dart';
 import '../history/screens/transaction_history_screen.dart';
@@ -17,6 +18,11 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_toast.dart';
 import '../../features/auth/controller/auth_controller.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/fcm_service.dart';
+import '../../routes/app_router.dart';
+import '../../core/security/secure_logger.dart';
+import '../kyc/controllers/kyc_controller.dart';
+import '../kyc/controllers/kyc_verification_flow_mixin.dart';
 
 /// Shared provider so any child screen can switch tabs
 final selectedTabProvider = StateProvider<int>((ref) => 0);
@@ -31,6 +37,23 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen> {
   final Set<int> _visitedTabs = {0};
   DateTime? _lastBackPressTime; // tracks double-tap-to-exit timing
+  // Dedupe guards for MainScreen's OWN navigation decision only — kept
+  // PRIVATE, deliberately NOT the same Set that KycScreen claims into
+  // (AadhaarNotifier.handledMismatchIds/etc.). These two concerns looked
+  // identical but aren't: when no KycScreen is mounted, MainScreen must
+  // navigate to KycScreen SO THAT it can then claim the shared Set and show
+  // its dialog — if MainScreen itself claimed the shared Set first (a prior
+  // version of this fix did exactly that), the freshly-navigated-to
+  // KycScreen's own claim attempt would find it already taken and silently
+  // skip showing anything at all, confirmed live via [KYC DEBUG] logs
+  // (MainScreen navigated, then dead silence — no _showMismatchDialog
+  // entered ever logged). MainScreen only ever READS the shared Set (via
+  // AadhaarNotifier.handledMismatchIds.contains(...)) to check "has someone
+  // already claimed this," and uses its own private Set purely to avoid
+  // scheduling more than one navigation for the same outcome.
+  final Set<String> _navigatedMismatchIds = {};
+  final Set<String> _navigatedFailureKeys = {};
+  final Set<String> _navigatedApprovedKeys = {};
 
   @override
   void initState() {
@@ -61,6 +84,13 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       // has a valid token. HomeScreen.initState fires in parallel and
       // may race ahead of rehydration, so this is the authoritative call.
       ref.read(notificationProvider.notifier).refreshUnreadCount();
+
+      // Ensure FCM push notification token is registered with backend
+      FcmService.getToken().then((token) {
+        if (token != null && token.isNotEmpty) {
+          ref.read(notificationServiceProvider).registerFcmToken(token);
+        }
+      });
     });
   }
 
@@ -69,8 +99,15 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// !_doingMountOrUpdate assertion errors.
   void _onTabTapped(int index) {
     final current = ref.read(selectedTabProvider);
-    ref.read(selectedTabProvider.notifier).state = index;
     if (current == index) return; // same tab — no refresh needed
+
+    // Jewellery is a separate route, not in IndexedStack — navigate without changing tab index
+    if (index == 4) {
+      Navigator.of(context).pushNamed('/jewellery');
+      return;
+    }
+
+    ref.read(selectedTabProvider.notifier).state = index;
     switch (index) {
       case 0:
         ref.invalidate(homeDashboardProvider);
@@ -82,7 +119,22 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         ref.invalidate(savingConfigProvider);
         break;
       case 2:
-        ref.invalidate(historyProvider);
+        // Fetch page 1 fresh every time the customer taps into this tab, so
+        // a transaction made elsewhere (e.g. Instant Saving, on another
+        // device) shows up immediately instead of only after a manual pull-
+        // to-refresh. Uses the notifier's refresh() rather than
+        // ref.invalidate(historyProvider) — invalidate would recreate the
+        // notifier from scratch and silently drop any currently-applied
+        // filter; refresh() re-fetches page 1 with whatever filter (if any)
+        // is already active, same as the header/pull-to-refresh triggers.
+        // Skipped on the very first-ever visit — TransactionHistoryScreen's
+        // own build() is about to create the notifier for the first time via
+        // ref.watch(historyProvider), and that creation already triggers its
+        // own initial fetch; calling refresh() here too would just fire a
+        // redundant duplicate request.
+        if (_visitedTabs.contains(2)) {
+          ref.read(historyProvider.notifier).refresh();
+        }
         ref.invalidate(portfolioProvider);
         break;
       case 3:
@@ -91,9 +143,150 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     }
   }
 
+  /// App-shell-level fallback for the Aadhaar/PAN mismatch dialogs AND the
+  /// terminal expired/rejected/failed dialog: rather than showing anything
+  /// itself on whatever tab the user happens to be on (Profile, Home,
+  /// wherever the SDK bounce landed them — confusing, since that's not
+  /// where they were verifying), this navigates back to the KYC
+  /// Verification checklist and lets IT show the result. The checklist's
+  /// own initState (checkAadhaarOutcomeRecoveryOnLoad, in
+  /// KycVerificationFlowMixin) reads aadhaarProvider's current state on
+  /// mount and shows whichever dialog applies — the state itself is still
+  /// there because aadhaarProvider is kept alive across this whole span
+  /// (AadhaarNotifier.pauseAutoDispose/resumeAutoDispose).
+  /// A plain push (not pushNamedAndRemoveUntil) — if the user is already
+  /// mid-navigation elsewhere, this just adds KYC on top, same as if they'd
+  /// tapped into it from Profile themselves.
+  void _navigateToKycAndLetItHandle() {
+    if (!mounted) return;
+    Navigator.of(context).pushNamed(AppRouter.kycVerification, arguments: {'request_from': 'profile'});
+  }
+
+  /// Grace period before MainScreen's own fallback claims a given outcome.
+  /// [_shownAadhaarMismatchIds] etc. are now SHARED with KycScreen's own
+  /// dedupe (AadhaarNotifier.handledMismatchIds/etc.) — whoever calls
+  /// .add() FIRST wins and is the only one that acts. KycScreen's own
+  /// ref.listen reacts synchronously the instant the state changes, but
+  /// Riverpod doesn't guarantee listener ordering ACROSS separate widgets,
+  /// so without a delay MainScreen could occasionally win that race even
+  /// while a KycScreen is genuinely mounted and about to show its dialog —
+  /// which would silently swallow the claim and the dialog would never
+  /// appear at all (confirmed live: this is exactly what a first version of
+  /// this fix, with no delay, did). Waiting one frame's worth first gives a
+  /// live KycScreen instance's own (near-instant) listener priority; this
+  /// fallback only fires when nothing has claimed the outcome after that —
+  /// i.e. no KycScreen was actually there to react.
+  static const _fallbackGracePeriod = Duration(milliseconds: 150);
+
+  /// [_shownAadhaarMismatchIds] — keyed by verificationId, not a plain bool
+  /// — makes this a no-op if KycScreen's own listener already handled this
+  /// exact attempt (the normal case where nothing disposes it), and still
+  /// allows a genuine reverify (new verification_id) to trigger again.
+  void _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) {
+    SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: scheduling fallback for ${prompt.verificationId}');
+    Future.delayed(_fallbackGracePeriod, () {
+      final alreadyShown = AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId);
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: grace period elapsed, mounted=$mounted, alreadyShownByKycScreen=$alreadyShown, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
+      if (!mounted || alreadyShown) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
+      if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: navigating');
+      _navigateToKycAndLetItHandle();
+    });
+  }
+
+  /// PAN counterpart — same reasoning. [prompt.verificationId] for PAN
+  /// actually holds the dedicated PAN KYC row id (see NameMismatchPrompt's
+  /// doc comment in kyc_controller.dart for why PAN reuses this field name).
+  void _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) {
+    Future.delayed(_fallbackGracePeriod, () {
+      if (!mounted || AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId)) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
+      if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
+      _navigateToKycAndLetItHandle();
+    });
+  }
+
+  /// Terminal expired/rejected/failed counterpart — same reasoning. Keyed
+  /// the same way as KycScreen's own _shownFailureKeys (verificationId+
+  /// phase, falling back to message+phase) so this and KycScreen's copy
+  /// don't both navigate when nothing actually disposes the screen.
+  void _maybeShowAadhaarFailureDialog(AadhaarState state) {
+    final key = '${state.verificationId ?? state.message}-${state.phase}';
+    Future.delayed(_fallbackGracePeriod, () {
+      if (!mounted || AadhaarNotifier.handledFailureKeys.contains(key)) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
+      if (!_navigatedFailureKeys.add(key)) return;
+      _navigateToKycAndLetItHandle();
+    });
+  }
+
+  /// Success counterpart — same reasoning applies to a clean APPROVED
+  /// outcome too: if the SDK bounce leaves no KycScreen mounted to run its
+  /// own _checkAndHandleCompletion() (the Profile Name Selection dialog /
+  /// verified confirmation), the customer never sees any success feedback
+  /// at all, silently — indistinguishable from nothing having happened.
+  /// Keyed by verificationId so this fires once per genuine approval, not
+  /// on every rebuild that still reports the same already-approved state
+  /// (e.g. the ordinary case where KycScreen is mounted and handling this
+  /// itself — this dedupe guard, not a `mounted` check on MainScreen's
+  /// side, is what keeps that from also triggering a redundant navigation).
+  void _maybeHandleAadhaarApproved(AadhaarState state) {
+    final key = state.verificationId ?? 'approved-${state.maskedNumber}';
+    SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: scheduling fallback for $key');
+    Future.delayed(_fallbackGracePeriod, () {
+      final alreadyClaimed = AadhaarNotifier.handledApprovedKeys.contains(key);
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: grace elapsed, mounted=$mounted, alreadyClaimedByKycScreen=$alreadyClaimed, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
+      if (!mounted || alreadyClaimed) return;
+      if (KycVerificationFlowMixin.hasMountedHost) return;
+      if (!_navigatedApprovedKeys.add(key)) return;
+      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: navigating');
+      _navigateToKycAndLetItHandle();
+    });
+  }
+
   Widget build(BuildContext context) {
     final selectedIndex = ref.watch(selectedTabProvider);
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+
+    // App-shell-level fallback for the Aadhaar CONFIRM_NAME_UPDATE mismatch
+    // dialog. KycScreen has its own ref.listen for this, but SurePass's
+    // native DigiLocker SDK Activity can leave the app on a COMPLETELY
+    // different screen by the time the poll result comes back — confirmed
+    // by testing: the user lands back on this Profile tab, with KycScreen
+    // popped off the stack entirely, not merely unmounted underneath
+    // something else. No screen-local listener can catch that. MainScreen
+    // is the one widget that's guaranteed to stay alive for as long as the
+    // user is in the logged-in app shell, so it's the only reliable place
+    // for a listener that must survive arbitrary navigation churn.
+    // aadhaarProvider itself is kept alive across that churn by
+    // AadhaarNotifier.pauseAutoDispose()/resumeAutoDispose() (see
+    // kyc_screen.dart's _runVerifyAadhaar) — without that, the provider
+    // would already be disposed by the time this fires.
+    ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
+      SecureLogger.d('[KYC DEBUG] MainScreen.ref.listen fired: previous=${previous?.phase} next=${next.phase} mounted=$mounted');
+      if (next.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
+          next.aadhaarMismatchPrompt != null) {
+        _maybeShowAadhaarMismatchDialog(next.aadhaarMismatchPrompt!);
+      }
+      if (next.panMismatchPrompt != null) {
+        _maybeShowPanMismatchDialog(next.panMismatchPrompt!);
+      }
+      if (next.phase == AadhaarPhase.expired ||
+          next.phase == AadhaarPhase.rejected ||
+          next.phase == AadhaarPhase.failed) {
+        _maybeShowAadhaarFailureDialog(next);
+      }
+      if (next.phase == AadhaarPhase.approved ||
+          next.phase == AadhaarPhase.aadhaarNotShared) {
+        // Same fallback for both — aadhaarNotShared shares
+        // handledApprovedKeys' claim with KycScreen's own on-load recovery
+        // (see kyc_screen.dart's _checkAadhaarOutcomeRecoveryOnLoad), so
+        // reusing this handler here keeps both sides checking/claiming the
+        // exact same key instead of drifting into a second, parallel guard.
+        _maybeHandleAadhaarApproved(next);
+      }
+    });
 
     // Mark current tab as visited
     if (!_visitedTabs.contains(selectedIndex)) {
@@ -193,10 +386,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(ref, 'Home',   selectedIndex == 0, isDark, 0, 'assets/footer/home'),
-                _buildNavItem(ref, 'Invest', selectedIndex == 1, isDark, 1, 'assets/footer/invest'),
-                _buildNavItem(ref, 'History',selectedIndex == 2, isDark, 2, 'assets/footer/history'),
-                _buildNavItem(ref, 'Profile',selectedIndex == 3, isDark, 3, 'assets/footer/profile'),
+                _buildNavItem(ref, 'Home',      selectedIndex == 0, isDark, 0, 'assets/footer/home'),
+                _buildNavItem(ref, 'Savings',   selectedIndex == 1, isDark, 1, 'assets/footer/invest'),
+                _buildNavItem(ref, 'History',   selectedIndex == 2, isDark, 2, 'assets/footer/history'),
+                _buildNavItem(ref, 'Profile',   selectedIndex == 3, isDark, 3, 'assets/footer/profile'),
+                _buildNavItem(ref, 'Jewellery', selectedIndex == 4, isDark, 4, 'assets/footer/jewelley'),
               ],
             ),
           ),
@@ -234,7 +428,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           SizedBox(height: 2.h),
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.playfairDisplay(
               fontSize: 11.sp,
               fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
               color: isActive ? AppTheme.primaryGreen : inactiveColor,

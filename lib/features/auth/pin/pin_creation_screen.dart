@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../shared/theme/app_text_styles.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../../../core/services/mpin_service.dart';
 import '../controller/auth_controller.dart';
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/custom_button.dart';
@@ -17,10 +19,12 @@ import '../../../core/security/secure_storage_service.dart';
 import '../../../core/utils/navigation_utils.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/services/fcm_service.dart';
+import '../../../core/utils/validators.dart';
 
 class PinCreationScreen extends ConsumerStatefulWidget {
   final String mobile;
-  final String fullName;
+  final String firstName;
+  final String lastName;
   final String email;
   final String dob;
   final String referralCode;
@@ -28,7 +32,8 @@ class PinCreationScreen extends ConsumerStatefulWidget {
   const PinCreationScreen({
     super.key,
     required this.mobile,
-    this.fullName = '',
+    this.firstName = '',
+    this.lastName = '',
     this.email = '',
     this.dob = '',
     this.referralCode = '',
@@ -79,7 +84,7 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
   String get _currentPin => _isConfirming ? _confirmPin : _pin;
 
   void _onKeyPressed(String key) {
-    if (_currentPin.length < 4) {
+    if (_currentPin.length < MpinNotifier.pinLength) {
       setState(() {
         if (_isConfirming) {
           _confirmPin += key;
@@ -89,10 +94,20 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
       });
       // Auto-advance to confirm step when first PIN is complete
       // Auto-fire API call when confirm PIN is complete
-      if (_currentPin.length == 4) {
+      if (_currentPin.length == MpinNotifier.pinLength) {
         Future.delayed(const Duration(milliseconds: 250), () {
           if (!mounted) return;
           if (!_isConfirming) {
+            if (Validators.isWeakPin(_pin)) {
+              setState(() => _pin = '');
+              _shuffleKeypad();
+              AppToast.show(
+                context,
+                'Choose a less predictable PIN — avoid sequences like 123456 or repeated digits.',
+                type: ToastType.error,
+              );
+              return;
+            }
             setState(() {
               _isConfirming = true;
               _confirmPin = '';
@@ -174,18 +189,18 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
                     ),
                     SizedBox(height: 24.h),
 
-                    // Title
+                    // Title — always on one line (FittedBox shrinks the font
+                    // just enough to fit instead of wrapping to a 2nd line).
                     FadeInAnimation(
                       delay: const Duration(milliseconds: 100),
-                      child: Text(
-                        _isConfirming
-                            ? 'Confirm\nYour PIN'
-                            : 'Set Your\nSecurity PIN',
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 28.sp,
-                          fontWeight: FontWeight.w800,
-                          color: textColor,
-                          height: 1.15,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _isConfirming ? 'Confirm Your PIN' : 'Set Your Security PIN',
+                          maxLines: 1,
+                          style: AppTextStyles.displayLarge(isDark)
+                              .copyWith(color: textColor, height: 1.15),
                         ),
                       ),
                     ),
@@ -194,8 +209,8 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
                       delay: const Duration(milliseconds: 150),
                       child: NumericStyledText(
                         _isConfirming
-                            ? 'Re-enter the 4-digit PIN to confirm.'
-                            : 'Create a 4-digit PIN for quick & secure access.',
+                            ? 'Re-enter the ${MpinNotifier.pinLength}-digit PIN to confirm.'
+                            : 'Create a ${MpinNotifier.pinLength}-digit PIN for quick & secure access.',
                         fontSize: 14.sp,
                         color: subtitleColor,
                         fontWeight: FontWeight.w400,
@@ -210,7 +225,7 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
                         delay: const Duration(milliseconds: 200),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(4, (index) {
+                          children: List.generate(MpinNotifier.pinLength, (index) {
                             final filled = index < _currentPin.length;
                             return TweenAnimationBuilder<double>(
                               tween: Tween(begin: 1.0, end: filled ? 1.2 : 1.0),
@@ -272,20 +287,30 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
                   svgIconPath: 'assets/buttons/getstart.svg',
                   isLoading: authState.isLoading,
                   onPressed: () {
-                    if (!_isConfirming && _pin.length == 4) {
+                    if (!_isConfirming && _pin.length == MpinNotifier.pinLength) {
+                      if (Validators.isWeakPin(_pin)) {
+                        setState(() => _pin = '');
+                        _shuffleKeypad();
+                        AppToast.show(
+                          context,
+                          'Choose a less predictable PIN — avoid sequences like 123456 or repeated digits.',
+                          type: ToastType.error,
+                        );
+                        return;
+                      }
                       setState(() {
                         _isConfirming = true;
                         _confirmPin = '';
                       });
                       _shuffleKeypad();
-                    } else if (_isConfirming && _confirmPin.length == 4) {
+                    } else if (_isConfirming && _confirmPin.length == MpinNotifier.pinLength) {
                       _handleSetPin();
                     }
                   },
                   gradient: LinearGradient(
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
-                    colors: _currentPin.length == 4
+                    colors: _currentPin.length == MpinNotifier.pinLength
                         ? const [Color(0xFF1B882C), Color(0xFF003716)]
                         : [
                             const Color(0xFF1B882C).withOpacity(0.45),
@@ -408,7 +433,8 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
       final registerSuccess =
           await ref.read(authControllerProvider.notifier).register(
                 mobile: widget.mobile,
-                fullName: widget.fullName,
+                firstName: widget.firstName,
+                lastName: widget.lastName,
                 email: widget.email,
                 tempToken: widget.tempToken,
                 dob: widget.dob,
@@ -441,11 +467,11 @@ class _PinCreationScreenState extends ConsumerState<PinCreationScreen> {
       // Fire-and-forget — never blocks navigation.
       _registerFcmToken();
 
-      if (widget.fullName.isNotEmpty) {
+      if (widget.firstName.isNotEmpty) {
         Navigator.pushReplacementNamed(
           context,
           AppRouter.registrationSuccess,
-          arguments: {'fullName': widget.fullName},
+          arguments: {'firstName': widget.firstName},
         );
       } else {
         Navigator.pushNamedAndRemoveUntil(

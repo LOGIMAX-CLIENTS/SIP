@@ -3,15 +3,15 @@ class AppConfig {
 
   /// Current environment name (dev | staging | production).
   /// Override at build time: --dart-define=ENV=dev
-  static const String environment =
-      String.fromEnvironment('ENV', defaultValue: 'production');
+  static String environment =
+      const String.fromEnvironment('ENV', defaultValue: 'production');
 
   /// If no flag is passed the production URL is used as default.
-  static const String baseUrl = String.fromEnvironment(
+  static String baseUrl = const String.fromEnvironment(
     'BASE_URL',
-    // defaultValue: 'https://api.startgold.com/api/api/v1/', //  Live
-    //defaultValue:'https://startgoldapi.logimaxindia.com/api/api/v1/', // Staging
-    defaultValue: 'https://vaptapi.startgold.com/api/api/v1/', // VAPT Server
+   // defaultValue: 'https://api.startgold.com/api/api/v1/', //  Live
+   defaultValue:'https://startgoldapi.logimaxindia.com/api/api/v1/', // Staging
+    //defaultValue: 'https://vaptapi.startgold.com/api/api/v1/', // VAPT Server
   );
 
   // Storage Keys
@@ -21,7 +21,9 @@ class AppConfig {
   static const String keyMobileNumber = 'mobile_number';
   static const String keyIsMpinEnabled = 'is_mpin_enabled';
   static const String keyIsBiometricEnabled = 'is_biometric_enabled';
+  static const String keyMpinLockTimeoutSeconds = 'mpin_lock_timeout_seconds';
   static const String keyCustomerId = 'customer_id';
+  static const String keyHasSeenManualKycSupportPrompt = 'has_seen_manual_kyc_support_prompt';
   static const String keyCustomerName = 'customer_name';
   static const String keyCustomerPhoto = 'customer_photo';
   static const String keyServerPublicKey =
@@ -36,6 +38,15 @@ class AppConfig {
   static const String publicKeyEndpoint = 'crypto/public-key';
 
   // Security
+  static bool enableScreenshotProtection = true;
+
+  // MPIN lock / biometric timing — populated from the server's
+  // APP_CONTROL_MPIN_LOCK config row (see AppControlProvider), with these
+  // as the pre-fetch fallback.
+  static List<int> mpinLockTimeoutOptionsSeconds = [30, 60, 300, 900, 1800];
+  static int mpinLockDefaultTimeoutSeconds = 60;
+  static bool biometricLoginEnabled = true;
+
   static const List<String> allowedCertFingerprints = [
     'F3:AB:FB:70:B3:D0:A7:F2:CB:EF:02:8A:2C:C4:95:62:55:D8:FC:35:71:E5:32:0E:7F:04:D7:00:47:10:86:AC', // cert fingerprint (changes on renewal)
     'hEdBgpqZW1U6x1XwUf+0UfNg4zu2oy/OwkIOGCppqXs=', // public key pin (stable across renewals)
@@ -45,6 +56,8 @@ class AppConfig {
   static const List<String> encryptedEndpoints = [
     'auth/generate-otp',
     'auth/verify-otp',
+    'auth/generate-email-otp',
+    'auth/verify-email-otp',
     'auth/register',
     'savings/initiate',
     'savings/check-eligibility',

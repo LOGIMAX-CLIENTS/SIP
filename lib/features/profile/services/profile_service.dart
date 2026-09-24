@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/api_client.dart';
 
@@ -26,7 +27,8 @@ class ProfileService {
   /// Returns `{'success': true}` or `{'success': false, 'message': '...'}`.
   Future<Map<String, dynamic>> updateProfile({
     required String customerId,
-    required String name,
+    required String firstName,
+    String? lastName,
     required String email,
     required String dob,
     required String pincode,
@@ -42,7 +44,8 @@ class ProfileService {
         'profile/update',
         data: {
           'id_customer': customerId,
-          'name': name,
+          'first_name': firstName,
+          'last_name': lastName,
           'email': email,
           'dob': dob,
           'pincode': pincode,
@@ -92,6 +95,25 @@ class ProfileService {
     }
   }
 
+  /// Persists the customer's chosen app-lock idle timeout server-side
+  /// (Profile > Security > "MPIN & Biometric Timing") so it syncs across
+  /// their devices. Returns false on any failure — caller keeps the local
+  /// cache as the fallback in that case.
+  Future<bool> setMpinLockTimeout(int timeoutSeconds) async {
+    try {
+      final response = await _apiClient.post(
+        'profile/mpin-lock-timing',
+        data: {'timeout_seconds': timeoutSeconds},
+      );
+      return response.data?['success'] == true;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ProfileService] setMpinLockTimeout error: $e');
+      }
+      return false;
+    }
+  }
+
   Future<bool> updateProfilePhoto({
     required File photo,
     required String customerId,
@@ -103,18 +125,29 @@ class ProfileService {
           photo.path,
           filename: fileName,
         ),
-        'id_customer': customerId,
+        if (customerId.isNotEmpty) 'id_customer': customerId,
       });
-
-
 
       final response = await _apiClient.post(
         'customer/update-profile-photo',
         data: formData,
       );
 
-      return response.data['success'] == true;
+      final data = response.data;
+      if (kDebugMode) {
+        debugPrint('[ProfileService] updateProfilePhoto response: $data');
+      }
+      if (data is Map) {
+        return data['success'] == true ||
+            data['success'] == 1 ||
+            data['status'] == true ||
+            data['status'] == 'success';
+      }
+      return false;
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ProfileService] updateProfilePhoto error: $e');
+      }
       return false;
     }
   }

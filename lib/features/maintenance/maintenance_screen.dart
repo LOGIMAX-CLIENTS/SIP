@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/models/app_control_model.dart';
 import '../../core/providers/app_control_provider.dart';
+import '../../shared/theme/app_text_styles.dart';
 
 /// Full-screen maintenance mode gate.
 ///
@@ -232,10 +233,8 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen>
                         SizedBox(width: 8.w),
                         Text(
                           'Checking status automatically…',
-                          style: GoogleFonts.playfairDisplay(
-                            fontSize: 12.sp,
-                            color: textSecondary,
-                          ),
+                          style: AppTextStyles.labelMedium(isDark)
+                              .copyWith(color: textSecondary),
                         ),
                       ],
                     ),

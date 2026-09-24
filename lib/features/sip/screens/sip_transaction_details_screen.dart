@@ -5,7 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../shared/widgets/numeric_styled_text.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../invoice/invoice_service.dart';
 
 import '../../../routes/app_router.dart';
 import '../../../shared/widgets/gradient_header.dart';
@@ -58,7 +58,7 @@ class _SipTransactionDetailsScreenState
         backgroundColor: Colors.transparent,
         body: Column(
           children: [
-            GradientHeader(title: 'SIP Transaction Details'),
+            GradientHeader(title: 'AutoGold Transaction Details'),
             Expanded(
               child: detailsState.when(
                 data: (response) {
@@ -177,7 +177,7 @@ class _SipTransactionDetailsScreenState
                 ),
                 SizedBox(height: 4.h),
                 Text(
-                  'SIP Autopay',
+                  'AutoGold Autopay',
                   style: GoogleFonts.playfairDisplay(
                     fontSize: 13.sp,
                     fontWeight: FontWeight.w500,
@@ -209,7 +209,7 @@ class _SipTransactionDetailsScreenState
               ),
               SizedBox(height: 4.h),
               Text(
-                '${details.weightGrams} g',
+                '${details.weightGrams.toStringAsFixed(6)} gm',
                 style: GoogleFonts.lora(
                   fontSize: 13.sp,
                   color: mutedTextColor,
@@ -275,19 +275,41 @@ class _SipTransactionDetailsScreenState
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () async {
-                      final url = Uri.parse(details.invoiceUrl);
+                      // Show loading overlay
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => const Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF167525)),
+                          ),
+                        ),
+                      );
                       try {
-                        final launched = await launchUrl(
-                          url,
-                          mode: LaunchMode.externalApplication,
+                        final file = await InvoiceService.downloadInvoice(
+                          details.invoiceUrl,
                         );
-                        if (!launched && context.mounted) {
-                          AppToast.show(
-                              context, 'No app found to open the invoice',
-                              type: ToastType.warning);
+                        if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
+                          Navigator.pushNamed(
+                            context,
+                            AppRouter.invoiceViewer,
+                            arguments: {
+                              'file_path': file.path,
+                              'title': 'Invoice',
+                            },
+                          );
+                        }
+                      } on InvoiceException catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
+                          AppToast.show(context, e.message,
+                              type: ToastType.error);
                         }
                       } catch (e) {
                         if (context.mounted) {
+                          Navigator.pop(context); // dismiss loading
                           AppToast.show(context, 'Could not open invoice',
                               type: ToastType.error);
                         }
@@ -296,7 +318,7 @@ class _SipTransactionDetailsScreenState
                     icon: Icon(Icons.download_rounded,
                         color: textColor, size: 20.sp),
                     label: Text('Invoice',
-                        style: TextStyle(
+                        style: GoogleFonts.playfairDisplay(
                             color: textColor,
                             fontSize: 13.sp,
                             fontWeight: FontWeight.bold)),
@@ -446,7 +468,7 @@ class _SipTransactionDetailsScreenState
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'SIP Plan Details',
+                'AutoGold Plan Details',
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 14.sp,
                   fontWeight: FontWeight.bold,
@@ -472,11 +494,13 @@ class _SipTransactionDetailsScreenState
             ],
           ),
           SizedBox(height: 14.h),
-          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor),
+          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor,
+              isNumeric: false),
           _buildDetailRow(
-              'Frequency', scheme.frequency, textColor, mutedTextColor),
+              'Frequency', scheme.frequency, textColor, mutedTextColor,
+              isNumeric: false),
           _buildDetailRow(
-              'SIP Amount', '₹${scheme.amount}', textColor, mutedTextColor),
+              'AutoGold Amount', '₹${scheme.amount}', textColor, mutedTextColor),
           _buildDetailRow('Total Saved', '₹${scheme.totalSaved}', textColor,
               mutedTextColor),
           _buildDetailRow('Cycles Done', '${scheme.cyclesDone}', textColor,
@@ -494,7 +518,8 @@ class _SipTransactionDetailsScreenState
       Color textColor,
       Color mutedTextColor,
       bool isDark) {
-    final rateLabel = '${details.metalName} Rate';
+    final String baseMetal = details.metalName.toLowerCase().contains('silver') ? 'Silver' : 'Gold';
+    final rateLabel = '$baseMetal Rate';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -522,7 +547,7 @@ class _SipTransactionDetailsScreenState
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'SIP Order Details',
+                    'AutoGold Order Details',
                     style: GoogleFonts.playfairDisplay(
                         fontSize: 14.sp,
                         fontWeight: FontWeight.bold,
@@ -542,12 +567,16 @@ class _SipTransactionDetailsScreenState
             SizedBox(height: 4.h),
             _buildDetailRow(rateLabel, details.priceBreakdown.rate, textColor,
                 mutedTextColor),
-            _buildDetailRow('Gold Quantity', details.priceBreakdown.quantity,
+            _buildDetailRow('$baseMetal Quantity', details.priceBreakdown.quantity,
                 textColor, mutedTextColor),
-            _buildDetailRow('Gold Value', details.priceBreakdown.value,
+            _buildDetailRow('$baseMetal Value', details.priceBreakdown.value,
                 textColor, mutedTextColor),
-            _buildDetailRow(
-                'GST', details.priceBreakdown.gst, textColor, mutedTextColor),
+            _buildDetailRow('CGST', details.priceBreakdown.cgst, textColor,
+                mutedTextColor,
+                percentText: '(${details.priceBreakdown.cgstPercent}%)'),
+            _buildDetailRow('SGST', details.priceBreakdown.sgst, textColor,
+                mutedTextColor,
+                percentText: '(${details.priceBreakdown.sgstPercent}%)'),
             Divider(color: borderColor, height: 16.h),
             _buildDetailRow('Amount', details.priceBreakdown.totalAmount,
                 textColor, mutedTextColor,
@@ -575,7 +604,8 @@ class _SipTransactionDetailsScreenState
             _buildDetailRow('Placed On', details.technicalDetails.placedOn,
                 textColor, mutedTextColor),
             _buildDetailRow('Paid Via', details.technicalDetails.paidVia,
-                textColor, mutedTextColor),
+                textColor, mutedTextColor,
+                isNumeric: false),
           ]
         ],
       ),
@@ -583,34 +613,64 @@ class _SipTransactionDetailsScreenState
   }
 
   // ── Detail Row ─────────────────────────────────────────────────────
+  /// [isNumeric] selects the value's font family: numeric/amount/rate/date/ID
+  /// values (default) use Lora; textual/categorical values (e.g. Plan name,
+  /// Frequency name, Paid Via) should pass isNumeric: false to use Playfair
+  /// Display.
+  /// [percentText] (e.g. "(1.50%)") renders in Lora, same as [value] —
+  /// Playfair's stylized digits look mismatched next to Lora's plain
+  /// numerals when a rate is embedded in the label itself.
   Widget _buildDetailRow(
       String label, String value, Color textColor, Color mutedTextColor,
-      {bool isBold = false, bool showCopy = false}) {
+      {bool isBold = false, bool showCopy = false, bool isNumeric = true,
+      String? percentText}) {
     if (value.isEmpty || value == 'N/A' || value == 'null') {
       return const SizedBox.shrink();
     }
+    final valueStyle = isNumeric
+        ? GoogleFonts.lora(
+            fontSize: 13.sp,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            color: textColor,
+          )
+        : GoogleFonts.playfairDisplay(
+            fontSize: 13.sp,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            color: textColor,
+          );
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 5.h),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 13.sp,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-              color: isBold ? textColor : mutedTextColor,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 13.sp,
+                  fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+                  color: isBold ? textColor : mutedTextColor,
+                ),
+              ),
+              if (percentText != null) ...[
+                SizedBox(width: 4.w),
+                Text(percentText,
+                    style: GoogleFonts.lora(
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                      color: mutedTextColor,
+                    )),
+              ],
+            ],
           ),
           Row(
             children: [
               Text(
                 value,
-                style: GoogleFonts.lora(
-                  fontSize: 13.sp,
-                  fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-                  color: textColor,
-                ),
+                style: valueStyle,
               ),
               if (showCopy) ...[
                 SizedBox(width: 8.w),

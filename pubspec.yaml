@@ -1,7 +1,7 @@
 name: startgold
 description: "A secure Fintech project."
 publish_to: 'none'
-version: 1.0.0+8
+version: 1.1.0+9
 
 environment:
   sdk: '>=3.4.1 <4.0.0'
@@ -12,7 +12,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  intl: 0.20.2
+  intl: ^0.20.3
 
   # Core Logic & Network
   dio: ^5.4.1
@@ -30,7 +30,7 @@ dependencies:
   # Security & Identity
   flutter_secure_storage: ^9.0.0
   root_checker_plus: ^0.0.3
-  device_info_plus: ^10.1.0
+  device_info_plus: ^11.5.0
   screen_protector: ^1.5.1
   local_auth: ^3.0.1
   crypto: ^3.0.3
@@ -46,9 +46,11 @@ dependencies:
   confetti: ^0.8.0
   lottie: ^3.3.1
 
+  syncfusion_flutter_pdfviewer: ^28.2.7
+
   # Media & Files
   image_picker: ^1.2.1
-  image_cropper: ^11.0.0
+  image_cropper: ^12.2.1
   path_provider: ^2.1.5
   path: ^1.9.1
   url_launcher: ^6.3.2
@@ -56,10 +58,21 @@ dependencies:
 
   # Payment
   flutter_cashfree_pg_sdk: 2.3.3+50
+  hypersdkflutter: ^4.0.57
+  razorpay_flutter: ^1.4.5
+
+  # KYC — SurePass DigiLocker (Aadhaar/PAN verification)
+  digilocker_flutter_sdk: ^1.0.0
+
+  # KYC — Meon DigiLocker (Aadhaar/PAN verification)
+  flutter_digilocker_aadhar_pan: ^1.0.0
 
   # Splash Screen (must be in dependencies for native integration)
   flutter_native_splash: ^2.4.7
   flutter_widget_from_html_core: ^0.17.2
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.3.0
+  webview_flutter_wkwebview: ^3.16.0
 
 dev_dependencies:
   flutter_test:
@@ -82,6 +95,8 @@ flutter:
     - assets/lottie/
     - assets/sip/
     - assets/buttons/
+    - assets/offer/
+    - assets/jewellery/
 
   fonts:
     - family: Lora

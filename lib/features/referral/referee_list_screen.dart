@@ -6,6 +6,7 @@ import '../../shared/widgets/numeric_styled_text.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../shared/widgets/gradient_header.dart';
+import '../../shared/theme/app_text_styles.dart';
 import 'referee_list_service.dart';
 
 class RefereeListScreen extends ConsumerStatefulWidget {
@@ -110,11 +111,7 @@ class _RefereeListScreenState extends ConsumerState<RefereeListScreen> {
             SizedBox(height: 20.h),
             Text(
               'No Referrals Yet',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 18.sp,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1E293B),
-              ),
+              style: AppTextStyles.titleMedium(false),
             ),
             SizedBox(height: 8.h),
             Text(

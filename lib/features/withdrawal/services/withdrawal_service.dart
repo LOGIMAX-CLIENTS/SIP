@@ -4,6 +4,7 @@ import '../../../core/providers/user_provider.dart';
 import '../../../core/providers/commodity_provider.dart';
 import '../models/withdrawal_method.dart';
 import '../models/withdrawal_policy.dart';
+import '../models/withdrawal_balance.dart';
 
 class WithdrawalService {
   final ApiClient _apiClient = ApiClient();
@@ -112,6 +113,51 @@ class WithdrawalService {
     return response.data ?? {};
   }
 
+  /// GET account/verify-bank/active-method — which BAV method the currently
+  /// active KYC verification gateway supports ("cashfree" | "pennyless"),
+  /// AND which live-control SECOND step is active ("rpd" | "penny_payment").
+  /// Add Bank Account calls this once before verifying so it never
+  /// hardcodes a provider name client-side for either step. The second step
+  /// is resolved server-side straight off VerificationGatewayRouting(RPD) —
+  /// NOT derived from the BAV method here, since a gateway can be routed for
+  /// RPD independently of which provider did BAV (see backend
+  /// ActiveBankVerificationMethodView).
+  Future<({String bavMethod, String secondStepMethod})>
+      getActiveBankVerificationMethod() async {
+    try {
+      final response = await _apiClient.get('account/verify-bank/active-method');
+      final data = response.data?['data'] as Map<String, dynamic>?;
+      final method = (data?['method'] as String?) ?? 'cashfree';
+      final secondStep = (data?['second_step_method'] as String?) ?? 'penny_payment';
+      return (
+        bavMethod: method == 'pennyless' ? 'pennyless' : 'cashfree',
+        secondStepMethod: secondStep == 'rpd' ? 'rpd' : 'penny_payment',
+      );
+    } catch (_) {
+      // Safe default — matches the only-ever-active BAV provider today, and
+      // falls back to the existing ₹1-payment flow when the second-step
+      // check itself fails.
+      return (bavMethod: 'cashfree', secondStepMethod: 'penny_payment');
+    }
+  }
+
+  /// Verify and add a bank account via SurePass "pennyless" BAV — instant,
+  /// no ₹1 transferred. Alternative to [verifyAndAddBank] (Cashfree penny
+  /// drop); only succeeds when SurePass is the active KYC verification
+  /// gateway (see backend BankVerificationSurePassService.verify_pennyless).
+  Future<Map<String, dynamic>> verifyAndAddBankPennyless({
+    required String holderName,
+    required String accNo,
+    required String ifsc,
+  }) async {
+    final response = await _apiClient.post('account/verify-bank/pennyless', data: {
+      'account_holder': holderName,
+      'account_no': accNo,
+      'ifsc_code': ifsc,
+    });
+    return response.data ?? {};
+  }
+
   /// Fetch withdrawable balance for the selected metal.
   /// Endpoint: POST referrals/reward-balance
   /// Payload:  { "id_metal": "1" }
@@ -138,6 +184,21 @@ class WithdrawalService {
     } catch (e) {
       return {};
     }
+  }
+
+  /// Fetch the Total Holding / Requested / On Hold / Withdrawable breakdown
+  /// for every commodity the customer holds.
+  /// Endpoint: GET /withdrawal/eligibility
+  Future<List<WithdrawalBalance>> fetchWithdrawalEligibility() async {
+    final response = await _apiClient.get('withdrawal/eligibility');
+    if (response.data != null && response.data['success'] == true) {
+      final holdings = response.data['data']?['holdings'] as List? ?? [];
+      return holdings
+          .map((e) => WithdrawalBalance.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw Exception(
+        response.data?['message'] ?? 'Failed to fetch withdrawal balance');
   }
 
   /// Fetch withdrawal policy for a given metal + amount.
@@ -181,6 +242,30 @@ final rewardBalanceProvider =
   return ref.read(withdrawalServiceProvider).fetchRewardBalance(
         metalId: metalId,
       );
+});
+
+// ── Withdrawal Balance (Total Holding / Requested / On Hold / Withdrawable) ──
+
+/// Raw per-commodity breakdown for every holding the customer has.
+/// Auto-disposes and rebuilds whenever the commodity tab changes (same
+/// invalidation trigger as [rewardBalanceProvider], which this replaces as
+/// the withdrawal screen's balance source).
+final withdrawalEligibilityProvider =
+    FutureProvider.autoDispose<List<WithdrawalBalance>>((ref) {
+  ref.watch(selectedMetalIdProvider); // rebuild on commodity switch
+  return ref.read(withdrawalServiceProvider).fetchWithdrawalEligibility();
+});
+
+/// The breakdown row for the currently selected metal only — what the
+/// withdrawal screen actually displays and validates against.
+final withdrawalBalanceProvider =
+    FutureProvider.autoDispose<WithdrawalBalance>((ref) async {
+  final metalId = ref.watch(selectedMetalIdProvider);
+  final holdings = await ref.watch(withdrawalEligibilityProvider.future);
+  return holdings.firstWhere(
+    (h) => h.commodityId?.toString() == metalId,
+    orElse: () => WithdrawalBalance.empty,
+  );
 });
 
 // ── Withdrawal Policy ─────────────────────────────────────────────────────
