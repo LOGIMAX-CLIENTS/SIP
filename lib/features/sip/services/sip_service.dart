@@ -78,6 +78,10 @@ class SipService {
     /// mandate's bank_details, taking priority over the raw bank_* fields
     /// below (see SIPCreateSerializer.validate()).
     int? bankAccountId,
+    /// 'upi' only — CustomerUPI pk (BankAccount.linkedUpis[].id) the
+    /// customer picked in UpiIdSheet. Omitted lets the backend fall back to
+    /// the primary/any active UPI.
+    int? upiId,
     /// eMandate only — legacy ad-hoc entry, required by the backend when
     /// paymentMethod == 'emandate' AND bankAccountId is absent (see
     /// SIPCreateSerializer.validate()).
@@ -106,6 +110,9 @@ class SipService {
     }
     if (bankAccountId != null) {
       payload['bank_account_id'] = bankAccountId;
+    }
+    if (paymentMethod == 'upi' && upiId != null) {
+      payload['upi_id'] = upiId;
     }
     if (paymentMethod == 'emandate') {
       payload['bank_account_number'] = bankAccountNumber;

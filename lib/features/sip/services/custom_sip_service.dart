@@ -32,6 +32,9 @@ class CustomSipService {
     int? bankAccountId,
     /// 'upi' (default) | 'card' | 'emandate' — see CSIPCreateSerializer.
     String? paymentMethod,
+    /// 'upi' only — CustomerUPI pk picked in UpiIdSheet (see
+    /// SipService.createSip()).
+    int? upiId,
   }) async {
     SecureLogger.d(
         'CustomSIP: Creating plan – commodity=$commodityId, dates=$customDates, paymentMethod=$paymentMethod');
@@ -43,6 +46,7 @@ class CustomSipService {
       if (label != null && label.isNotEmpty) 'label': label,
       if (bankAccountId != null) 'bank_account_id': bankAccountId,
       if (paymentMethod != null) 'payment_method': paymentMethod,
+      if (paymentMethod == 'upi' && upiId != null) 'upi_id': upiId,
     };
 
     final response = await _apiClient.post('sip/custom/create', data: payload);

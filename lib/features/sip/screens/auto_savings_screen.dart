@@ -24,6 +24,7 @@ import '../controller/sip_controller.dart';
 import '../models/sip_models.dart';
 import '../../profile/models/bank_account.dart';
 import '../../instant_saving/widgets/payment_method_sheet.dart';
+import '../widgets/upi_id_sheet.dart';
 // import '../../nominee/controller/nominee_controller.dart'; // Commented ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nominee feature will be updated
 
 /// Main Auto Savings (SIP) setup screen.
@@ -1996,9 +1997,14 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                                   final resolvedMethod = paymentMethod == 'netbanking'
                                       ? 'emandate'
                                       : paymentMethod;
-                                  _createCustomSipPlan(
-                                    bankAccountId: bankAccountId,
+                                  _selectUpiIdIfNeeded(
+                                    account: account,
                                     paymentMethod: resolvedMethod,
+                                    onReady: (upiId) => _createCustomSipPlan(
+                                      bankAccountId: bankAccountId,
+                                      paymentMethod: resolvedMethod,
+                                      upiId: upiId,
+                                    ),
                                   );
                                 },
                               ),
@@ -2029,6 +2035,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   Future<void> _createCustomSipPlan({
     int? bankAccountId,
     String? paymentMethod,
+    int? upiId,
   }) async {
     final sipState = ref.read(sipControllerProvider);
     final notifier = ref.read(sipControllerProvider.notifier);
@@ -2042,6 +2049,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         customDates: _selectedCustomDates.toList()..sort(),
         bankAccountId: bankAccountId,
         paymentMethod: paymentMethod,
+        upiId: upiId,
       );
 
       notifier.setCreating(false);
@@ -2092,6 +2100,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           await _createCustomSipPlan(
             bankAccountId: bankAccountId,
             paymentMethod: paymentMethod,
+            upiId: upiId,
           );
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
@@ -2106,6 +2115,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           await _createCustomSipPlan(
             bankAccountId: bankAccountId,
             paymentMethod: paymentMethod,
+            upiId: upiId,
           );
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
@@ -2134,6 +2144,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         await _createCustomSipPlan(
           bankAccountId: bankAccountId,
           paymentMethod: paymentMethod,
+          upiId: upiId,
         );
       } else {
         AppToast.show(context, e.message, type: ToastType.error);
@@ -2149,6 +2160,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         await _createCustomSipPlan(
           bankAccountId: bankAccountId,
           paymentMethod: paymentMethod,
+          upiId: upiId,
         );
       } else {
         AppToast.show(context, e.message, type: ToastType.error);
@@ -2217,11 +2229,43 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         onProceed: (String paymentMethod) {
           final resolvedMethod =
               paymentMethod == 'netbanking' ? 'emandate' : paymentMethod;
-          _createSipPlan(
+          _selectUpiIdIfNeeded(
+            account: account,
             paymentMethod: resolvedMethod,
-            bankAccountId: bankAccountId,
+            onReady: (upiId) => _createSipPlan(
+              paymentMethod: resolvedMethod,
+              bankAccountId: bankAccountId,
+              upiId: upiId,
+            ),
           );
         },
+      ),
+    );
+  }
+
+  /// UPI only: opens [UpiIdSheet] listing the chosen bank account's linked
+  /// UPI IDs — always, even when there's just one, so the customer
+  /// explicitly confirms the VPA being mandated — then calls [onReady] with
+  /// the picked CustomerUPI pk. Other methods (and a UPI account with no
+  /// linked UPI IDs, where the VPA is chosen in the gateway checkout
+  /// instead) go straight to [onReady] with null, as before.
+  void _selectUpiIdIfNeeded({
+    required BankAccount account,
+    required String paymentMethod,
+    required void Function(int? upiId) onReady,
+  }) {
+    if (paymentMethod != 'upi' || account.linkedUpis.isEmpty) {
+      onReady(null);
+      return;
+    }
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => UpiIdSheet(
+        upis: account.linkedUpis,
+        onProceed: (upi) => onReady(int.tryParse(upi.id)),
       ),
     );
   }
@@ -2229,6 +2273,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   Future<void> _createSipPlan({
     String? paymentMethod,
     int? bankAccountId,
+    int? upiId,
   }) async {
     final sipState = ref.read(sipControllerProvider);
     final notifier = ref.read(sipControllerProvider.notifier);
@@ -2244,6 +2289,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         date: sipState.selectedDate,
         paymentMethod: paymentMethod,
         bankAccountId: bankAccountId,
+        upiId: upiId,
       );
 
       notifier.setCreating(false);
@@ -2300,6 +2346,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           await _createSipPlan(
             paymentMethod: paymentMethod,
             bankAccountId: bankAccountId,
+            upiId: upiId,
           );
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
@@ -2314,6 +2361,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
           await _createSipPlan(
             paymentMethod: paymentMethod,
             bankAccountId: bankAccountId,
+            upiId: upiId,
           );
         } else {
           AppToast.show(context, response.message, type: ToastType.error);
@@ -2348,6 +2396,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         await _createSipPlan(
           paymentMethod: paymentMethod,
           bankAccountId: bankAccountId,
+          upiId: upiId,
         );
       } else {
         AppToast.show(context, e.message, type: ToastType.error);
@@ -2363,6 +2412,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         await _createSipPlan(
           paymentMethod: paymentMethod,
           bankAccountId: bankAccountId,
+          upiId: upiId,
         );
       } else {
         AppToast.show(context, e.message, type: ToastType.error);
