@@ -188,7 +188,8 @@ final enquiryServiceProvider =
     Provider<EnquiryService>((ref) => EnquiryService());
 
 /// Token is managed by ApiInterceptor — no need to gate on userProvider.
-/// Always fires the API call when the screen opens.
-final enquiriesProvider = FutureProvider<List<Enquiry>>((ref) {
+/// autoDispose: fires the API call every time the screen opens, and never
+/// carries one user's tickets over to the next login.
+final enquiriesProvider = FutureProvider.autoDispose<List<Enquiry>>((ref) {
   return ref.read(enquiryServiceProvider).getEnquiries();
 });
