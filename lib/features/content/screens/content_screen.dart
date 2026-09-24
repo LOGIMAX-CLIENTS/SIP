@@ -18,7 +18,7 @@ import '../../../shared/theme/app_theme.dart';
 ///     around every numeric run before passing to HtmlWidget.
 class ContentScreen extends ConsumerWidget {
   final String title;
-  final FutureProvider<Map<String, dynamic>> provider;
+  final AutoDisposeFutureProvider<Map<String, dynamic>> provider;
 
   const ContentScreen({
     super.key,
