@@ -9,6 +9,7 @@ import '../../../shared/theme/app_text_styles.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
+import '../../../core/error/failures.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/utils/masking_utils.dart';
 
@@ -25,35 +26,98 @@ Future<bool?> showNomineeMobileOtpSheet(
   required String idCountry,
   required String otpReferenceId,
 }) {
-  return showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => NomineeMobileOtpSheet(
-      mobile: mobile,
-      countryCode: countryCode,
-      idCountry: idCountry,
+  final authService = AuthService();
+  return _showNomineeOtpSheet(
+    context,
+    NomineeOtpSheet(
+      title: 'Verify nominee\'s mobile number',
+      maskedDestination: MaskingUtils.maskMobile(mobile),
       otpReferenceId: otpReferenceId,
+      resendCooldownSeconds: 30, // mirrors OtpScreen's own timer
+      onResend: () => authService.sendOtp(
+        mobile: mobile,
+        countryCode: countryCode,
+        idCountry: idCountry,
+        type: 'RESEND',
+      ),
+      onVerify: (otp, referenceId) => authService.verifyMobileOtpOnly(
+        mobile: mobile,
+        otp: otp,
+        otpReferenceId: referenceId,
+      ),
     ),
   );
 }
 
-class NomineeMobileOtpSheet extends StatefulWidget {
-  final String mobile;
-  final String countryCode;
-  final String idCountry;
-  final String otpReferenceId;
+/// OTP bottom sheet for verifying a nominee's e-mail address.
+///
+/// Uses the same generate/verify-email-otp endpoints as registration and
+/// Account Details, but through [AuthService] directly for the same reason
+/// as the mobile sheet. [resendCooldownSeconds] should be the
+/// `resend_cooldown_seconds` from generate-email-otp's response — the window
+/// the backend actually enforces between sends. Returns true once the address
+/// has been successfully verified.
+Future<bool?> showNomineeEmailOtpSheet(
+  BuildContext context, {
+  required String email,
+  required String otpReferenceId,
+  String? nomineeName,
+  int? resendCooldownSeconds,
+}) {
+  final authService = AuthService();
+  return _showNomineeOtpSheet(
+    context,
+    NomineeOtpSheet(
+      title: 'Verify nominee\'s e-mail',
+      maskedDestination: MaskingUtils.maskEmail(email),
+      otpReferenceId: otpReferenceId,
+      // 60 = the backend's own default (EMAIL_OTP_SECURITY config), used only
+      // if the send response ever omits resend_cooldown_seconds.
+      resendCooldownSeconds: resendCooldownSeconds ?? 60,
+      onResend: () =>
+          authService.sendEmailOtp(email: email, firstName: nomineeName),
+      onVerify: (otp, referenceId) => authService.verifyEmailOtp(
+        email: email,
+        otp: otp,
+        otpReferenceId: referenceId,
+      ),
+    ),
+  );
+}
 
-  const NomineeMobileOtpSheet({
+Future<bool?> _showNomineeOtpSheet(BuildContext context, NomineeOtpSheet sheet) {
+  return showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => sheet,
+  );
+}
+
+/// Channel-agnostic OTP entry sheet — the caller supplies the resend/verify
+/// API calls. Both callbacks return the raw API response map; a failure
+/// thrown as a [Failure] (non-2xx) has its server message shown as-is.
+class NomineeOtpSheet extends StatefulWidget {
+  final String title;
+  final String maskedDestination;
+  final String otpReferenceId;
+  final int resendCooldownSeconds;
+  final Future<Map<String, dynamic>> Function() onResend;
+  final Future<Map<String, dynamic>> Function(String otp, String otpReferenceId)
+      onVerify;
+
+  const NomineeOtpSheet({
     super.key,
-    required this.mobile,
-    required this.countryCode,
-    required this.idCountry,
+    required this.title,
+    required this.maskedDestination,
     required this.otpReferenceId,
+    required this.resendCooldownSeconds,
+    required this.onResend,
+    required this.onVerify,
   });
 
   @override
-  State<NomineeMobileOtpSheet> createState() => _NomineeMobileOtpSheetState();
+  State<NomineeOtpSheet> createState() => _NomineeOtpSheetState();
 }
 
 /// Extracts a user-facing message from this app's standard error response
@@ -67,12 +131,11 @@ String _extractErrorMessage(Map<String, dynamic> response, String fallback) {
       fallback;
 }
 
-class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
-  static const int _resendCooldownSeconds = 30; // mirrors OtpScreen's own timer
-  final AuthService _authService = AuthService();
+class _NomineeOtpSheetState extends State<NomineeOtpSheet> {
   final TextEditingController _otpController = TextEditingController();
   late String _otpReferenceId;
-  int _timerSeconds = _resendCooldownSeconds;
+  late int _cooldownSeconds;
+  int _timerSeconds = 0;
   Timer? _timer;
   bool _isVerifying = false;
   bool _isResending = false;
@@ -81,12 +144,13 @@ class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
   void initState() {
     super.initState();
     _otpReferenceId = widget.otpReferenceId;
+    _cooldownSeconds = widget.resendCooldownSeconds;
     _startTimer();
     _otpController.addListener(() => setState(() {}));
   }
 
   void _startTimer() {
-    setState(() => _timerSeconds = _resendCooldownSeconds);
+    setState(() => _timerSeconds = _cooldownSeconds);
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_timerSeconds == 0) {
@@ -104,20 +168,26 @@ class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
     super.dispose();
   }
 
+  /// Toasts [error] — the server's own message when it came back as a
+  /// [Failure], otherwise [fallback]. A 409 is left alone: the interceptor
+  /// already runs the force-logout dialog for it.
+  void _showError(Object error, String fallback) {
+    if (!mounted || error is SessionInvalidatedFailure) return;
+    AppToast.show(context, error is Failure ? error.message : fallback,
+        type: ToastType.error);
+  }
+
   Future<void> _resendOtp() async {
     setState(() => _isResending = true);
     _otpController.clear();
     try {
-      final data = await _authService.sendOtp(
-        mobile: widget.mobile,
-        countryCode: widget.countryCode,
-        idCountry: widget.idCountry,
-        type: 'RESEND',
-      );
+      final data = await widget.onResend();
       if (!mounted) return;
       if (data['success'] == true) {
         final newRefId = data['data']?['otp_reference_id'];
         if (newRefId != null) _otpReferenceId = newRefId;
+        final newCooldown = data['data']?['resend_cooldown_seconds'];
+        if (newCooldown is int) _cooldownSeconds = newCooldown;
         _startTimer();
         AppToast.show(context, 'OTP resent successfully!', type: ToastType.success);
       } else {
@@ -125,10 +195,7 @@ class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
             type: ToastType.error);
       }
     } catch (e) {
-      if (mounted) {
-        AppToast.show(context, 'Failed to resend OTP. Please try again.',
-            type: ToastType.error);
-      }
+      _showError(e, 'Failed to resend OTP. Please try again.');
     } finally {
       if (mounted) setState(() => _isResending = false);
     }
@@ -137,11 +204,7 @@ class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
   Future<void> _verifyOtp(String otp) async {
     setState(() => _isVerifying = true);
     try {
-      final data = await _authService.verifyMobileOtpOnly(
-        mobile: widget.mobile,
-        otp: otp,
-        otpReferenceId: _otpReferenceId,
-      );
+      final data = await widget.onVerify(otp, _otpReferenceId);
       if (!mounted) return;
       if (data['success'] == true) {
         Navigator.pop(context, true);
@@ -153,10 +216,7 @@ class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
         );
       }
     } catch (e) {
-      if (mounted) {
-        AppToast.show(context, 'Invalid or expired OTP. Please try again.',
-            type: ToastType.error);
-      }
+      _showError(e, 'Invalid or expired OTP. Please try again.');
     } finally {
       if (mounted) setState(() => _isVerifying = false);
     }
@@ -196,7 +256,7 @@ class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
             ),
             SizedBox(height: 20.h),
             Text(
-              'Verify nominee\'s mobile number',
+              widget.title,
               style: GoogleFonts.playfairDisplay(
                 fontSize: 22.sp,
                 fontWeight: FontWeight.bold,
@@ -205,7 +265,7 @@ class _NomineeMobileOtpSheetState extends State<NomineeMobileOtpSheet> {
             ),
             SizedBox(height: 8.h),
             Text(
-              'We sent an OTP to ${MaskingUtils.maskMobile(widget.mobile)}',
+              'We sent an OTP to ${widget.maskedDestination}',
               style: GoogleFonts.playfairDisplay(
                 fontSize: 14.sp,
                 color: secondaryTextColor,
