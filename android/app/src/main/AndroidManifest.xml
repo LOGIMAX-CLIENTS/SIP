@@ -91,6 +91,11 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="http"/>
         </intent>
+        <!-- upi: — required to find UPI apps for the ₹1 bank verification (Android 11+) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="upi"/>
+        </intent>
         <!-- tel: — required for url_launcher to open the phone dialler -->
         <intent>
             <action android:name="android.intent.action.DIAL"/>
