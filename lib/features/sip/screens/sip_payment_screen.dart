@@ -4,7 +4,10 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:flutter_cashfree_pg_sdk/api/cferrorresponse/cferrorresponse.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfpayment.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfsubscriptioncheckoutpayment.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/subs/cfsubsnetbanking.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/subs/cfsubsnetbankingpayment.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsubssession.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cftheme/cftheme.dart';
@@ -26,8 +29,12 @@ import '../controller/sip_controller.dart';
 ///
 /// Cashfree path uses the Cashfree Flutter SDK's **Subscription flow**:
 ///   • `CFSubscriptionSessionBuilder` — builds a subscription session
-///   • `CFSubscriptionPaymentBuilder` — builds the payment object
-///   • `CFPaymentGatewayService.doPayment()` — launches the checkout
+///   • a payment object, picked by `paymentData['payment_method']`:
+///       emandate → `CFSubsNetbankingPaymentBuilder` (straight to the bank's
+///                  net-banking login, using `paymentData['enach_details']`)
+///       else     → `CFSubscriptionPaymentBuilder` (Cashfree hosted checkout,
+///                  which asks for bank/auth mode or VPA itself)
+///   • `CFPaymentGatewayService.doPayment()` — launches it
 ///
 /// This is different from the regular payment flow (`CFWebCheckoutPayment`)
 /// which only supports one-time payments.
@@ -97,6 +104,7 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _razorpay?.clear();
+    AppLifecycleObserver.suppressAppLock = false;
     super.dispose();
   }
 
@@ -174,21 +182,22 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
           .setSubscriptionSessionId(sessionId)
           .build();
 
-      // Step 2: Build theme (match app's green theme)
-      final theme = CFThemeBuilder()
-          .setNavigationBarBackgroundColorColor("#003716")
-          .setNavigationBarTextColor("#ffffff")
-          .build();
+      // Step 2: Build the payment object for the method the customer picked
+      final method =
+          (widget.paymentData['payment_method'] as String?)?.toLowerCase() ?? '';
+      CFPayment? payment;
+      if (method == 'emandate' || method == 'netbanking') {
+        payment = _buildEnachPayment(subscriptionSession);
+      }
 
-      // Step 3: Build subscription payment object
-      final cfSubscriptionCheckout = CFSubscriptionPaymentBuilder()
-          .setSession(subscriptionSession)
-          .setTheme(theme)
-          .build();
+      // Step 3: Anything not handled above → Cashfree hosted checkout
+      payment ??= _buildHostedCheckout(subscriptionSession);
 
-      // Step 4: Launch
-      SecureLogger.d('SIP PAYMENT: Calling doPayment with subscription checkout object...');
-      _cfPaymentGatewayService.doPayment(cfSubscriptionCheckout);
+      // Step 4: Launch. The customer leaves the app for their bank — an
+      // MPIN lock on return must not interrupt the authorisation.
+      AppLifecycleObserver.suppressAppLock = true;
+      SecureLogger.d('SIP PAYMENT: Calling doPayment with ${payment.runtimeType}...');
+      _cfPaymentGatewayService.doPayment(payment);
     } on CFException catch (e) {
       SecureLogger.e('SIP PAYMENT: CFException: ${e.message}');
       if (mounted) {
@@ -208,6 +217,52 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     }
   }
 
+  /// Cashfree hosted subscription checkout — the customer picks the bank /
+  /// auth mode or UPI app on Cashfree's own page.
+  CFPayment _buildHostedCheckout(CFSubscriptionSession session) {
+    final theme = CFThemeBuilder()
+        .setNavigationBarBackgroundColorColor("#003716")
+        .setNavigationBarTextColor("#ffffff")
+        .build();
+    return CFSubscriptionPaymentBuilder()
+        .setSession(session)
+        .setTheme(theme)
+        .build();
+  }
+
+  /// eNACH straight to the customer's bank net-banking login.
+  ///
+  /// Uses the registered account the backend sent in `enach_details`
+  /// (shared/services/sip.py _cashfree_enach_details). Returns null — so the
+  /// hosted checkout is used instead — when that is missing or incomplete,
+  /// e.g. an older backend that doesn't send it.
+  CFPayment? _buildEnachPayment(CFSubscriptionSession session) {
+    final raw = widget.paymentData['enach_details'];
+    if (raw is! Map) {
+      SecureLogger.d('SIP PAYMENT: No enach_details — using hosted checkout');
+      return null;
+    }
+    String field(String key) => raw[key]?.toString() ?? '';
+    try {
+      final netbanking = CFSubsNetbankingBuilder()
+          .setAuthMode(field('auth_mode').isEmpty ? 'net_banking' : field('auth_mode'))
+          .setAccountHolderName(field('account_holder_name'))
+          .setAccountNumber(field('account_number'))
+          .setAccountType(field('account_type'))
+          .setAccountBankCode(field('account_bank_code'))
+          .build();
+      SecureLogger.d('SIP PAYMENT: eNACH direct → bank ${field('account_bank_code')}, '
+          'mode ${field('auth_mode')}');
+      return CFSubsNetbankingPaymentBuilder()
+          .setSession(session)
+          .setNetbanking(netbanking)
+          .build();
+    } on CFException catch (e) {
+      SecureLogger.e('SIP PAYMENT: eNACH details incomplete (${e.message}) — using hosted checkout');
+      return null;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // CASHFREE CALLBACKS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -216,6 +271,7 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   /// The subscriptionId is returned — verify with backend.
   void _onSubscriptionVerify(String subscriptionId) {
     _sdkCallbackReceived = true;
+    AppLifecycleObserver.suppressAppLock = false;
     SecureLogger.d(
         'SIP PAYMENT: ✅ Subscription VERIFY callback → $subscriptionId');
     _verifyMandateStatus();
@@ -224,6 +280,7 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   /// Called when subscription checkout fails.
   void _onSubscriptionFailure(CFErrorResponse errorResponse, String data) {
     _sdkCallbackReceived = true;
+    AppLifecycleObserver.suppressAppLock = false;
     final errorMsg = errorResponse.getMessage() ?? 'Payment failed';
     SecureLogger.e('SIP PAYMENT: ❌ Subscription FAILURE callback → $errorMsg');
     SecureLogger.e('SIP PAYMENT: Failure data: $data');

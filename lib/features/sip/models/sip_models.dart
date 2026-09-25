@@ -137,6 +137,13 @@ class SipCreateResponse {
   /// determines what Checkout presents). Defaults to 'upi' to match the
   /// backend's own default for pre-existing/older responses.
   final String paymentMethod;
+  /// Cashfree eMandate only: { auth_mode, account_holder_name,
+  /// account_number, account_type, account_bank_code } — the customer's
+  /// registered bank account, handed to the SDK's net-banking element so the
+  /// customer lands straight on their bank's login instead of Cashfree's
+  /// bank/auth-mode picker (see sip_payment_screen.dart). Null for every
+  /// other method/gateway and for backends that predate the field.
+  final Map<String, String>? enachDetails;
 
   SipCreateResponse({
     required this.success,
@@ -153,6 +160,7 @@ class SipCreateResponse {
     this.mode = 'subscriptions',
     this.customerId,
     this.paymentMethod = 'upi',
+    this.enachDetails,
   });
 
   factory SipCreateResponse.fromJson(Map<String, dynamic> json) {
@@ -181,6 +189,10 @@ class SipCreateResponse {
       mode: data['mode']?.toString().toLowerCase() ?? 'subscriptions',
       customerId: data['customer_id']?.toString(),
       paymentMethod: data['payment_method']?.toString().toLowerCase() ?? 'upi',
+      enachDetails: data['enach_details'] is Map
+          ? (data['enach_details'] as Map).map(
+              (k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
+          : null,
     );
   }
 }

@@ -2075,6 +2075,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'mode': response.mode,
                 'customer_id': response.customerId,
                 'payment_method': response.paymentMethod,
+                'enach_details': response.enachDetails,
               },
             );
           } else {
@@ -2314,6 +2315,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'mode': response.mode,
                 'customer_id': response.customerId,
                 'payment_method': response.paymentMethod,
+                'enach_details': response.enachDetails,
               },
             );
           } else {
