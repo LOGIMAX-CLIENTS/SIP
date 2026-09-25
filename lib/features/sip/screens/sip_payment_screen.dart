@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -8,9 +11,12 @@ import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfpayment.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfsubscriptioncheckoutpayment.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfpayment/subs/cfsubsnetbanking.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfpayment/subs/cfsubsnetbankingpayment.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/subs/cfsubsupi.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/subs/cfsubsupipayment.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsubssession.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cftheme/cftheme.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfupi/cfupiutils.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -32,6 +38,8 @@ import '../controller/sip_controller.dart';
 ///   • a payment object, picked by `paymentData['payment_method']`:
 ///       emandate → `CFSubsNetbankingPaymentBuilder` (straight to the bank's
 ///                  net-banking login, using `paymentData['enach_details']`)
+///       upi      → `CFSubsUPIPaymentBuilder` (straight into the UPI app the
+///                  customer picks from the ones installed)
 ///       else     → `CFSubscriptionPaymentBuilder` (Cashfree hosted checkout,
 ///                  which asks for bank/auth mode or VPA itself)
 ///   • `CFPaymentGatewayService.doPayment()` — launches it
@@ -188,13 +196,28 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
       CFPayment? payment;
       if (method == 'emandate' || method == 'netbanking') {
         payment = _buildEnachPayment(subscriptionSession);
+      } else if (method == 'upi') {
+        final upiAppId = await _pickUpiApp();
+        if (!mounted) return;
+        if (upiAppId == null) {
+          setState(() {
+            _isProcessing = false;
+            _error = 'Choose a UPI app to authorise your AutoPay.';
+          });
+          return;
+        }
+        // Empty id = no UPI app installed, or the customer asked for other
+        // options — the hosted checkout below handles both.
+        if (upiAppId.isNotEmpty) {
+          payment = _buildUpiIntentPayment(subscriptionSession, upiAppId);
+        }
       }
 
       // Step 3: Anything not handled above → Cashfree hosted checkout
       payment ??= _buildHostedCheckout(subscriptionSession);
 
-      // Step 4: Launch. The customer leaves the app for their bank — an
-      // MPIN lock on return must not interrupt the authorisation.
+      // Step 4: Launch. The customer leaves the app for their bank / UPI
+      // app — an MPIN lock on return must not interrupt the authorisation.
       AppLifecycleObserver.suppressAppLock = true;
       SecureLogger.d('SIP PAYMENT: Calling doPayment with ${payment.runtimeType}...');
       _cfPaymentGatewayService.doPayment(payment);
@@ -259,6 +282,117 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
           .build();
     } on CFException catch (e) {
       SecureLogger.e('SIP PAYMENT: eNACH details incomplete (${e.message}) — using hosted checkout');
+      return null;
+    }
+  }
+
+  /// UPI AutoPay straight into the chosen UPI app (intent flow).
+  /// [upiAppId] is the id from `CFUPIUtils().getUPIApps()` — the package
+  /// name on Android, the URL scheme on iOS.
+  CFPayment _buildUpiIntentPayment(CFSubscriptionSession session, String upiAppId) {
+    SecureLogger.d('SIP PAYMENT: UPI intent → $upiAppId');
+    final upi = CFSubsUPIBuilder()
+        .setChannel(CFSubsUPIChannel.INTENT)
+        .setUPIID(upiAppId)
+        .build();
+    return CFSubsUPIPaymentBuilder().setSession(session).setUPI(upi).build();
+  }
+
+  /// Asks which installed UPI app to authorise the mandate in.
+  ///
+  /// Returns the app id, '' to fall back to the hosted checkout (no UPI app
+  /// installed, the lookup failed, or the customer tapped "Other options"),
+  /// or null if the customer dismissed the sheet. A single installed app is
+  /// used without asking.
+  Future<String?> _pickUpiApp() async {
+    List<Map<dynamic, dynamic>> apps;
+    try {
+      apps = (await CFUPIUtils().getUPIApps() ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .where((a) => (a['id']?.toString() ?? '').isNotEmpty)
+          .toList();
+    } catch (e) {
+      SecureLogger.e('SIP PAYMENT: getUPIApps failed: $e');
+      return '';
+    }
+    SecureLogger.d('SIP PAYMENT: Installed UPI apps: ${apps.map((a) => a['id']).toList()}');
+    if (apps.isEmpty) return '';
+    if (apps.length == 1) return apps.first['id'].toString();
+    if (!mounted) return null;
+
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 12.h),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Authorise AutoPay with',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1A1A2E),
+                ),
+              ),
+              SizedBox(height: 12.h),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: apps.map((app) {
+                    final icon = _decodeUpiIcon(app['icon'] ?? app['base64Icon']);
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: icon != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10.r),
+                              child: Image.memory(icon, width: 40.w, height: 40.w, fit: BoxFit.cover),
+                            )
+                          : Icon(Icons.account_balance_wallet_outlined,
+                              size: 32.sp, color: const Color(0xFF064E3B)),
+                      title: Text(
+                        app['displayName']?.toString() ?? app['id'].toString(),
+                        style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600),
+                      ),
+                      trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14.sp),
+                      onTap: () => Navigator.pop(sheetContext, app['id'].toString()),
+                    );
+                  }).toList(),
+                ),
+              ),
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(sheetContext, ''),
+                  child: Text(
+                    'Other options',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF064E3B),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Cashfree returns app icons as base64, sometimes with a data-URI prefix.
+  Uint8List? _decodeUpiIcon(dynamic raw) {
+    final s = raw?.toString() ?? '';
+    if (s.isEmpty) return null;
+    try {
+      return base64Decode(s.contains(',') ? s.substring(s.indexOf(',') + 1) : s);
+    } catch (_) {
       return null;
     }
   }
