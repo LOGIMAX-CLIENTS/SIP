@@ -144,6 +144,10 @@ class SipCreateResponse {
   /// bank/auth-mode picker (see sip_payment_screen.dart). Null for every
   /// other method/gateway and for backends that predate the field.
   final Map<String, String>? enachDetails;
+  /// Cashfree eMandate only: link to the customer's bank net-banking login,
+  /// from the AUTH the backend raised (POST /pg/subscriptions/pay). Opened
+  /// in SipMandateAuthWebView. When set, enachDetails is null.
+  final String? enachAuthLink;
 
   SipCreateResponse({
     required this.success,
@@ -161,6 +165,7 @@ class SipCreateResponse {
     this.customerId,
     this.paymentMethod = 'upi',
     this.enachDetails,
+    this.enachAuthLink,
   });
 
   factory SipCreateResponse.fromJson(Map<String, dynamic> json) {
@@ -193,6 +198,7 @@ class SipCreateResponse {
           ? (data['enach_details'] as Map).map(
               (k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
           : null,
+      enachAuthLink: data['enach_auth_link']?.toString(),
     );
   }
 }
