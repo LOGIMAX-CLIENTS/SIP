@@ -105,6 +105,17 @@ DeleteAccountScreen ──> _deleteInfoProvider / _deleteAccountServiceProvider 
 - The Hub screen's manual RPD button (previous entry above) is unchanged and still useful as a retry path
   for accounts added before this change, or where the auto-chained screen was dismissed/interrupted.
 
+**2026-09-28 — RPD "Pay using another device" QR (PM-STG-0571), app-only, no backend change:**
+- For a phone with no UPI/banking app, `ReversePennyDropScreen` has a "Pay using another device" link that
+  draws the backend's `payment_link` (already a `upi://pay?...` string) as a QR via `qr_flutter`; the
+  customer scans it with a UPI app on a second phone. Polling then follows the same `client_id` as the
+  on-device path (`account/verify-bank/rpd/status`), with a longer cap (`_qrMaxPollAttempts`, ~5 min).
+- `_showQrCode()` always re-calls `initiate` rather than reusing the cached link: the backend's dedup returns
+  the SAME live session (no second ₹1) or, once the old one is past `RPD_SESSION_STALE_AFTER_MINUTES`, a
+  fresh one — this is how an expired QR is handled ("Refresh QR" appears once polling stops).
+- The QR is keyed by its link (`ValueKey(_paymentLink!)`) and always drawn dark-on-white, even in dark mode.
+- Covered by `test/reverse_penny_drop_qr_test.dart` (fake `ReversePennyDropService` via provider override).
+
 `ProfileNotifier` (`profile_controller.dart:121`) is the only `StateNotifier` in the module; every other
 screen uses plain `FutureProvider`/`FutureProvider.autoDispose` + a stateless service call — lighter-weight
 than a full controller, appropriate since these are list/detail views without multi-step edit state.

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart'
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/widgets/gradient_header.dart';
@@ -111,6 +112,9 @@ class ReversePennyDropScreen extends ConsumerStatefulWidget {
 class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen> {
   bool _isProcessing = false;
   bool _paymentLaunched = false;
+  // "Pay using another device" — for a phone with no UPI/banking app, the
+  // same payment_link is drawn as a QR for a second phone to scan and pay.
+  bool _showQr = false;
   String? _clientId;
   String? _paymentLink;
   // Persistent inline error — a toast alone can be missed (especially for
@@ -125,16 +129,21 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
   // open; the manual button below remains available after the cap.
   static const _pollInterval = Duration(seconds: 5);
   static const _maxPollAttempts = 24; // ~2 minutes
+  // Picking up a second phone, scanning and paying takes longer than
+  // switching to a UPI app on this one — the QR view waits longer.
+  static const _qrMaxPollAttempts = 60; // ~5 minutes
   Timer? _pollTimer;
   int _pollAttempts = 0;
 
-  void _startPolling() {
+  void _startPolling({int maxAttempts = _maxPollAttempts}) {
     _pollTimer?.cancel();
     _pollAttempts = 0;
     _pollTimer = Timer.periodic(_pollInterval, (_) {
       _pollAttempts++;
-      if (_pollAttempts > _maxPollAttempts) {
+      if (_pollAttempts > maxAttempts) {
         _stopPolling();
+        // Rebuild so the QR view swaps its "waiting" line for "Refresh QR".
+        if (mounted) setState(() {});
         return;
       }
       _checkStatus(silent: true);
@@ -152,6 +161,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     _stopPolling();
     setState(() {
       _paymentLaunched = false;
+      _showQr = false;
       _clientId = null;
       _paymentLink = null;
       _iosLinks = null;
@@ -194,12 +204,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
         // already fully verified by a previous attempt (webhook/earlier check
         // never made it back to us) — nothing to pay, done immediately.
         if (result['already_verified'] == true || result['verified'] == true) {
-          Navigator.pop(context, true);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (context.mounted) {
-              AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
-            }
-          });
+          _finishVerified();
           return;
         }
       }
@@ -221,6 +226,60 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
           _startPolling();
         }
       }
+    } catch (e) {
+      if (mounted) {
+        AppToast.show(context, e.toString().replaceFirst('Exception: ', ''), type: ToastType.error);
+      }
+    } finally {
+      if (mounted && _isProcessing) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  /// Pops `true` and shows the success toast on the next frame (after the
+  /// pop, so it lands on the screen underneath).
+  void _finishVerified() {
+    Navigator.pop(context, true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) {
+        AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
+      }
+    });
+  }
+
+  /// "Pay using another device" — shows [_paymentLink] as a QR for a second
+  /// phone's UPI app to scan. Always re-initiates rather than reusing a cached
+  /// link: the backend hands back the SAME live session (no second ₹1
+  /// charge), or a fresh one once the old one has outlived its validity
+  /// window — so the QR on screen is never one the provider stopped watching.
+  Future<void> _showQrCode() async {
+    if (_isProcessing || !mounted) return;
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+    });
+    try {
+      final result = await ref.read(reversePennyDropServiceProvider).initiate(cbankId: widget.cbankId);
+      if (!mounted) return;
+
+      if (result['already_verified'] == true || result['verified'] == true) {
+        _finishVerified();
+        return;
+      }
+
+      final link = result['payment_link']?.toString();
+      if (link == null || link.isEmpty) {
+        throw Exception('Payment link not received from server.');
+      }
+      setState(() {
+        _clientId = result['client_id']?.toString();
+        _paymentLink = link;
+        _iosLinks = (result['ios_links'] as Map?)?.cast<String, dynamic>();
+        _showQr = true;
+        _paymentLaunched = true;
+      });
+      _startPolling(maxAttempts: _qrMaxPollAttempts);
     } catch (e) {
       if (mounted) {
         AppToast.show(context, e.toString().replaceFirst('Exception: ', ''), type: ToastType.error);
@@ -509,7 +568,9 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                     padding: EdgeInsets.symmetric(vertical: 16.h),
                     child: Center(
                       child: Text(
-                        'No allowed UPI apps detected directly on this device. You can copy the UPI VPA below to pay ₹1 from any UPI app.',
+                        'No allowed UPI apps detected directly on this device. Close this and choose '
+                        '"Pay using another device" to scan a QR from another phone, or copy the UPI VPA '
+                        'below to pay ₹1 from any UPI app.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12.sp,
@@ -660,13 +721,7 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       final status = result['status']?.toString() ?? '';
       if (result['verified'] == true) {
         _stopPolling();
-        Navigator.pop(context, true);
-        // Deferred to the next frame — see the sibling case above.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted) {
-            AppToast.show(context, 'Bank account additionally verified.', type: ToastType.success);
-          }
-        });
+        _finishVerified();
         return;
       }
 
@@ -718,96 +773,198 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
                 : null,
           ),
           Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(24.w),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset('assets/home/rpd.png', width: 180.w, height: 180.w),
-                  SizedBox(height: 16.h),
-                  Text(
-                    'Our KYC partners will securely verify your bank account by '
-                    'charging ₹1. This amount is refunded instantly once the '
-                    'verification is completed.',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 14.sp,
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                  ),
-                  if (_errorMessage != null) ...[
-                    SizedBox(height: 16.h),
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.all(12.w),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(10.r),
-                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.error_outline_rounded, size: 18.sp, color: Colors.red.shade400),
-                          SizedBox(width: 8.w),
-                          Expanded(
-                            child: Text(
-                              _errorMessage!,
-                              style: GoogleFonts.playfairDisplay(
-                                fontSize: 12.sp,
-                                color: Colors.red.shade400,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  SizedBox(height: 32.h),
-                  if (_errorMessage != null) ...[
-                    Text(
-                      'Please retry with the correct bank account.',
-                      textAlign: TextAlign.center,
-                      style:
-                          GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
-                    ),
-                    SizedBox(height: 16.h),
-                    ElevatedButton(
-                      onPressed: _resetToStart,
-                      style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
-                      child: const Text('Try Again', style: TextStyle(color: Colors.white)),
-                    ),
-                  ] else ...[
-                    ElevatedButton(
-                      onPressed: _isProcessing ? null : _startVerification,
-                      style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
-                      child: _isProcessing
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : Text(
-                              _paymentLaunched ? 'Choose UPI App / Pay ₹1' : 'Proceed to Verify',
-                              style: TextStyle(color: Colors.white, fontSize: 17.sp),
-                            ),
-                    ),
-                    if (_paymentLaunched) ...[
-                      SizedBox(height: 12.h),
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(24.w),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_showQr && _paymentLink != null && _errorMessage == null)
+                      ..._buildQrSection(isDark)
+                    else ...[
+                      Image.asset('assets/home/rpd.png', width: 180.w, height: 180.w),
+                      SizedBox(height: 16.h),
                       Text(
-                        'A ₹1 verification request is active. Tap above to select or re-open your UPI app, then return here to complete verification.',
+                        'Our KYC partners will securely verify your bank account by '
+                        'charging ₹1. This amount is refunded instantly once the '
+                        'verification is completed.',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.playfairDisplay(
-                            fontSize: 12.sp, color: isDark ? Colors.white54 : Colors.black54),
+                          fontSize: 14.sp,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                    ],
+                    if (_errorMessage != null) ...[
+                      SizedBox(height: 16.h),
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(12.w),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10.r),
+                          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.error_outline_rounded, size: 18.sp, color: Colors.red.shade400),
+                            SizedBox(width: 8.w),
+                            Expanded(
+                              child: Text(
+                                _errorMessage!,
+                                style: GoogleFonts.playfairDisplay(
+                                  fontSize: 12.sp,
+                                  color: Colors.red.shade400,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    SizedBox(height: 32.h),
+                    if (_errorMessage != null) ...[
+                      Text(
+                        'Please retry with the correct bank account.',
+                        textAlign: TextAlign.center,
+                        style:
+                            GoogleFonts.playfairDisplay(fontSize: 13.sp, color: isDark ? Colors.white54 : Colors.black54),
+                      ),
+                      SizedBox(height: 16.h),
+                      ElevatedButton(
+                        onPressed: _resetToStart,
+                        style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
+                        child: const Text('Try Again', style: TextStyle(color: Colors.white)),
+                      ),
+                    ] else if (_showQr) ...[
+                      ElevatedButton(
+                        onPressed: _isProcessing ? null : _checkStatus,
+                        style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
+                        child: _isProcessing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : Text(
+                                "I've Paid — Check Status",
+                                style: TextStyle(color: Colors.white, fontSize: 17.sp),
+                              ),
+                      ),
+                      SizedBox(height: 8.h),
+                      TextButton(
+                        onPressed: _isProcessing ? null : () => setState(() => _showQr = false),
+                        child: Text(
+                          'Pay on this phone instead',
+                          style: TextStyle(fontSize: 13.sp, color: _accentGreen, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ] else ...[
+                      ElevatedButton(
+                        onPressed: _isProcessing ? null : _startVerification,
+                        style: ElevatedButton.styleFrom(backgroundColor: _accentGreen),
+                        child: _isProcessing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : Text(
+                                _paymentLaunched ? 'Choose UPI App / Pay ₹1' : 'Proceed to Verify',
+                                style: TextStyle(color: Colors.white, fontSize: 17.sp),
+                              ),
+                      ),
+                      if (_paymentLaunched) ...[
+                        SizedBox(height: 12.h),
+                        Text(
+                          'A ₹1 verification request is active. Tap above to select or re-open your UPI app, then return here to complete verification.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.playfairDisplay(
+                              fontSize: 12.sp, color: isDark ? Colors.white54 : Colors.black54),
+                        ),
+                      ],
+                      SizedBox(height: 8.h),
+                      TextButton.icon(
+                        onPressed: _isProcessing ? null : _showQrCode,
+                        icon: Icon(Icons.qr_code_2_rounded, size: 18.sp, color: _accentGreen),
+                        label: Text(
+                          'Pay using another device',
+                          style: TextStyle(fontSize: 13.sp, color: _accentGreen, fontWeight: FontWeight.w500),
+                        ),
                       ),
                     ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildQrSection(bool isDark) {
+    final subTextColor = isDark ? Colors.white54 : Colors.black54;
+    return [
+      Text(
+        'Scan to pay ₹1',
+        style: GoogleFonts.playfairDisplay(
+          fontSize: 18.sp,
+          fontWeight: FontWeight.bold,
+          color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+        ),
+      ),
+      SizedBox(height: 16.h),
+      // Always dark-on-white, even in dark mode — UPI scanners expect it.
+      Container(
+        padding: EdgeInsets.all(12.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16.r),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+        ),
+        child: QrImageView(
+          key: ValueKey(_paymentLink!),
+          data: _paymentLink!,
+          size: 200.w,
+          backgroundColor: Colors.white,
+        ),
+      ),
+      SizedBox(height: 16.h),
+      Text(
+        'Open any UPI app on another phone, scan this code and pay ₹1 from the '
+        'same bank account you are verifying. The amount is refunded once '
+        'verification is complete.',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.playfairDisplay(
+          fontSize: 13.sp,
+          color: isDark ? Colors.white70 : Colors.black87,
+        ),
+      ),
+      SizedBox(height: 12.h),
+      if (_pollTimer != null)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 14.w,
+              height: 14.w,
+              child: const CircularProgressIndicator(strokeWidth: 2, color: _accentGreen),
+            ),
+            SizedBox(width: 8.w),
+            Text('Waiting for payment…', style: TextStyle(fontSize: 12.sp, color: subTextColor)),
+          ],
+        )
+      else
+        TextButton.icon(
+          onPressed: _isProcessing ? null : _showQrCode,
+          icon: Icon(Icons.refresh_rounded, size: 16.sp, color: _accentGreen),
+          label: Text(
+            'Refresh QR',
+            style: TextStyle(fontSize: 12.sp, color: _accentGreen, fontWeight: FontWeight.w500),
+          ),
+        ),
+    ];
   }
 }

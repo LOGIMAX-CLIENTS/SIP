@@ -30,7 +30,7 @@ SurePass RPD — optional extra check layered on top of an already Pennyless-ver
 
 | Method | Signature | Purpose | Callers |
 |---|---|---|---|
-| `initiate` | `Future<Map<String,dynamic>> initiate({required String cbankId})` | `POST account/verify-bank/rpd/initiate` — returns `client_id`, `payment_link`, `ios_links` | `ReversePennyDropScreen._startVerification` |
+| `initiate` | `Future<Map<String,dynamic>> initiate({required String cbankId})` | `POST account/verify-bank/rpd/initiate` — returns `client_id`, `payment_link`, `ios_links` | `ReversePennyDropScreen._startVerification`, `ReversePennyDropScreen._showQrCode` |
 | `status` | `Future<Map<String,dynamic>> status({required String clientId})` | `POST account/verify-bank/rpd/status` — server-authoritative re-check, never trusts client state | `ReversePennyDropScreen._checkStatus` |
 | `history` | `Future<List<Map<String,dynamic>>> history()` | `GET account/verify-bank/rpd/history` | not yet wired to a screen |
 
