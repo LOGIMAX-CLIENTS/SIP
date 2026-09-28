@@ -29,6 +29,7 @@ import '../../../core/security/app_lifecycle_observer.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../routes/app_router.dart';
 import '../controller/sip_controller.dart';
+import 'sip_mandate_auth_webview.dart';
 
 /// SIP Payment screen – opens the active gateway's mandate-authorization
 /// checkout, selected via `paymentData['payment_gateway']` ('cashfree' | 'razorpay').
@@ -36,8 +37,10 @@ import '../controller/sip_controller.dart';
 /// Cashfree path uses the Cashfree Flutter SDK's **Subscription flow**:
 ///   • `CFSubscriptionSessionBuilder` — builds a subscription session
 ///   • a payment object, picked by `paymentData['payment_method']`:
-///       emandate → `CFSubsNetbankingPaymentBuilder` (straight to the bank's
-///                  net-banking login, using `paymentData['enach_details']`)
+///       emandate → if the backend's AUTH returned `enach_auth_link`, no SDK
+///                  at all: that bank login opens in SipMandateAuthWebView.
+///                  Otherwise `CFSubsNetbankingPaymentBuilder` (straight to
+///                  the bank's login, using `paymentData['enach_details']`)
 ///       upi      → `CFSubsUPIPaymentBuilder` (straight into the UPI app the
 ///                  customer picks from the ones installed)
 ///       else     → `CFSubscriptionPaymentBuilder` (Cashfree hosted checkout,
@@ -73,6 +76,10 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   bool _isProcessing = true;
   bool _isVerifying = false;
   bool _sdkCallbackReceived = false;
+  /// True while SipMandateAuthWebView is open — the bank page may hand off
+  /// to the bank's own app, and the resume on return must not trigger the
+  /// fallback verify underneath the still-open WebView.
+  bool _inBankWebView = false;
   String? _error;
 
   /// Which checkout to launch: 'cashfree' (default) or 'razorpay'.
@@ -129,12 +136,13 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
         '(sdkCallback=$_sdkCallbackReceived, verifying=$_isVerifying)');
     if (state == AppLifecycleState.resumed &&
         !_sdkCallbackReceived &&
+        !_inBankWebView &&
         !_isVerifying &&
         _error == null) {
       // Delay slightly so the SDK callback has a chance to fire first.
       Future.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
-        if (_sdkCallbackReceived || _isVerifying) {
+        if (_sdkCallbackReceived || _inBankWebView || _isVerifying) {
           SecureLogger.d(
               'SIP PAYMENT: SDK callback arrived during delay — skipping fallback');
           return;
@@ -174,6 +182,18 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
         return;
       }
 
+      final method =
+          (widget.paymentData['payment_method'] as String?)?.toLowerCase() ?? '';
+      final isEnach = method == 'emandate' || method == 'netbanking';
+
+      // eNACH with a bank link from the backend's AUTH call → open the
+      // bank's login directly; no Cashfree SDK screen at all.
+      final enachAuthLink = widget.paymentData['enach_auth_link']?.toString() ?? '';
+      if (isEnach && enachAuthLink.isNotEmpty) {
+        await _openEnachAuthLink(enachAuthLink);
+        return;
+      }
+
       // Determine environment
       final environment = envString.toUpperCase() == 'PRODUCTION'
           ? CFEnvironment.PRODUCTION
@@ -191,10 +211,8 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
           .build();
 
       // Step 2: Build the payment object for the method the customer picked
-      final method =
-          (widget.paymentData['payment_method'] as String?)?.toLowerCase() ?? '';
       CFPayment? payment;
-      if (method == 'emandate' || method == 'netbanking') {
+      if (isEnach) {
         payment = _buildEnachPayment(subscriptionSession);
       } else if (method == 'upi') {
         final upiAppId = await _pickUpiApp();
@@ -237,6 +255,32 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
           _error = 'Failed to start payment. Please try again.';
         });
       }
+    }
+  }
+
+  /// Opens the bank net-banking link from the backend's eNACH AUTH in
+  /// SipMandateAuthWebView, then confirms the mandate once the bank hands
+  /// back to our return_url.
+  Future<void> _openEnachAuthLink(String link) async {
+    SecureLogger.d('SIP PAYMENT: eNACH → opening bank link from AUTH');
+    AppLifecycleObserver.suppressAppLock = true;
+    _inBankWebView = true;
+    final completed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => SipMandateAuthWebView(authUrl: link)),
+    );
+    _inBankWebView = false;
+    AppLifecycleObserver.suppressAppLock = false;
+    if (!mounted) return;
+
+    if (completed == true) {
+      _sdkCallbackReceived = true;
+      _verifyMandateStatus();
+    } else {
+      setState(() {
+        _isProcessing = false;
+        _error = 'Bank authorisation was not completed.';
+      });
     }
   }
 
