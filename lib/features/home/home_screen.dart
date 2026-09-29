@@ -1147,6 +1147,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return parts.length > 1 ? '$formatted.${parts[1]}' : formatted;
   }
 
+  /// ₹ with Indian grouping and two decimals, e.g. ₹1,23,456.00.
+  String _formatInr(double amount) {
+    final parts = amount.toStringAsFixed(2).split('.');
+    return '₹${_formatIndianRate(double.parse(parts[0]))}.${parts[1]}';
+  }
+
   Widget _buildGrowthStreakCard(bool isDark, RateHistory history) {
     final activeOrange = const Color(0xFFE2700D); // "Invest Now" button orange
     final textGreen =
@@ -1408,6 +1414,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ],
                 ),
+                // Withdrawable amount — hidden when the backend sends none
+                if (data.summary.withdrawableInr != null) ...[
+                  SizedBox(height: 8.h),
+                  Text(
+                    _formatInr(data.summary.withdrawableInr!),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.lora(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
                 SizedBox(height: 16.h),
                 Row(
                   children: [

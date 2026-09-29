@@ -21,6 +21,7 @@ class PortfolioService {
         final invested = double.tryParse(data['total_invested']?.toString() ?? '0') ?? 0.0;
         final value = double.tryParse(data['current_value_inr']?.toString() ?? '0') ?? 0.0;
         final balance = double.tryParse(data['total_holdings_grams']?.toString() ?? '0') ?? 0.0;
+        final withdrawable = double.tryParse(data['withdrawable_inr']?.toString() ?? '');
 
         final summary = CommodityPortfolio(
           totalInvested: invested,
@@ -29,6 +30,7 @@ class PortfolioService {
           returnsPercentage: double.tryParse(data['growth_percentage']?.toString() ?? '0') ?? 0.0,
           balance: balance,
           hasActiveAccount: balance > 0 || invested > 0,
+          withdrawableInr: withdrawable,
         );
 
         return PortfolioData(

@@ -10,6 +10,9 @@ class CommodityPortfolio {
   final double returnsPercentage;
   final double balance; // in grams
   final bool hasActiveAccount;
+  // What the customer can withdraw now, in ₹ — the withdrawal screen's
+  // "up to" figure. Null when the backend has no rate (e.g. market closed).
+  final double? withdrawableInr;
 
   CommodityPortfolio({
     required this.totalInvested,
@@ -18,6 +21,7 @@ class CommodityPortfolio {
     required this.returnsPercentage,
     required this.balance,
     required this.hasActiveAccount,
+    this.withdrawableInr,
   });
 
   factory CommodityPortfolio.empty() => CommodityPortfolio(
