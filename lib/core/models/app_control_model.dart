@@ -158,7 +158,7 @@ class MaintenanceInfo {
 }
 
 /// MPIN lock idle-timeout options + biometric server kill-switch — backs
-/// Profile > Security > "MPIN & Biometric Timing".
+/// Profile > App Security.
 class MpinLockConfig {
   final List<int> sessionTimeoutOptionsSeconds;
   final int defaultTimeoutSeconds;

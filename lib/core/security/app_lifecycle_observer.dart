@@ -16,7 +16,7 @@ import '../../routes/app_router.dart';
 /// App Lock triggers when:
 ///   - MPIN is enabled
 ///   - App was in background for at least the configured lock-timeout
-///     (Profile > Security > "MPIN & Biometric Timing", server default via
+///     (Profile > App Security, server default via
 ///     APP_CONTROL_MPIN_LOCK) — not just any brief app-switch
 ///   - User is authenticated
 ///   - No payment gateway / external flow is active
@@ -134,7 +134,7 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     _pausedAt = null; // reset so we don't re-trigger
 
     // ── Guard: background duration below the configured timeout ──
-    // Configurable via Profile > Security > "MPIN & Biometric Timing"
+    // Configurable via Profile > App Security
     // (server default: APP_CONTROL_MPIN_LOCK.default_timeout_seconds).
     // Without this, ANY brief backgrounding — an image picker, a share
     // sheet, a system dialog — re-triggered the lock screen, which read to

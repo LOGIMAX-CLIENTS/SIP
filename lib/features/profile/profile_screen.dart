@@ -219,23 +219,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             onTap: () =>
                                 Navigator.pushNamed(context, AppRouter.contact),
                           ),
-                        ],
-                        isDark),
-                    SizedBox(height: 16.h),
-                    _buildSection(
-                        'Security',
-                        [
+                          // Change MPIN, Biometric Login and Auto-Lock
+                          // Timeout live one level down, on App Security.
                           _buildMenuItem(
-                            'Change MPIN',
-                            'assets/sidemenu/mpin.svg',
+                            'App Security',
+                            'assets/sidemenu/app_security.svg',
                             onTap: () => Navigator.pushNamed(
-                                context, AppRouter.changeMpin),
-                          ),
-                          _buildMenuItem(
-                            'MPIN & Biometric Timing',
-                            'assets/sidemenu/lock.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.mpinLockTiming),
+                                context, AppRouter.appSecurity),
                           ),
                         ],
                         isDark),

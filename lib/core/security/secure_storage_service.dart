@@ -47,7 +47,7 @@ class SecureStorageService {
   /// before the MPIN/biometric lock screen shows on resume (see
   /// AppLifecycleObserver). Falls back to the server-provided default
   /// (AppConfig.mpinLockDefaultTimeoutSeconds) until the customer picks one
-  /// on Profile > Security > "MPIN & Biometric Timing".
+  /// on Profile > App Security.
   static Future<int> getMpinLockTimeoutSeconds() async {
     final value =
         await _storage.read(key: AppConfig.keyMpinLockTimeoutSeconds);

@@ -139,8 +139,8 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
       }
 
       // ── MPIN Lock Timing / Biometric Kill-Switch Update ──
-      // Server-driven options for Profile > Security > "MPIN & Biometric
-      // Timing" — see MpinLockConfig's docstring.
+      // Server-driven options for Profile > App Security — see
+      // MpinLockConfig's docstring.
       final mpinLock = controlData.mpinLock;
       AppConfig.mpinLockTimeoutOptionsSeconds =
           mpinLock.sessionTimeoutOptionsSeconds;

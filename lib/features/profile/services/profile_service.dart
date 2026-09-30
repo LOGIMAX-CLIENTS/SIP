@@ -96,7 +96,7 @@ class ProfileService {
   }
 
   /// Persists the customer's chosen app-lock idle timeout server-side
-  /// (Profile > Security > "MPIN & Biometric Timing") so it syncs across
+  /// (Profile > App Security) so it syncs across
   /// their devices. Returns false on any failure — caller keeps the local
   /// cache as the fallback in that case.
   Future<bool> setMpinLockTimeout(int timeoutSeconds) async {

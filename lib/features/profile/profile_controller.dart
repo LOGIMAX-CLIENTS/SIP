@@ -186,7 +186,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       if (data != null) {
         // ── Sync server-side MPIN lock timing preference ──────────────────
         // cus_mpin_lock_timeout_seconds syncs across the customer's devices
-        // (Profile > Security > "MPIN & Biometric Timing"); null means the
+        // (Profile > App Security); null means the
         // customer never set one, so the local cache keeps whatever it has
         // (server default) rather than being overwritten with null.
         final serverTimeout = data['mpin_lock_timeout_seconds'];
