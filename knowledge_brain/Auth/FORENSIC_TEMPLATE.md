@@ -98,7 +98,8 @@ if that decision looks wrong, check `SessionManager.isAuthenticated()` (`session
 
 ## 5. "Registration form silently does nothing when I tap Confirm"
 
-**Check first**: is `_emailVerified` actually `true`? The Confirm button's `onPressed` is `null` (visually
+**Check first**: is `_emailVerified` actually `true`? (Only matters while the admin's
+`REGISTER_FORM_VALIDATION.email_mandatory` is 1 — see RULE-AUTH-006.) The Confirm button's `onPressed` is `null` (visually
 disabled but developers/testers sometimes miss the disabled-vs-error distinction) whenever
 `!_agreedToTerms || !_emailVerified` (`registration_screen.dart:122-123`) — this is not a bug, it's
 RULE-AUTH-006, but is the #1 support-ticket-shaped complaint for this screen since the doc

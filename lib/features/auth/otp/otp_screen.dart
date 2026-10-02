@@ -466,6 +466,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
           arguments: {
             'mobile': widget.mobile,
             'tempToken': authState.data?['temp_token'] ?? '',
+            // Admin's REGISTER_FORM_VALIDATION setting. Missing (older
+            // server) means verification stays compulsory.
+            'emailVerificationRequired':
+                authState.data?['email_verification_required'] != false,
           },
         );
       } else if (mpinEnabled) {

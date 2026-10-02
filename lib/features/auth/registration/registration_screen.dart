@@ -23,8 +23,18 @@ import 'package:startgold/shared/widgets/dob_date_picker.dart';
 class RegistrationScreen extends ConsumerStatefulWidget {
   final String mobile;
   final String tempToken;
-  const RegistrationScreen(
-      {super.key, required this.mobile, required this.tempToken});
+
+  /// Admin's REGISTER_FORM_VALIDATION setting, sent with the OTP-verify
+  /// response. When false the e-mail is still required but Confirm no longer
+  /// waits for it to be verified; the server enforces the same rule.
+  final bool emailVerificationRequired;
+
+  const RegistrationScreen({
+    super.key,
+    required this.mobile,
+    required this.tempToken,
+    this.emailVerificationRequired = true,
+  });
 
   @override
   ConsumerState<RegistrationScreen> createState() => _RegistrationScreenState();
@@ -41,7 +51,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   bool _agreedToTerms = false;
   bool _isSubmitting = false;
 
-  // ── Mandatory email OTP verification state ──────────────────────────────
+  // ── Email OTP verification state ────────────────────────────────────────
   bool _emailVerified = false;
   bool _isVerifyingEmail = false;
   String? _verifiedEmail;
@@ -132,8 +142,10 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
     final primaryTextColor = isDark ? Colors.white : const Color(0xFF333333);
     final inputBgColor = isDark ? Colors.white.withOpacity(0.05) : Colors.white;
 
-    final bool canSubmit =
-        _agreedToTerms && _emailVerified && !_isSubmitting && !authState.isLoading;
+    final bool canSubmit = _agreedToTerms &&
+        (_emailVerified || !widget.emailVerificationRequired) &&
+        !_isSubmitting &&
+        !authState.isLoading;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -611,7 +623,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   Future<void> _handleRegistration() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (!_emailVerified) {
+    if (widget.emailVerificationRequired && !_emailVerified) {
       AppToast.show(context, 'Please verify your email before proceeding.',
           type: ToastType.error);
       return;
