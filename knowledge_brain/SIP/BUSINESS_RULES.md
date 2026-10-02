@@ -110,7 +110,8 @@ For UPI, `UpiIdSheet` makes the customer pick one of the bank account's linked U
 to `sip/create` / `sip/custom/create` as `upi_id`. Its VPA goes to `SipPaymentScreen` as
 `paymentData['upi_vpa']` (`auto_savings_screen.dart`, both `AppRouter.sipPayment` pushes). The
 payment screen shows that VPA on the "Authorise AutoPay with" sheet and lists the app that issued it
-first as "Recommended" (`utils/upi_handle_apps.dart`). The VPA is **not** pre-filled into
+first as "Recommended" (`utils/upi_handle_apps.dart`). If the flow falls back to Cashfree's hosted
+checkout, a dialog shows the VPA with a Copy button first. The VPA is **not** pre-filled into
 Cashfree, because nothing allows it:
 - Cashfree's Flutter subscription SDK supports UPI **intent only** (`CFSubsUPIChannel.INTENT`;
   `setUPIID` takes the UPI app's package name, not a VPA), and the hosted checkout has no VPA

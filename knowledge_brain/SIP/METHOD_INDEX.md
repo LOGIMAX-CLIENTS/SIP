@@ -124,7 +124,9 @@ Alphabetical by class. `file:line` → primary caller(s). Screens/widgets that a
 | `_onRazorpaySuccess()` | `:337` | → `_verifyMandateStatus()` |
 | `_onSubscriptionFailure()` | `:220` | → `sipFailure` route |
 | `_onSubscriptionVerify()` | `:212` | → `_verifyMandateStatus()` |
-| `_pickUpiApp()` | `:364` | "Authorise AutoPay with" sheet of installed UPI apps; with `upi_vpa` set, shows the picked UPI ID and lists its app first as "Recommended" (RULE-SIP-014) |
+| `_pickUpiApp()` | `:371` | "Authorise AutoPay with" sheet of installed UPI apps; with `upi_vpa` set, shows the picked UPI ID and lists its app first as "Recommended" (RULE-SIP-014) |
+| `_showVpaBeforeHostedCheckout()` | `:490` | UPI with `upi_vpa` falling back to the hosted checkout: dialog with the UPI ID + Copy |
+| `_copyVpa()` | `:529` | Copies the UPI ID, clears the clipboard after 60s |
 | `_verifyMandateStatus()` | `:403` | `POST sip/confirm`; routes to `sipSuccess`/`sipFailure` by response status |
 | `didChangeAppLifecycleState()` | `:106` | 2s-delayed fallback verify if SDK callback never fires on resume |
 

@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,6 +23,8 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/custom_button.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../core/security/clipboard_security_service.dart';
 import '../../../core/security/secure_logger.dart';
 import '../../../core/error/failures.dart';
 import '../../../core/security/app_lifecycle_observer.dart';
@@ -237,6 +239,11 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
         // options — the hosted checkout below handles both.
         if (upiAppId.isNotEmpty) {
           payment = _buildUpiIntentPayment(subscriptionSession, upiAppId);
+        } else if (_selectedVpa.isNotEmpty) {
+          // The hosted checkout can't be pre-filled, so show the picked
+          // UPI ID before it opens.
+          await _showVpaBeforeHostedCheckout(_selectedVpa);
+          if (!mounted) return;
         }
       }
 
@@ -477,8 +484,56 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     }
   }
 
+  /// Shown before the hosted checkout when a UPI ID was picked. Cashfree's
+  /// page can't be pre-filled, so the customer gets the UPI ID here, with a
+  /// Copy button for the page's UPI ID box.
+  Future<void> _showVpaBeforeHostedCheckout(String vpa) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+        title: Text(
+          'Your selected UPI ID',
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A1A2E),
+          ),
+        ),
+        content: _buildSelectedVpaCard(
+          vpa,
+          hint: 'Use this UPI ID if the next page asks for one',
+          onCopy: () => _copyVpa(vpa),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(
+              'Continue',
+              style: TextStyle(
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF064E3B),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Copies [vpa] and clears the clipboard after 60s, like the app's other
+  /// copy buttons (VAPT: clipboard leakage).
+  void _copyVpa(String vpa) {
+    Clipboard.setData(ClipboardData(text: vpa));
+    Future.delayed(const Duration(seconds: 60), ClipboardSecurityService.clearClipboard);
+    AppToast.show(context, 'UPI ID copied!', type: ToastType.info);
+  }
+
   /// The picked UPI ID, styled like a selected tile in UpiIdSheet.
-  Widget _buildSelectedVpaCard(String vpa, {required String hint}) {
+  Widget _buildSelectedVpaCard(String vpa, {required String hint, VoidCallback? onCopy}) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
       decoration: BoxDecoration(
@@ -525,6 +580,12 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
               ],
             ),
           ),
+          if (onCopy != null)
+            IconButton(
+              onPressed: onCopy,
+              tooltip: 'Copy UPI ID',
+              icon: Icon(Icons.copy_outlined, size: 18.sp, color: const Color(0xFF064E3B)),
+            ),
         ],
       ),
     );
