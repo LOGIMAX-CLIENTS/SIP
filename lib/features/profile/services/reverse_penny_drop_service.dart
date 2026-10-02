@@ -14,11 +14,23 @@ class ReversePennyDropService {
   /// POST account/verify-bank/rpd/initiate — returns {client_id,
   /// payment_link, ios_links: {paytm, phonepe, gpay, bhim, whatsapp}, amount}.
   /// [cbankId] must already be Pennyless/BAV-verified (cbank_is_verify=1).
-  Future<Map<String, dynamic>> initiate({required String cbankId}) async {
+  /// [addUpi] — "+Add UPI" is always a deliberate new ₹1 payment, so the
+  /// backend must not answer it with an earlier success on the same account.
+  /// [clientId] — the session the caller already holds, if any, so a
+  /// re-initiate after that session succeeded comes back already_verified.
+  Future<Map<String, dynamic>> initiate({
+    required String cbankId,
+    bool addUpi = false,
+    String? clientId,
+  }) async {
     SecureLogger.d('ReversePennyDrop: initiating for cbank=$cbankId');
     final response = await _apiClient.post(
       'account/verify-bank/rpd/initiate',
-      data: {'cbank_id': cbankId},
+      data: {
+        'cbank_id': cbankId,
+        if (addUpi) 'add_upi': true,
+        if (clientId != null) 'client_id': clientId,
+      },
     );
     if (response.data == null || response.data['success'] != true) {
       throw Exception(_extractErrorMessage(

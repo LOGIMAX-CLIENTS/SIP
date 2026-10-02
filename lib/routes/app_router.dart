@@ -203,7 +203,10 @@ class AppRouter {
         reversePennyDrop: (context) {
           final args = ModalRoute.of(context)!.settings.arguments
               as Map<String, dynamic>;
-          return ReversePennyDropScreen(cbankId: args['cbankId'] as String);
+          return ReversePennyDropScreen(
+            cbankId: args['cbankId'] as String,
+            addUpi: args['addUpi'] == true,
+          );
         },
         bankVerification: (context) =>
             const Scaffold(body: Center(child: Text('Bank Verification'))),
