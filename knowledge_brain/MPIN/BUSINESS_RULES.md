@@ -43,3 +43,12 @@ Both `MpinService.verifyMpin` (`mpin_service.dart:36`) and `changeMpin`/`setMpin
 
 ## RULE-MPIN-013: FCM token registration is fire-and-forget and never blocks or fails a login
 `_registerFcmTokenAfterLogin()` (`mpin_screen.dart:749-764`) wraps `FcmService.getToken()` + `NotificationService.registerFcmToken()` in an un-awaited `Future` with its own try/catch — errors are logged in debug mode only and never surface to the user or block navigation to `main`. Called only from the untyped default and `verify_after_reset` success paths — not from `setup`, `app_lock`, `verify_only`, `withdrawal_pin`, or `authorize_withdrawal`.
+
+## RULE-MPIN-014: Default Auto-Lock is 30 minutes (1800s), and the server's value wins
+A customer who never picked an Auto-Lock time follows `APP_CONTROL_MPIN_LOCK.default_timeout_seconds`
+(from `POST app/control`, applied to `AppConfig.mpinLockDefaultTimeoutSeconds` by `app_control_provider.dart`
+on every poll). The pre-fetch fallbacks — `AppConfig.mpinLockDefaultTimeoutSeconds` (`app_config.dart`) and
+`MpinLockConfig.defaults` (`app_control_model.dart`) — are 1800, matching the backend's coded
+`DEFAULT_MPIN_LOCK`. The live config row overrides all of these, so changing the default in production is a
+config edit (admin → Configuration → `APP_CONTROL_MPIN_LOCK`), not an app release. Once a customer picks a
+value it is stored per-customer (`profile/mpin-lock-timing`) and the default no longer applies to them.

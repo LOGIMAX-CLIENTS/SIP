@@ -123,8 +123,13 @@ class ContentScreen extends ConsumerWidget {
             Expanded(
               child: contentAsync.when(
                 data: (data) {
+                  // The API sends "" (not null) for a CMS page the admin
+                  // hasn't created yet — show the placeholder for both.
+                  final content = data['content'];
                   final rawHtml =
-                      data['content'] ?? '<p>No content available.</p>';
+                      (content is String && content.trim().isNotEmpty)
+                          ? content
+                          : '<p>No content available.</p>';
 
                   // Sanitise server HTML (strip justify/break-all inline
                   // styles, decode entities) then inject Lora font spans.

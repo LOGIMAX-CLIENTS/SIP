@@ -36,6 +36,7 @@ rebuild. Confirmed drift, not a doc error to "fix" — the doc is just stale (se
 | BankPennyVerifyScreen | *(no static route — pushed directly via `MaterialPageRoute` with `cbankId` arg from `add_bank_account_sheet.dart`)* | — | `screens/bank_penny_verify_screen.dart` |
 | ReversePennyDropScreen *(new, 2026-08-24)* | `AppRouter.reversePennyDrop` | `/reverse-penny-drop` | `screens/reverse_penny_drop_screen.dart` |
 | DeleteAccountScreen | `AppRouter.deleteAccount` | `/delete-account` | `screens/delete_account_screen.dart` |
+| AppSecurityScreen *(2026-09-30)* | `AppRouter.appSecurity` | `/app-security` | `screens/app_security_screen.dart` |
 
 Registered in `lib/routes/app_router.dart:167-169,303,323-326`. Note: `AppRouter.bankVerification`
 (`/bank-verification`, `app_router.dart:161-162`) is a **dead stub route** (`Scaffold` placeholder text
@@ -45,8 +46,9 @@ it. Flag as dead code if seen elsewhere.
 `BankVerificationHubScreen` (the merged 3-line-per-card timeline) replaced an earlier "3-card nav hub"
 design per its own doc comment (`bank_verification_hub_screen.dart:11-13`) — `BavHistoryScreen`,
 `PennyVerifyHistoryScreen`, `RefundHistoryScreen` still exist as separate routes/screens and are still wired
-in `app_router.dart`, but nothing in the Profile menu (`profile_screen.dart`) links to them directly — only
-`bankVerificationHub` is linked from the menu (`profile_screen.dart:162-167`). The 3 standalone history
+in `app_router.dart`, but nothing in the Profile menu (`profile_screen.dart`) links to them directly. The menu
+links Bank Details → `bankDetails`; `bankVerificationHub` is reached from `bank_details_screen.dart`, not the
+menu (re-verified 2026-10-02). The 3 standalone history
 screens are reachable only if something deep-links to them; **unconfirmed** whether any surviving caller
 exists (grep found none inside `lib/`) — likely leftover from the pre-hub design, worth a dead-route check.
 
@@ -251,3 +253,22 @@ encrypted if the *endpoint path* also matches `encryptedEndpoints`, which is whe
 
 `METHOD_INDEX.md` · `DATA_FLOW.md` · `BUSINESS_RULES.md` · `CROSS_MODULE_MAP.md` · `STATE_ANALYSIS.md` ·
 `FORENSIC_TEMPLATE.md` · `COVERAGE_TRACKER.md` (this folder).
+
+## 2026-10-02 — Profile menu reshuffle + App Security banner (PM task 7fba5308)
+
+- **Menu labels/order** (`profile_screen.dart`): "KYC Validation" → **"KYC Status"** (label only; same
+  `kycVerification` route and badge). General is now Refer & Earn, FAQ, **Legal**, Enquiry, Contact Us,
+  App Security. Terms / Privacy / Refund moved off Profile onto `LegalScreen` (owned by Content — see
+  `Content/MODULE_BRAIN.md`). The KYC flow's own header (`kyc/widgets/kyc_progress_header.dart`) says
+  "KYC Status" too.
+- **Menu rows** are `MenuTile` (`lib/shared/widgets/menu_tile.dart`); `_buildMenuItem` just delegates, so
+  Profile and Legal render identical rows.
+- **App Security banner**: `_buildSecurityBanner` at the top of `AppSecurityScreen` shows a percentage from
+  `computeSecurityScore` (`lib/features/profile/utils/security_score.dart`, unit-tested in
+  `test/security_score_test.dart`): biometric on + Auto-Lock ≤30s → 100% "Fully protected"; biometric on
+  + >30s → 90%; biometric off → 50% (≤30s) / 40% (>30s); MPIN off → 40%. "Biometric on" is the same value
+  the switch shows (`AppConfig.biometricLoginEnabled && _biometricEnabled`). Recomputed in `build`, so it
+  follows the existing `setState`s. Styled to the design canvas: card is always `#0D3A25` with gold
+  (`#D4AF37`) shield/ring/label whatever the score; only the strength bar changes — an orange → gold →
+  green gradient revealed up to the score. The shield pulse and bar fill are skipped under reduce-motion.
+- **Default Auto-Lock is 1800s (30 min)** — see `MPIN/BUSINESS_RULES.md` RULE-MPIN-014.

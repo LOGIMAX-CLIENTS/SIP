@@ -85,6 +85,28 @@ class ContentService {
     }
   }
 
+  Future<Map<String, dynamic>> getAutoGoldTerms() async {
+    try {
+      final response = await _apiClient.post('content/autogold-terms');
+      debugPrint('[ContentService] autogold-terms raw: ${response.data}');
+      return _extractContentMap(response.data);
+    } catch (e) {
+      debugPrint('[ContentService] autogold-terms error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getGrievances() async {
+    try {
+      final response = await _apiClient.post('content/grievances');
+      debugPrint('[ContentService] grievances raw: ${response.data}');
+      return _extractContentMap(response.data);
+    } catch (e) {
+      debugPrint('[ContentService] grievances error: $e');
+      rethrow;
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   /// Extracts a content map from any of these API response shapes:
@@ -179,5 +201,15 @@ final contactUsProvider =
 final refundPolicyProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
   return ref.watch(contentServiceProvider).getRefundPolicy();
+});
+
+final autoGoldTermsProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
+  return ref.watch(contentServiceProvider).getAutoGoldTerms();
+});
+
+final grievancesProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
+  return ref.watch(contentServiceProvider).getGrievances();
 });
 

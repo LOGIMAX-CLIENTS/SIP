@@ -139,3 +139,19 @@ The hand-written doc's table (screen/route/provider) is accurate on names and ro
 mention: the server-fetched-not-bundled confirmation, the HTML rendering mechanism
 (`flutter_widget_from_html_core`, not a WebView), the `/about` dead route, or the duplicated Lora-injection
 logic — all new findings from this pass, filling gaps rather than correcting errors.
+
+## 2026-10-02 — Legal page + AutoGold T&C + Grievances (PM task 7fba5308)
+
+- **`LegalScreen`** (`screens/legal_screen.dart`, `AppRouter.legal` = `/legal`) — opened from Profile →
+  General → Legal. Lists five `MenuTile` rows: Terms & Conditions, Privacy Policy, Refund Policy, AutoGold
+  Terms & Conditions, Grievances. Profile no longer links Terms/Privacy/Refund directly (Login/Registration
+  still link Terms/Privacy). Widget-tested in `test/legal_screen_test.dart`.
+- **Two new `ContentScreen` routes**: `AppRouter.autoGoldTerms` (`/autogold-terms`, `autoGoldTermsProvider`
+  → `ContentService.getAutoGoldTerms` → `POST content/autogold-terms`) and `AppRouter.grievances`
+  (`/grievances`, `grievancesProvider` → `getGrievances` → `POST content/grievances`). Both providers are
+  `autoDispose` like the others (the "None use autoDispose" line above is stale — all CMS page providers
+  are `autoDispose` now).
+- **Backend**: each endpoint reads one `cms` row by slug — `autogold-terms-conditions` / `grievances`,
+  which is what the admin CMS "Add Page" derives from the titles "AutoGold Terms & Conditions" /
+  "Grievances". No JSON fallback: until the admin creates the row the API returns `content: ""`.
+- **Empty content**: `ContentScreen` now shows "No content available." for `""` as well as for null.

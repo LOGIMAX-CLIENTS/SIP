@@ -13,8 +13,11 @@ import '../../../routes/app_router.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../services/profile_service.dart';
+import '../utils/security_score.dart';
 
-/// Profile > "App Security" — every app-lock setting in one place.
+/// Profile > "App Security" — every app-lock setting in one place, under a
+/// banner scoring how protected those settings leave the account (see
+/// computeSecurityScore).
 ///
 ///   1. Configure MPIN — expands to Change MPIN.
 ///   2. Biometric Login — a per-device local toggle, shown disabled with a
@@ -39,6 +42,13 @@ class AppSecurityScreen extends ConsumerStatefulWidget {
 class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
   static const _iconGreen = Color(0xFF0E5723);
   static const _ink = Color(0xFF1E293B);
+  // Security banner (design canvas): deep green card, metallic gold accents.
+  static const _bannerGreen = Color(0xFF0D3A25);
+  static const _gold = Color(0xFFD4AF37);
+
+  static const _strengthGradient = LinearGradient(
+    colors: [Color(0xFFF97316), _gold, Color(0xFF4ADE80)],
+  );
 
   int _selectedTimeoutSeconds = AppConfig.mpinLockDefaultTimeoutSeconds;
   bool _mpinEnabled = false;
@@ -175,7 +185,7 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
               ),
               SizedBox(height: 16.h),
               Text(
-                'Auto-Lock',
+                'Auto-Lock on Exit',
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 17.sp,
                   fontWeight: FontWeight.w700,
@@ -262,6 +272,8 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          _buildSecurityBanner(),
+                          SizedBox(height: 24.h),
                           _buildSectionLabel('LOGIN CREDENTIALS', isDark),
                           _buildCard(isDark, child: _buildMpinTile(isDark)),
                           SizedBox(height: 24.h),
@@ -339,6 +351,157 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
               fontSize: 20.sp,
               fontWeight: FontWeight.w700,
               color: isDark ? Colors.white : _ink,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Recomputed on every build, so it follows the setState calls in
+  /// _onSelectTimeout and _onBiometricToggle without extra wiring.
+  Widget _buildSecurityBanner() {
+    final score = computeSecurityScore(
+      mpinEnabled: _mpinEnabled,
+      // Same value the Biometric Login switch shows.
+      biometricOn: AppConfig.biometricLoginEnabled && _biometricEnabled,
+      timeoutSeconds: _selectedTimeoutSeconds,
+    );
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final labelStyle = GoogleFonts.inter(
+      fontSize: 12.sp,
+      fontWeight: FontWeight.w500,
+      color: Colors.white.withOpacity(0.85),
+    );
+
+    // Always the same green whatever the score — only the strength bar
+    // changes colour.
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: _bannerGreen,
+        borderRadius: BorderRadius.circular(20.r),
+      ),
+      child: Stack(
+        children: [
+          // Faint gold sheen band across the right of the card.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: const Alignment(-1, -0.4),
+                    end: const Alignment(1, 0.4),
+                    colors: [
+                      _gold.withOpacity(0),
+                      _gold.withOpacity(0.13),
+                      _gold.withOpacity(0),
+                    ],
+                    stops: const [0.58, 0.7, 0.82],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(18.w, 20.h, 18.w, 18.h),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _PulsingShield(
+                      icon: score.isFull
+                          ? Icons.verified_user_outlined
+                          : Icons.shield_outlined,
+                      color: _gold,
+                      animate: !reduceMotion,
+                    ),
+                    SizedBox(width: 18.w),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            score.headline,
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 19.sp,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(height: 2.h),
+                          Text(
+                            score.message,
+                            style: GoogleFonts.inter(
+                              fontSize: 12.sp,
+                              height: 1.3,
+                              color: Colors.white.withOpacity(0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 18.h),
+                Row(
+                  children: [
+                    Text('Security strength', style: labelStyle),
+                    const Spacer(),
+                    Text(
+                      '${score.strengthLabel} · ${score.percent}%',
+                      style: labelStyle.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: _gold,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8.h),
+                // Fills from 0 on open, then slides between scores as
+                // settings change. Skipped when the phone asks for reduced
+                // motion.
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: score.percent / 100),
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 700),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) => _buildStrengthBar(value),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Orange → green across the full track; the fill reveals as much of it
+  /// as the score reaches, so a low score reads orange and 100% ends green.
+  Widget _buildStrengthBar(double fraction) {
+    final radius = BorderRadius.circular(100.r);
+    return LayoutBuilder(
+      builder: (context, constraints) => Stack(
+        children: [
+          Container(
+            height: 6.h,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: radius,
+            ),
+          ),
+          ClipRRect(
+            borderRadius: radius,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              widthFactor: fraction.clamp(0.0, 1.0),
+              child: Container(
+                width: constraints.maxWidth,
+                height: 6.h,
+                decoration: const BoxDecoration(gradient: _strengthGradient),
+              ),
             ),
           ),
         ],
@@ -542,7 +705,7 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
     return _buildTile(
       isDark: isDark,
       icon: Icons.timer_outlined,
-      title: 'Auto-Lock',
+      title: 'Auto-Lock on Exit',
       subtitle: 'Re-authenticate after the app is in the background',
       onTap: () => _showTimeoutSheet(isDark),
       trailing: Row(
@@ -608,6 +771,105 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shield in a ring with a slow outward pulse (none under reduce-motion).
+class _PulsingShield extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final bool animate;
+
+  const _PulsingShield({
+    required this.icon,
+    required this.color,
+    required this.animate,
+  });
+
+  @override
+  State<_PulsingShield> createState() => _PulsingShieldState();
+}
+
+class _PulsingShieldState extends State<_PulsingShield>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.animate) _pulse.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_PulsingShield oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animate && !_pulse.isAnimating) {
+      _pulse.repeat();
+    } else if (!widget.animate && _pulse.isAnimating) {
+      _pulse.stop();
+      _pulse.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inner = 50.w;
+    final ring = 76.w;
+    Widget circle(double size, {Color? fill, double borderOpacity = 0}) =>
+        Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: fill,
+            border: borderOpacity > 0
+                ? Border.all(color: widget.color.withOpacity(borderOpacity))
+                : null,
+          ),
+        );
+
+    // Laid out at the inner circle's size; the ring overhangs it.
+    return SizedBox(
+      width: inner,
+      height: inner,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          OverflowBox(
+            maxWidth: ring,
+            maxHeight: ring,
+            child: circle(ring, borderOpacity: 0.3),
+          ),
+          if (widget.animate)
+            OverflowBox(
+              maxWidth: ring,
+              maxHeight: ring,
+              child: AnimatedBuilder(
+                animation: _pulse,
+                builder: (context, _) => Opacity(
+                  opacity: 1 - _pulse.value,
+                  child: circle(
+                    inner + (ring - inner) * _pulse.value,
+                    borderOpacity: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          circle(inner, fill: Colors.white.withOpacity(0.06)),
+          Icon(widget.icon, size: 24.sp, color: widget.color),
         ],
       ),
     );

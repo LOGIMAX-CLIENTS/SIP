@@ -187,7 +187,7 @@ class MpinLockConfig {
 
   static const MpinLockConfig defaults = MpinLockConfig(
     sessionTimeoutOptionsSeconds: [30, 60, 300, 900, 1800],
-    defaultTimeoutSeconds: 60,
+    defaultTimeoutSeconds: 1800,
     biometricLoginEnabled: true,
   );
 }

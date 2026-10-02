@@ -39,6 +39,7 @@ import '../features/history/screens/transaction_history_screen.dart';
 import '../features/history/screens/transaction_details_screen.dart';
 import '../features/content/screens/content_screen.dart';
 import '../features/content/screens/faq_screen.dart';
+import '../features/content/screens/legal_screen.dart';
 import '../features/content/screens/contact_us_screen.dart';
 import '../features/support/screens/enquiry_form_screen.dart';
 import '../features/support/screens/enquiry_list_screen.dart';
@@ -131,6 +132,9 @@ class AppRouter {
   static const String sipFailure = '/sip-failure';
   static const String nominee = '/nominee';
   static const String refundPolicy = '/refund-policy';
+  static const String legal = '/legal';
+  static const String autoGoldTerms = '/autogold-terms';
+  static const String grievances = '/grievances';
   static const String sipTransactions = '/sip-transactions';
   static const String sipTransactionDetails = '/sip-transaction-details';
   static const String sipOverview = '/sip-overview';
@@ -410,6 +414,15 @@ class AppRouter {
         refundPolicy: (context) => ContentScreen(
               title: 'Refund Policy',
               provider: refundPolicyProvider,
+            ),
+        legal: (context) => const LegalScreen(),
+        autoGoldTerms: (context) => ContentScreen(
+              title: 'AutoGold Terms & Conditions',
+              provider: autoGoldTermsProvider,
+            ),
+        grievances: (context) => ContentScreen(
+              title: 'Grievances',
+              provider: grievancesProvider,
             ),
         sipTransactions: (context) => const SipTransactionHistoryScreen(),
         sipTransactionDetails: (context) {
