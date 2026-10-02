@@ -28,7 +28,7 @@ lib/features/auth/
 │   ├── pin_creation_screen.dart      — /mpin-creation (new-PIN setup, post-registration)
 │   └── pin_screen.dart               — /pin-entry (existing-user PIN re-entry, distinct from /mpin)
 └── registration/
-    ├── email_otp_sheet.dart          — bottom sheet, mandatory email verification during registration
+    ├── email_otp_sheet.dart          — bottom sheet, email verification during registration (RULE-AUTH-006)
     ├── registration_screen.dart      — /registration
     └── registration_success_screen.dart — /registration-success
 ```
@@ -155,8 +155,9 @@ dedupes against the last-registered token stored in `SecureStorageService.getFcm
    on PIN retry, but there is no equivalent guard preventing double-`register()` if the user backgrounds/kills
    the app between register-success and PIN-success — a partial-registration state that OTP-routing step 5
    (§5) is designed to recover from on next login.
-5. Email verification in registration is **mandatory** (`_emailVerified` gates the Confirm button,
-   `registration_screen.dart:123, 521-525`) — a UX-security tradeoff not mentioned in
+5. Email verification in registration is **mandatory by default** (`_emailVerified` gates the Confirm
+   button) but admin-switchable via `REGISTER_FORM_VALIDATION.email_mandatory` — see RULE-AUTH-006. A
+   UX-security tradeoff not mentioned in
    `STARTGOLD_DOCUMENTATION.md` §3.5 at all (see drift note in COVERAGE_TRACKER.md).
 
 ## 10. See Also

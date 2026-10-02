@@ -37,9 +37,14 @@ The post-verify routing decision (`otp_screen.dart:401-489`) reads `is_new_user`
 from the `verify-otp` response body — the client performs no local "have I seen this mobile before" check.
 See MODULE_BRAIN.md §5 for the full 5-branch decision tree.
 
-## RULE-AUTH-006: Email verification is mandatory before registration submission
-`RegistrationScreen`'s "Confirm" button is disabled unless `_agreedToTerms && _emailVerified`
-(`registration_screen.dart:122-123`). Editing the email field after verification silently revokes
+## RULE-AUTH-006: Email verification before registration is admin-configurable (default: mandatory)
+Admin Configuration row `REGISTER_FORM_VALIDATION` (`{"email_mandatory": 1|0}`) decides it. The backend
+sends it as `email_verification_required` in the new-user `verify-otp` response; `OtpScreen` passes it to
+`RegistrationScreen.emailVerificationRequired` (missing → `true`). When `true`, "Confirm" is disabled unless
+`_agreedToTerms && _emailVerified`; when `false`, the e-mail is still required (format-validated) but
+verifying it is optional. `register-check` and `register` enforce the same setting server-side, and an
+unverified address is saved with `cus_email_verified_on = NULL` (Account Details offers Verify later; no
+welcome e-mail is sent to it). Editing the email field after verification silently revokes
 `_emailVerified` (lines 55-59) — the user must re-verify. This is stricter than
 `STARTGOLD_DOCUMENTATION.md` §3.5, which lists email as a plain input field with no mention of a
 verification gate — confirmed drift, code is source of truth per AGENTS.md §10.

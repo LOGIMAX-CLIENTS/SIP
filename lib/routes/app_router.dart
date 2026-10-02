@@ -257,6 +257,8 @@ class AppRouter {
           return RegistrationScreen(
             mobile: args['mobile'] ?? '',
             tempToken: args['tempToken'] ?? '',
+            emailVerificationRequired:
+                args['emailVerificationRequired'] ?? true,
           );
         },
         withdrawal: (context) => const WithdrawalScreen(),
