@@ -1396,6 +1396,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
       final sendResult = await AuthService().sendEmailOtp(
         email: email,
         firstName: name.isNotEmpty ? name : null,
+        purpose: 'nominee',
       );
 
       if (!mounted) return;

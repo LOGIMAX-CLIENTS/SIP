@@ -115,15 +115,19 @@ class AuthService {
     return response.data;
   }
 
+  /// [purpose] picks the e-mail copy server-side: 'nominee' sends
+  /// "Nominee email verification"; null keeps the registration copy.
   Future<Map<String, dynamic>> sendEmailOtp({
     required String email,
     String? firstName,
+    String? purpose,
   }) async {
     final response = await _apiClient.post(
       'users/auth/generate-email-otp',
       data: {
         'email': email,
         'first_name': firstName,
+        if (purpose != null) 'purpose': purpose,
       },
     );
     return response.data;

@@ -74,8 +74,8 @@ Future<bool?> showNomineeEmailOtpSheet(
       // 60 = the backend's own default (EMAIL_OTP_SECURITY config), used only
       // if the send response ever omits resend_cooldown_seconds.
       resendCooldownSeconds: resendCooldownSeconds ?? 60,
-      onResend: () =>
-          authService.sendEmailOtp(email: email, firstName: nomineeName),
+      onResend: () => authService.sendEmailOtp(
+          email: email, firstName: nomineeName, purpose: 'nominee'),
       onVerify: (otp, referenceId) => authService.verifyEmailOtp(
         email: email,
         otp: otp,
