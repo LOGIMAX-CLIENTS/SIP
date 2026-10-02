@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:intl/intl.dart';
 import '../../routes/app_router.dart';
+import '../../shared/widgets/menu_tile.dart';
 import '../../core/utils/masking_utils.dart';
 import '../kyc/utils/kyc_step_status.dart';
 import '../auth/controller/auth_controller.dart';
@@ -48,7 +48,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     final user = profileState.user;
-    // "N/total" badge for the KYC Validation menu item — same
+    // "N/total" badge for the KYC Status menu item — same
     // computeKycStepStatuses() the checklist screen itself uses (see
     // kyc/utils/kyc_step_status.dart), so this can never disagree with the
     // checklist's own progress ring. Null while the underlying doc-types
@@ -82,7 +82,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.accountDetails),
                           ),
                           _buildMenuItem(
-                            'KYC Validation',
+                            'KYC Status',
                             'assets/sidemenu/kyc.svg',
                             onTap: () async {
                               // Always open the KYC screen — even when already
@@ -184,28 +184,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 context, AppRouter.referral),
                           ),
                           _buildMenuItem(
-                            'Terms & Conditions',
-                            'assets/sidemenu/tc.svg',
-                            onTap: () =>
-                                Navigator.pushNamed(context, AppRouter.terms),
-                          ),
-                          _buildMenuItem(
-                            'Privacy Policy',
-                            'assets/sidemenu/privacy.svg',
-                            onTap: () =>
-                                Navigator.pushNamed(context, AppRouter.privacy),
-                          ),
-                          _buildMenuItem(
-                            'Refund Policy',
-                            'assets/sidemenu/refund.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.refundPolicy),
-                          ),
-                          _buildMenuItem(
                             'FAQ',
                             'assets/sidemenu/faq.svg',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.faq),
+                          ),
+                          // Terms, Privacy, Refund, AutoGold T&C and
+                          // Grievances live one level down, on Legal.
+                          _buildMenuItem(
+                            'Legal',
+                            'assets/sidemenu/tc.svg',
+                            onTap: () =>
+                                Navigator.pushNamed(context, AppRouter.legal),
                           ),
                           _buildMenuItem(
                             'Enquiry',
@@ -437,8 +427,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   menuCard(),
                   menuCard(),
                   SizedBox(height: 16.h),
-                  // Section 2 — General (5 items)
+                  // Section 2 — General (6 items)
                   sectionTitle(),
+                  menuCard(),
                   menuCard(),
                   menuCard(),
                   menuCard(),
@@ -704,7 +695,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  /// Small pill badge for the KYC Validation menu item's trailing slot —
+  /// Small pill badge for the KYC Status menu item's trailing slot —
   /// green when [complete] (fully verified / "Verified"), amber otherwise
   /// (an "N/total" in-progress count). Shared so the always-show-the-count
   /// and legacy-fallback branches above render identically.
@@ -744,68 +735,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       {required VoidCallback onTap,
       bool isDestructive = false,
       Widget? trailing}) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12.h),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(15.r),
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(15.r),
-              border: Border.all(color: Colors.black.withOpacity(0.05)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40.w,
-                  height: 40.w,
-                  padding: EdgeInsets.all(10.w),
-                  decoration: BoxDecoration(
-                    color: (isDestructive ? Colors.red : const Color(0xFF0E5723))
-                        .withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10.r),
-                  ),
-                  child: SvgPicture.asset(
-                    iconPath,
-                    colorFilter: ColorFilter.mode(
-                        isDestructive ? Colors.red : const Color(0xFF0E5723),
-                        BlendMode.srcIn),
-                  ),
-                ),
-                SizedBox(width: 16.w),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w500,
-                      color:
-                          isDestructive ? Colors.red : const Color(0xFF4B5563),
-                    ),
-                  ),
-                ),
-                trailing ??
-                    Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 20.sp,
-                      color: Colors.black26,
-                    ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return MenuTile(
+      title: title,
+      iconPath: iconPath,
+      onTap: onTap,
+      isDestructive: isDestructive,
+      trailing: trailing,
     );
   }
 

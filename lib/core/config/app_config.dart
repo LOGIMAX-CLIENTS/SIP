@@ -44,7 +44,7 @@ class AppConfig {
   // APP_CONTROL_MPIN_LOCK config row (see AppControlProvider), with these
   // as the pre-fetch fallback.
   static List<int> mpinLockTimeoutOptionsSeconds = [30, 60, 300, 900, 1800];
-  static int mpinLockDefaultTimeoutSeconds = 60;
+  static int mpinLockDefaultTimeoutSeconds = 1800;
   static bool biometricLoginEnabled = true;
 
   static const List<String> allowedCertFingerprints = [

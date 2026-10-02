@@ -59,7 +59,7 @@ class KycProgressHeader extends StatelessWidget {
                   ),
                   Expanded(
                     child: Text(
-                      'KYC Validation',
+                      'KYC Status',
                       style: AppTextStyles.titleMedium(false)
                           .copyWith(color: Colors.white),
                     ),
