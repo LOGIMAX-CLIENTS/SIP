@@ -1,7 +1,7 @@
 ---
 module: sip
 brain_status: 🟢 (Round 1, ~92% — see COVERAGE_TRACKER.md)
-last_updated: 2026-08-19
+last_updated: 2026-10-02
 round: 1
 ---
 
@@ -55,7 +55,9 @@ lib/features/sip/
 ├── screens/sip_transaction_history_screen.dart (917 lines)
 ├── services/custom_sip_service.dart        (102 lines — 6 methods)
 ├── services/sip_service.dart               (293 lines — 13 methods)
-└── widgets/bank_details_sheet.dart          (248 lines — eMandate ad-hoc bank form)
+├── utils/upi_handle_apps.dart              (VPA handle → UPI app match, RULE-SIP-014)
+├── widgets/bank_details_sheet.dart          (248 lines — eMandate ad-hoc bank form)
+└── widgets/upi_id_sheet.dart                (picks one of the bank account's linked UPI IDs)
 ```
 All 18 files were read. Route entries live externally in `lib/routes/app_router.dart` per the
 codebase convention (`AGENTS.md` §1).
@@ -121,7 +123,10 @@ regular and Custom SIP via the `is_custom`/`scheme_id` args — see DATA_FLOW.md
   this brain.
 - **SipPaymentScreen** (`/sip-payment`) — gateway-agnostic checkout launcher: Cashfree Subscription
   SDK or Razorpay Standard Checkout (AutoPay), chosen by `paymentData['payment_gateway']`. Converges
-  on `sip/confirm` for both. Suppresses app-lock during Razorpay's UPI-app handoff.
+  on `sip/confirm` for both. Suppresses app-lock during Razorpay's UPI-app handoff. For Cashfree
+  UPI it shows its own "Authorise AutoPay with" sheet (intent); the UPI ID picked in
+  `UpiIdSheet` arrives as `paymentData['upi_vpa']`, is shown there and its app is listed first —
+  never sent to Cashfree (RULE-SIP-014).
 - **SipSuccessScreen** / **SipFailureScreen** (`/sip-success`, `/sip-failure`) — terminal states;
   Failure's Retry pops with `'retry'` rather than navigating (caller must handle it — verify
   callers actually do, `SipPaymentScreen` itself never pushes `SipFailureScreen` expecting a pop

@@ -1,6 +1,6 @@
 ---
 module: sip
-last_updated: 2026-08-19
+last_updated: 2026-10-02
 ---
 
 # SIP — Method Index
@@ -17,6 +17,7 @@ Alphabetical by class. `file:line` → primary caller(s). Screens/widgets that a
 | `_listenDenominations()` | `:215` | Seeds amount field from the popular denomination | `build()` |
 | `_onSetupTapped()` | `:1378` | KYC gate → frequency dispatch (Daily direct / Weekly / Monthly / Custom picker) | "Setup Auto Savings" CTA |
 | `_selectPaymentMethodAndCreate()` | `:2165` | Bank picker → PaymentMethodSheet → `_createSipPlan` | `_onSetupTapped` (Daily), day/date pickers' Confirm |
+| `_selectUpiIdIfNeeded()` | `:2256` | UPI only: `UpiIdSheet` → passes the picked `LinkedUpi` on (its pk goes to the create call, its VPA to `paymentData['upi_vpa']`) | `_selectPaymentMethodAndCreate()`, Custom dates Confirm |
 | `_showCustomDatesPicker()` | `:1790` | Multi-select date grid; committed dates route to manage instead of selecting | `_onSetupTapped` (Custom tab) |
 | `_showMonthlyDatePicker()` | `:1617` | Single-date grid (1-28) | `_onSetupTapped` (Monthly) |
 | `_showWeeklyDayPicker()` | `:1483` | Day-of-week list | `_onSetupTapped` (Weekly) |
@@ -123,8 +124,15 @@ Alphabetical by class. `file:line` → primary caller(s). Screens/widgets that a
 | `_onRazorpaySuccess()` | `:337` | → `_verifyMandateStatus()` |
 | `_onSubscriptionFailure()` | `:220` | → `sipFailure` route |
 | `_onSubscriptionVerify()` | `:212` | → `_verifyMandateStatus()` |
+| `_pickUpiApp()` | `:364` | "Authorise AutoPay with" sheet of installed UPI apps; with `upi_vpa` set, shows the picked UPI ID and lists its app first as "Recommended" (RULE-SIP-014) |
 | `_verifyMandateStatus()` | `:403` | `POST sip/confirm`; routes to `sipSuccess`/`sipFailure` by response status |
 | `didChangeAppLifecycleState()` | `:106` | 2s-delayed fallback verify if SDK callback never fires on resume |
+
+## upi_handle_apps (`utils/upi_handle_apps.dart`)
+
+| Function | Purpose | Called by |
+|---|---|---|
+| `upiAppMatchesVpa()` | True if a `CFUPIUtils().getUPIApps()` entry issued the VPA, by handle keyword (`@oksbi` → GPay, `@ybl` → PhonePe, `@sbi` → YONO …) | `SipPaymentScreen._pickUpiApp()`; tested in `test/upi_handle_apps_test.dart` |
 
 ## SipService (`services/sip_service.dart`)
 
