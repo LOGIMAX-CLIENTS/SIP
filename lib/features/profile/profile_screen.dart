@@ -142,7 +142,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                           _buildMenuItem(
                             'Bank Details',
-                            'assets/withdraw/bank.svg',
+                            'assets/sidemenu/bank.svg',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.bankDetails),
                           ),
@@ -771,6 +771,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   width: 40.w,
                   height: 40.w,
                   padding: EdgeInsets.all(10.w),
+                  decoration: BoxDecoration(
+                    color: (isDestructive ? Colors.red : const Color(0xFF0E5723))
+                        .withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10.r),
+                  ),
                   child: SvgPicture.asset(
                     iconPath,
                     colorFilter: ColorFilter.mode(

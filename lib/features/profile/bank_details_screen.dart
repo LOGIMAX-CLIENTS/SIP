@@ -87,7 +87,7 @@ class BankDetailsScreen extends ConsumerWidget {
     final verified = await Navigator.pushNamed(
       context,
       AppRouter.reversePennyDrop,
-      arguments: {'cbankId': account.idBank},
+      arguments: {'cbankId': account.idBank, 'addUpi': true},
     );
     if (verified == true) {
       ref.invalidate(bankAccountsProvider);

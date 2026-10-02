@@ -103,7 +103,10 @@ const Map<String, _UpiAppMetadata> _apiAllowedAppRegistry = {
 /// resolved payer account matched [cbankId], `false`/null otherwise.
 class ReversePennyDropScreen extends ConsumerStatefulWidget {
   final String cbankId;
-  const ReversePennyDropScreen({super.key, required this.cbankId});
+  // Opened from "+Add UPI" on an already-verified account — see
+  // [ReversePennyDropService.initiate].
+  final bool addUpi;
+  const ReversePennyDropScreen({super.key, required this.cbankId, this.addUpi = false});
 
   @override
   ConsumerState<ReversePennyDropScreen> createState() => _ReversePennyDropScreenState();
@@ -184,7 +187,9 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
     try {
       if (_paymentLink == null || _clientId == null) {
         debugPrint('[RPD API] Calling initiate for cbank_id: ${widget.cbankId}');
-        final result = await ref.read(reversePennyDropServiceProvider).initiate(cbankId: widget.cbankId);
+        final result = await ref
+            .read(reversePennyDropServiceProvider)
+            .initiate(cbankId: widget.cbankId, addUpi: widget.addUpi);
         if (!mounted) return;
 
         _clientId = result['client_id']?.toString();
@@ -260,7 +265,9 @@ class _ReversePennyDropScreenState extends ConsumerState<ReversePennyDropScreen>
       _errorMessage = null;
     });
     try {
-      final result = await ref.read(reversePennyDropServiceProvider).initiate(cbankId: widget.cbankId);
+      final result = await ref
+          .read(reversePennyDropServiceProvider)
+          .initiate(cbankId: widget.cbankId, addUpi: widget.addUpi, clientId: _clientId);
       if (!mounted) return;
 
       if (result['already_verified'] == true || result['verified'] == true) {
