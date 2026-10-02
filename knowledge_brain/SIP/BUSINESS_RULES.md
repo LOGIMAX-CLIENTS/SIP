@@ -1,6 +1,6 @@
 ---
 module: sip
-last_updated: 2026-08-19
+last_updated: 2026-10-02
 ---
 
 # SIP — Business Rules
@@ -104,3 +104,21 @@ non-autoDispose providers (`auto_savings_screen.dart:68`; `sip_overview_screen.d
 `sip_transaction_history_screen.dart:60-64`; `sip_transaction_details_screen.dart:43-46`) —
 deliberate, per code comments, to avoid showing stale mandate/plan state after an out-of-band
 change (e.g. the customer cancelling a mandate directly inside their UPI app).
+
+## RULE-SIP-014 — The picked UPI ID is shown and steered to, never sent to the gateway
+For UPI, `UpiIdSheet` makes the customer pick one of the bank account's linked UPI IDs. Its pk goes
+to `sip/create` / `sip/custom/create` as `upi_id`. Its VPA goes to `SipPaymentScreen` as
+`paymentData['upi_vpa']` (`auto_savings_screen.dart`, both `AppRouter.sipPayment` pushes). The
+payment screen shows that VPA on the "Authorise AutoPay with" sheet and lists the app that issued it
+first as "Recommended" (`utils/upi_handle_apps.dart`). If the flow falls back to Cashfree's hosted
+checkout, a dialog shows the VPA with a Copy button first. The VPA is **not** pre-filled into
+Cashfree, because nothing allows it:
+- Cashfree's Flutter subscription SDK supports UPI **intent only** (`CFSubsUPIChannel.INTENT`;
+  `setUPIID` takes the UPI app's package name, not a VPA), and the hosted checkout has no VPA
+  pre-fill parameter.
+- NPCI deprecated UPI Collect (typing a VPA) for **new** AutoPay mandates on Android and desktop
+  from 28 Feb 2026; iOS is exempt until further notice. Existing mandates keep debiting.
+  Sources: https://www.cashfree.com/docs/payments/manage/payment-methods/upi-collect ·
+  https://www.cashfree.com/docs/api-reference/payments/latest/subscription/raise-a-charge-or-create-an-auth ·
+  https://razorpay.com/docs/announcements/upi-collect-migration/recurring-payments/standard-checkout
+So the customer may still approve from a different UPI ID inside the UPI app; the app only steers.

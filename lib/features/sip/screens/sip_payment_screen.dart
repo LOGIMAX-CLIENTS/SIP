@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,12 +23,15 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../../shared/widgets/gradient_header.dart';
 import '../../../shared/widgets/custom_button.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../core/security/clipboard_security_service.dart';
 import '../../../core/security/secure_logger.dart';
 import '../../../core/error/failures.dart';
 import '../../../core/security/app_lifecycle_observer.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../routes/app_router.dart';
 import '../controller/sip_controller.dart';
+import '../utils/upi_handle_apps.dart';
 import 'sip_mandate_auth_webview.dart';
 
 /// SIP Payment screen – opens the active gateway's mandate-authorization
@@ -42,7 +45,12 @@ import 'sip_mandate_auth_webview.dart';
 ///                  Otherwise `CFSubsNetbankingPaymentBuilder` (straight to
 ///                  the bank's login, using `paymentData['enach_details']`)
 ///       upi      → `CFSubsUPIPaymentBuilder` (straight into the UPI app the
-///                  customer picks from the ones installed)
+///                  customer picks from the ones installed). The UPI ID
+///                  picked on the previous screen (`paymentData['upi_vpa']`)
+///                  is shown here and its app is listed first. It is never
+///                  sent to Cashfree: the SDK only supports UPI intent, and
+///                  NPCI no longer allows registering a new mandate by
+///                  typing a UPI ID on Android or desktop.
 ///       else     → `CFSubscriptionPaymentBuilder` (Cashfree hosted checkout,
 ///                  which asks for bank/auth mode or VPA itself)
 ///   • `CFPaymentGatewayService.doPayment()` — launches it
@@ -91,6 +99,9 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     }
     return 'cashfree';
   }
+
+  /// The UPI ID the customer picked in UpiIdSheet, or '' if none was picked.
+  String get _selectedVpa => widget.paymentData['upi_vpa']?.toString().trim() ?? '';
 
   @override
   void initState() {
@@ -228,6 +239,11 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
         // options — the hosted checkout below handles both.
         if (upiAppId.isNotEmpty) {
           payment = _buildUpiIntentPayment(subscriptionSession, upiAppId);
+        } else if (_selectedVpa.isNotEmpty) {
+          // The hosted checkout can't be pre-filled, so show the picked
+          // UPI ID before it opens.
+          await _showVpaBeforeHostedCheckout(_selectedVpa);
+          if (!mounted) return;
         }
       }
 
@@ -347,8 +363,13 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   /// Returns the app id, '' to fall back to the hosted checkout (no UPI app
   /// installed, the lookup failed, or the customer tapped "Other options"),
   /// or null if the customer dismissed the sheet. A single installed app is
-  /// used without asking.
+  /// used without asking, unless a UPI ID was picked — then the sheet is
+  /// always shown, so the customer sees which UPI ID to approve from.
+  ///
+  /// With a picked UPI ID, the sheet shows it above the list and moves the
+  /// app that issued it (by handle, see upiAppMatchesVpa) to the top.
   Future<String?> _pickUpiApp() async {
+    final vpa = _selectedVpa;
     List<Map<dynamic, dynamic>> apps;
     try {
       apps = (await CFUPIUtils().getUPIApps() ?? const [])
@@ -361,8 +382,12 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     }
     SecureLogger.d('SIP PAYMENT: Installed UPI apps: ${apps.map((a) => a['id']).toList()}');
     if (apps.isEmpty) return '';
-    if (apps.length == 1) return apps.first['id'].toString();
+    if (apps.length == 1 && vpa.isEmpty) return apps.first['id'].toString();
     if (!mounted) return null;
+
+    final matchIndex = vpa.isEmpty ? -1 : apps.indexWhere((a) => upiAppMatchesVpa(a, vpa));
+    final recommended = matchIndex < 0 ? null : apps.removeAt(matchIndex);
+    if (recommended != null) apps.insert(0, recommended);
 
     return showModalBottomSheet<String>(
       context: context,
@@ -386,6 +411,13 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
                 ),
               ),
               SizedBox(height: 12.h),
+              if (vpa.isNotEmpty) ...[
+                _buildSelectedVpaCard(
+                  vpa,
+                  hint: 'Approve in the app linked to this UPI ID',
+                ),
+                SizedBox(height: 8.h),
+              ],
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
@@ -400,9 +432,20 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
                             )
                           : Icon(Icons.account_balance_wallet_outlined,
                               size: 32.sp, color: const Color(0xFF064E3B)),
-                      title: Text(
-                        app['displayName']?.toString() ?? app['id'].toString(),
-                        style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600),
+                      title: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              app['displayName']?.toString() ?? app['id'].toString(),
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if (identical(app, recommended)) ...[
+                            SizedBox(width: 8.w),
+                            _buildRecommendedChip(),
+                          ],
+                        ],
                       ),
                       trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14.sp),
                       onTap: () => Navigator.pop(sheetContext, app['id'].toString()),
@@ -439,6 +482,131 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     } catch (_) {
       return null;
     }
+  }
+
+  /// Shown before the hosted checkout when a UPI ID was picked. Cashfree's
+  /// page can't be pre-filled, so the customer gets the UPI ID here, with a
+  /// Copy button for the page's UPI ID box.
+  Future<void> _showVpaBeforeHostedCheckout(String vpa) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+        title: Text(
+          'Your selected UPI ID',
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1A1A2E),
+          ),
+        ),
+        content: _buildSelectedVpaCard(
+          vpa,
+          hint: 'Use this UPI ID if the next page asks for one',
+          onCopy: () => _copyVpa(vpa),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(
+              'Continue',
+              style: TextStyle(
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF064E3B),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Copies [vpa] and clears the clipboard after 60s, like the app's other
+  /// copy buttons (VAPT: clipboard leakage).
+  void _copyVpa(String vpa) {
+    Clipboard.setData(ClipboardData(text: vpa));
+    Future.delayed(const Duration(seconds: 60), ClipboardSecurityService.clearClipboard);
+    AppToast.show(context, 'UPI ID copied!', type: ToastType.info);
+  }
+
+  /// The picked UPI ID, styled like a selected tile in UpiIdSheet.
+  Widget _buildSelectedVpaCard(String vpa, {required String hint, VoidCallback? onCopy}) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B882C).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: const Color(0xFF1B882C).withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40.r,
+            height: 40.r,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12.r),
+            ),
+            child: Icon(Icons.account_balance_wallet_rounded,
+                color: const Color(0xFF1B882C), size: 20.sp),
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  vpa,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 15.sp,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  hint,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onCopy != null)
+            IconButton(
+              onPressed: onCopy,
+              tooltip: 'Copy UPI ID',
+              icon: Icon(Icons.copy_outlined, size: 18.sp, color: const Color(0xFF064E3B)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecommendedChip() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B882C).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(50.r),
+      ),
+      child: Text(
+        'Recommended',
+        style: TextStyle(
+          fontSize: 10.sp,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF1B882C),
+        ),
+      ),
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
