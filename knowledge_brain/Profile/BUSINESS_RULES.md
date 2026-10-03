@@ -35,6 +35,10 @@ unsaved edit (`currentInput != onFileEmail`) — verifying a not-yet-saved addre
 value the backend doesn't have yet.
 **Code**: `account_details_screen.dart:404-410`.
 
+The OTP is sent with `purpose: 'account'` (e-mail copy "confirm this email address for your startGOLD
+account", not the registration copy). The KYC checklist's E-mail step uses the same flow — KYC
+RULE-KYC-022.
+
 ## RULE-PROFILE-005 — A bank account must pass live BAV before a ₹1 verification payment can even start
 
 Per code comment, the backend's `cbank_is_verify` gate blocks `account/verify-bank/penny/initiate` unless

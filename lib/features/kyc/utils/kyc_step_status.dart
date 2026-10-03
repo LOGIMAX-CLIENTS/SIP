@@ -13,13 +13,22 @@ import '../../profile/services/bank_verification_history_service.dart';
 /// so the checklist screen and [kycProgressProvider] (used by the Profile
 /// page's menu badge) can never disagree on what "3/5 done" means.
 class KycStepStatuses {
+  // Step 1, E-mail Verification (RULE-KYC-022). Until it is verified, PAN
+  // and Aadhaar that haven't been started are locked.
+  final String email;
+  final bool emailVerified;
+  final KycStepStatus emailStatus;
+  final String emailPill;
+
   final bool panDone;
   final bool aadhaarDone;
   final bool bothIdVerified;
-  // PAN + Aadhaar + a Mandatory PAN-Aadhaar Link (when active) — exactly
-  // what the backend's is_kyc_complete()/kyc_status flag requires (see
-  // BUSINESS_RULES.md: is_kyc_complete() covers PAN + Aadhaar + the
-  // PAN-Aadhaar link). [KycVerificationScreen]'s popWhenIdVerified gate
+  // PAN + Aadhaar + a Mandatory PAN-Aadhaar Link (when active) — what the
+  // backend's is_kyc_complete() requires apart from the verified e-mail
+  // (see BUSINESS_RULES.md: is_kyc_complete() covers the e-mail, PAN,
+  // Aadhaar and the PAN-Aadhaar link). The e-mail is left out on purpose:
+  // this is what unlocks Add Bank Account, which the e-mail doesn't hold
+  // back (RULE-KYC-022). [KycVerificationScreen]'s popWhenIdVerified gate
   // MUST key off this, not bothIdVerified alone — a gated caller like
   // Auto Savings separately re-checks the backend's kycStatus after this
   // screen pops, and if that check requires the link too while this pop
@@ -74,6 +83,10 @@ class KycStepStatuses {
   final int total;
 
   const KycStepStatuses({
+    required this.email,
+    required this.emailVerified,
+    required this.emailStatus,
+    required this.emailPill,
     required this.panDone,
     required this.aadhaarDone,
     required this.bothIdVerified,
@@ -177,6 +190,11 @@ KycStepStatuses computeKycStepStatuses({
   final panBankLinkActive = _isActive(verificationStatus, 'pan_bank_link');
   final rpdActive = _isActive(verificationStatus, 'reverse_penny_drop');
 
+  // Step: E-mail Verification (RULE-KYC-022) — always shown, always counted.
+  final emailVerified = docsResult.emailVerified;
+  final emailStatus = emailVerified ? KycStepStatus.verified : KycStepStatus.actionable;
+  final emailPill = emailVerified ? 'Verified' : 'Pending';
+
   // Step: PAN
   KycStepStatus panStatus;
   String panPill;
@@ -212,6 +230,20 @@ KycStepStatuses computeKycStepStatuses({
   } else {
     aadhaarStatus = KycStepStatus.actionable;
     aadhaarPill = 'Pending';
+  }
+
+  // Until the e-mail is verified, PAN and Aadhaar can't be started (the
+  // backend refuses with EMAIL_NOT_VERIFIED). Progress already made stays
+  // as it is: Verified, Under Review and In Progress are not locked.
+  if (!emailVerified) {
+    if (panStatus == KycStepStatus.actionable || panStatus == KycStepStatus.failed) {
+      panStatus = KycStepStatus.locked;
+      panPill = 'Locked';
+    }
+    if (aadhaarStatus == KycStepStatus.actionable || aadhaarStatus == KycStepStatus.failed) {
+      aadhaarStatus = KycStepStatus.locked;
+      aadhaarPill = 'Locked';
+    }
   }
 
   final bothIdVerified = (panDone && aadhaarDone) || !digilockerActive;
@@ -427,6 +459,7 @@ KycStepStatuses computeKycStepStatuses({
     if (status == KycStepStatus.verified) completed++;
   }
 
+  tally(emailStatus);
   if (digilockerActive) {
     tally(panStatus);
     tally(aadhaarStatus);
@@ -438,6 +471,10 @@ KycStepStatuses computeKycStepStatuses({
   tally(bavStatus);
 
   return KycStepStatuses(
+    email: docsResult.email,
+    emailVerified: emailVerified,
+    emailStatus: emailStatus,
+    emailPill: emailPill,
     panDone: panDone,
     aadhaarDone: aadhaarDone,
     bothIdVerified: bothIdVerified,

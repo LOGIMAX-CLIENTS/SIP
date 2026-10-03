@@ -21,6 +21,7 @@ Future<bool?> showEmailOtpSheet(
   required String otpReferenceId,
   String? firstName,
   int? resendCooldownSeconds,
+  String? purpose,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -31,6 +32,7 @@ Future<bool?> showEmailOtpSheet(
       otpReferenceId: otpReferenceId,
       firstName: firstName,
       resendCooldownSeconds: resendCooldownSeconds,
+      purpose: purpose,
     ),
   );
 }
@@ -48,6 +50,10 @@ class EmailOtpSheet extends ConsumerStatefulWidget {
   // server's own default — see EMAIL_OTP_SECURITY config) only if the
   // response is ever missing this field.
   final int? resendCooldownSeconds;
+  // Passed back on resend so the new code arrives with the same e-mail copy
+  // as the first ('account' for an existing customer — see
+  // AuthService.sendEmailOtp). Null keeps the registration copy.
+  final String? purpose;
 
   const EmailOtpSheet({
     super.key,
@@ -55,6 +61,7 @@ class EmailOtpSheet extends ConsumerStatefulWidget {
     required this.otpReferenceId,
     this.firstName,
     this.resendCooldownSeconds,
+    this.purpose,
   });
 
   @override
@@ -98,7 +105,8 @@ class _EmailOtpSheetState extends ConsumerState<EmailOtpSheet> {
   }
 
   // NOTE: no ref.listen<AuthState> here for error toasts — the parent
-  // RegistrationScreen already listens on the same shared authControllerProvider
+  // (RegistrationScreen, AccountDetailsScreen, KycVerificationScreen)
+  // already listens on the same shared authControllerProvider
   // and would show the same error a second time if this sheet listened too.
 
   Future<void> _resendOtp() async {
@@ -107,7 +115,7 @@ class _EmailOtpSheetState extends ConsumerState<EmailOtpSheet> {
 
     final success = await ref
         .read(authControllerProvider.notifier)
-        .sendEmailOtp(widget.email, firstName: widget.firstName);
+        .sendEmailOtp(widget.email, firstName: widget.firstName, purpose: widget.purpose);
 
     if (!mounted) return;
     if (success) {

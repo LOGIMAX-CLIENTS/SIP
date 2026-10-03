@@ -7,11 +7,15 @@ import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
 
 final kycDocumentsProvider = FutureProvider.autoDispose.family<KycDocumentsResult, String>((ref, requestFrom) async {
-  final user = ref.watch(userProvider);
-  if (user == null) return KycDocumentsResult(documents: [], aadhaarApproved: false);
+  // Scoped to the customer id, as profileProvider is: userProvider builds a
+  // new object on every authControllerProvider change, so watching all of it
+  // reloaded the checklist to a spinner while the E-mail step's OTP was
+  // being sent.
+  final userId = ref.watch(userProvider.select((u) => u?.id));
+  if (userId == null) return KycDocumentsResult(documents: [], aadhaarApproved: false);
 
   return ref.read(kycRepositoryProvider).getDocumentTypes(
-    customerId: user.id,
+    customerId: userId,
     requestFrom: requestFrom,
   );
 });

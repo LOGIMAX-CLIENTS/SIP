@@ -116,7 +116,8 @@ class AuthService {
   }
 
   /// [purpose] picks the e-mail copy server-side: 'nominee' sends
-  /// "Nominee email verification"; null keeps the registration copy.
+  /// "Nominee email verification", 'account' is an existing customer
+  /// confirming their on-file address; null keeps the registration copy.
   Future<Map<String, dynamic>> sendEmailOtp({
     required String email,
     String? firstName,
@@ -430,11 +431,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> sendEmailOtp(String email, {String? firstName}) async {
+  Future<bool> sendEmailOtp(String email, {String? firstName, String? purpose}) async {
     if (state.isLoading) return false;
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final data = await _authService.sendEmailOtp(email: email, firstName: firstName);
+      final data = await _authService.sendEmailOtp(email: email, firstName: firstName, purpose: purpose);
 
       if (data['success'] == true) {
         state = state.copyWith(isLoading: false, data: data['data']);
