@@ -35,8 +35,8 @@ class KycRepository {
         kycConfirmed: data['kyc_confirmed'] == true,
         digilockerAttempted: data['digilocker_attempted'] == true,
         email: data['email']?.toString() ?? '',
-        // Absent (older server) counts as verified — see KycDocumentsResult.
-        emailVerified: data['email_verified'] != false,
+        // Null when absent (older server) — see KycDocumentsResult.
+        emailVerified: data['email_verified'] is bool ? data['email_verified'] as bool : null,
       );
     } else {
       throw Exception(response.data['message'] ?? 'Failed to load documents');

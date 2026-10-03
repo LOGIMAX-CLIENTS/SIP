@@ -191,7 +191,7 @@ KycStepStatuses computeKycStepStatuses({
   final rpdActive = _isActive(verificationStatus, 'reverse_penny_drop');
 
   // Step: E-mail Verification (RULE-KYC-022) — always shown, always counted.
-  final emailVerified = docsResult.emailVerified;
+  final emailVerified = docsResult.emailVerified ?? false;
   final emailStatus = emailVerified ? KycStepStatus.verified : KycStepStatus.actionable;
   final emailPill = emailVerified ? 'Verified' : 'Pending';
 

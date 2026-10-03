@@ -378,10 +378,10 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                     KycStepRow(
                       index: emailIndex,
                       title: 'E-mail Verification',
-                      subtitle: email.isEmpty
-                          ? 'Add your e-mail in Account Details'
-                          : emailVerified
-                              ? email
+                      subtitle: emailVerified
+                          ? (email.isEmpty ? 'E-mail verified' : email)
+                          : email.isEmpty
+                              ? 'Add your e-mail in Account Details'
                               : '$email · tap to verify',
                       status: statuses.emailStatus,
                       pillLabel: statuses.emailPill,
