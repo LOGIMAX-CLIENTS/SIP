@@ -25,8 +25,10 @@ class RegistrationScreen extends ConsumerStatefulWidget {
   final String tempToken;
 
   /// Admin's REGISTER_FORM_VALIDATION setting, sent with the OTP-verify
-  /// response. When false the e-mail is still required but Confirm no longer
-  /// waits for it to be verified; the server enforces the same rule.
+  /// response. When true the e-mail is required and Confirm waits for it to be
+  /// verified. When false it is optional: it may be left blank, and one that is
+  /// typed is format-checked but need not be verified. The server enforces the
+  /// same rule.
   final bool emailVerificationRequired;
 
   const RegistrationScreen({
@@ -304,7 +306,11 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                         // INSIDE the field (suffixIcon), matching DOB's calendar
                         // and Account Details' own e-mail field, rather than
                         // floating beside the label.
-                        _buildInputLabel('E-Mail *', primaryTextColor),
+                        _buildInputLabel(
+                            widget.emailVerificationRequired
+                                ? 'E-Mail *'
+                                : 'E-Mail (Optional)',
+                            primaryTextColor),
                         SizedBox(height: 8.h),
                         _buildClassicTextField(
                           controller: _emailController,
@@ -312,7 +318,13 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                           bgColor: inputBgColor,
                           textColor: primaryTextColor,
                           keyboardType: TextInputType.emailAddress,
-                          validator: Validators.validateEmail,
+                          // Optional: blank passes, anything typed must
+                          // still be a valid address.
+                          validator: widget.emailVerificationRequired
+                              ? Validators.validateEmail
+                              : (value) => (value ?? '').trim().isEmpty
+                                  ? null
+                                  : Validators.validateEmail(value),
                           suffixIcon: _buildEmailVerifyAction(),
                         ),
 

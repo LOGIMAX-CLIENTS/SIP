@@ -37,15 +37,18 @@ The post-verify routing decision (`otp_screen.dart:401-489`) reads `is_new_user`
 from the `verify-otp` response body — the client performs no local "have I seen this mobile before" check.
 See MODULE_BRAIN.md §5 for the full 5-branch decision tree.
 
-## RULE-AUTH-006: Email verification before registration is admin-configurable (default: mandatory)
+## RULE-AUTH-006: The registration e-mail and its verification are admin-configurable (default: mandatory)
 Admin Configuration row `REGISTER_FORM_VALIDATION` (`{"email_mandatory": 1|0}`) decides it. The backend
 sends it as `email_verification_required` in the new-user `verify-otp` response; `OtpScreen` passes it to
-`RegistrationScreen.emailVerificationRequired` (missing → `true`). When `true`, "Confirm" is disabled unless
-`_agreedToTerms && _emailVerified`; when `false`, the e-mail is still required (format-validated) but
-verifying it is optional. `register-check` and `register` enforce the same setting server-side, and an
-unverified address is saved with `cus_email_verified_on = NULL` (Account Details offers Verify later; no
-welcome e-mail is sent to it). Editing the email field after verification silently revokes
-`_emailVerified` (lines 55-59) — the user must re-verify. This is stricter than
+`RegistrationScreen.emailVerificationRequired` (missing → `true`). When `true`, the field is labelled
+"E-Mail *", `Validators.validateEmail` rejects a blank value, and "Confirm" is disabled unless
+`_agreedToTerms && _emailVerified`. When `false`, the field is labelled "E-Mail (Optional)": a blank value
+passes, an address that is typed is still format-validated, and verifying it is optional.
+`register-check` and `register` enforce the same setting server-side. A blank e-mail is saved as
+`cus_email = NULL`, and an unverified address with `cus_email_verified_on = NULL`; either way Account
+Details and KYC step 1 ask the customer to add/verify it later, and no welcome e-mail is sent. Editing the
+email field after verification silently revokes `_emailVerified` (`registration_screen.dart:69-74`) — the
+user must re-verify. This is stricter than
 `STARTGOLD_DOCUMENTATION.md` §3.5, which lists email as a plain input field with no mention of a
 verification gate — confirmed drift, code is source of truth per AGENTS.md §10.
 

@@ -155,8 +155,9 @@ dedupes against the last-registered token stored in `SecureStorageService.getFcm
    on PIN retry, but there is no equivalent guard preventing double-`register()` if the user backgrounds/kills
    the app between register-success and PIN-success — a partial-registration state that OTP-routing step 5
    (§5) is designed to recover from on next login.
-5. Email verification in registration is **mandatory by default** (`_emailVerified` gates the Confirm
-   button) but admin-switchable via `REGISTER_FORM_VALIDATION.email_mandatory` — see RULE-AUTH-006. A
+5. The registration e-mail and its verification are **mandatory by default** (`_emailVerified` gates the
+   Confirm button) but admin-switchable via `REGISTER_FORM_VALIDATION.email_mandatory` — with `0` the field
+   is labelled "E-Mail (Optional)" and may be left blank. See RULE-AUTH-006. A
    UX-security tradeoff not mentioned in
    `STARTGOLD_DOCUMENTATION.md` §3.5 at all (see drift note in COVERAGE_TRACKER.md).
 
