@@ -428,8 +428,9 @@ a rule added to one verification path and not the others. When adding ANY gate o
 
 ## RULE-KYC-022 — E-mail Verification is step 1 of the checklist (added 2026-10-03)
 
-**Why.** Registration can now skip verifying the e-mail (admin `REGISTER_FORM_VALIDATION.email_mandatory = 0`,
-see Auth RULE-AUTH-006), and accounts registered before 2026-07-23 were never stamped
+**Why.** Registration can now skip verifying the e-mail, or skip the e-mail altogether (admin
+`REGISTER_FORM_VALIDATION.email_mandatory = 0`, see Auth RULE-AUTH-006 — `email` then comes back `""` and the
+step points the customer to Account Details), and accounts registered before 2026-07-23 were never stamped
 (`cus_email_verified_on` NULL). KYC requires a verified e-mail regardless.
 
 **Order on `/kyc-verification`:** E-mail → PAN → Aadhaar → Name & DOB Match → PAN-Aadhaar Link → Add Bank
