@@ -5,6 +5,7 @@ import 'package:startgold/core/providers/user_provider.dart';
 import 'package:startgold/core/security/secure_logger.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
+import 'package:startgold/features/profile/services/profile_service.dart';
 
 final kycDocumentsProvider = FutureProvider.autoDispose.family<KycDocumentsResult, String>((ref, requestFrom) async {
   // Scoped to the customer id, as profileProvider is: userProvider builds a
@@ -14,9 +15,19 @@ final kycDocumentsProvider = FutureProvider.autoDispose.family<KycDocumentsResul
   final userId = ref.watch(userProvider.select((u) => u?.id));
   if (userId == null) return KycDocumentsResult(documents: [], aadhaarApproved: false);
 
-  return ref.read(kycRepositoryProvider).getDocumentTypes(
+  final docs = await ref.read(kycRepositoryProvider).getDocumentTypes(
     customerId: userId,
     requestFrom: requestFrom,
+  );
+  if (docs.emailVerified != null) return docs;
+
+  // A server older than the E-mail step doesn't report it here. The profile
+  // endpoint does, so ask it rather than guess. If that fails too the step
+  // reads unverified, which only asks the customer to verify (RULE-KYC-022).
+  final profile = await ref.read(profileServiceProvider).getProfileDetails(userId);
+  return docs.withEmailStatus(
+    email: profile?['email']?.toString() ?? '',
+    emailVerified: profile?['email_verified'] == true,
   );
 });
 

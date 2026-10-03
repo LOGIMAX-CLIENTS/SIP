@@ -435,9 +435,11 @@ see Auth RULE-AUTH-006), and accounts registered before 2026-07-23 were never st
 **Order on `/kyc-verification`:** E-mail → PAN → Aadhaar → Name & DOB Match → PAN-Aadhaar Link → Add Bank
 Account. The e-mail step is always shown and always counted (so "N/6", or fewer when steps are inactive).
 
-**Data.** `kyc/document-types` returns `email` and `email_verified`. `KycDocumentsResult.emailVerified`
-defaults to **true** when the field is absent (older server), so nobody is locked out by an app/server
-version mismatch.
+**Data.** `kyc/document-types` returns `email` and `email_verified`. When a server older than this step
+doesn't send them, `KycDocumentsResult.emailVerified` is null and `kycDocumentsProvider` fills both from
+`profile/customer_details` (which has carried `email_verified` since July 2026). It is **never assumed
+verified**: the first cut defaulted to true, and a customer who skipped verification at registration saw
+"Verified" against a staging backend that didn't have the change yet (2026-10-03).
 
 **Client rules** (`computeKycStepStatuses`):
 - E-mail: `verified`/'Verified', else `actionable`/'Pending'. Tapping it (or the footer "Verify E-mail")
