@@ -426,6 +426,42 @@ a rule added to one verification path and not the others. When adding ANY gate o
 `_try_persist_digilocker_pan`, check `upload_document(id_document="1")` and
 `_finalize_name_mismatch_confirmation` for the same thing.
 
+## RULE-KYC-022 — E-mail Verification is step 1 of the checklist (added 2026-10-03)
+
+**Why.** Registration can now skip verifying the e-mail (admin `REGISTER_FORM_VALIDATION.email_mandatory = 0`,
+see Auth RULE-AUTH-006), and accounts registered before 2026-07-23 were never stamped
+(`cus_email_verified_on` NULL). KYC requires a verified e-mail regardless.
+
+**Order on `/kyc-verification`:** E-mail → PAN → Aadhaar → Name & DOB Match → PAN-Aadhaar Link → Add Bank
+Account. The e-mail step is always shown and always counted (so "N/6", or fewer when steps are inactive).
+
+**Data.** `kyc/document-types` returns `email` and `email_verified`. `KycDocumentsResult.emailVerified`
+defaults to **true** when the field is absent (older server), so nobody is locked out by an app/server
+version mismatch.
+
+**Client rules** (`computeKycStepStatuses`):
+- E-mail: `verified`/'Verified', else `actionable`/'Pending'. Tapping it (or the footer "Verify E-mail")
+  runs `_verifyEmail()` — same `sendEmailOtp(purpose: 'account')` + `showEmailOtpSheet` flow as Account
+  Details. No address on file → opens Account Details.
+- While unverified, PAN/Aadhaar that are `actionable` or `failed` (Retry) become `locked` ("Unlocks once your
+  e-mail is verified"). **Verified, Under Review and In Progress are kept** — existing progress is never
+  re-locked.
+- Add Bank Account is **not** gated by the e-mail (`idKycComplete` excludes it on purpose).
+
+**Server rules** (`KYCService`, api_service + secure_service):
+- `is_kyc_complete()` returns False while the e-mail is unverified → SIP/withdraw/large-purchase gates return
+  `KYC_REQUIRED`.
+- `upload_document()` refuses to START PAN (`"1"`) or Aadhaar (`"2"` without `verification_id`), and
+  `submit_manual_kyc()` refuses, with error code `EMAIL_NOT_VERIFIED`. The Aadhaar poll and the PAN
+  name-mismatch confirm (`"3"`) are not blocked, so a session already under way can finish.
+- `pending_action = "VERIFY_EMAIL"` comes before every other branch in `get_document_types()`.
+
+❌ Locking a step the customer has already passed because a new earlier step was added.
+✅ A new gate only stops work that hasn't started; finished work keeps its status.
+
+**Rollout:** an app build without this step sees a complete checklist for a customer the backend still
+refuses (`KYC_REQUIRED`) — ship the app before or with the backend in production.
+
 ## Unconfirmed / needs a fresh backend-contract check
 
 - Exact `id_document` value the backend assigns to the PAN document type (the app never hardcodes it — it's

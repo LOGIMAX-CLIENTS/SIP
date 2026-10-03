@@ -184,6 +184,9 @@ and `withdrawal/services/withdrawal_service.dart:59` call the identical path.
    RULE-KYC-013 blank-name skip) therefore does NOT mark KYC confirmed — except after a mismatch
    confirmation, where `_finalize_name_mismatch_confirmation` already called `confirm_and_sync()` itself.
    Check which of those two paths applies before changing when that dialog is shown.
+8. E-mail Verification is the checklist's first step and part of the backend's `is_kyc_complete()`
+   (RULE-KYC-022). An unverified e-mail locks not-yet-started PAN/Aadhaar but never re-locks verified work,
+   and never gates Add Bank Account.
 
 ## 9. See Also
 

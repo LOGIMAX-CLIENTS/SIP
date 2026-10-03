@@ -105,6 +105,12 @@ class KycDocumentsResult {
   // instead" hidden right when the customer most needs to retry it — see
   // kyc_screen.dart's allowManualUpload computation.
   final bool aadhaarRejected;
+  // The checklist's first step, E-mail Verification (RULE-KYC-022). The
+  // backend refuses to start PAN/Aadhaar and holds is_kyc_complete() until
+  // the customer's e-mail is verified. Defaults to true so a server that
+  // doesn't send `email_verified` yet never locks anyone out.
+  final String email;
+  final bool emailVerified;
 
   KycDocumentsResult({
     required this.documents,
@@ -116,6 +122,8 @@ class KycDocumentsResult {
     this.aadhaarUnderReview = false,
     this.digilockerAttempted = false,
     this.aadhaarRejected = false,
+    this.email = '',
+    this.emailVerified = true,
   });
 }
 

@@ -192,6 +192,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
           firstName: _firstNameController.text.trim().isNotEmpty
               ? _firstNameController.text.trim()
               : null,
+          // An existing customer — not the "complete your registration" copy.
+          purpose: 'account',
         );
 
     if (!mounted) return;
@@ -208,6 +210,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       otpReferenceId: otpReferenceId,
       firstName: _firstNameController.text.trim(),
       resendCooldownSeconds: otpResponseData?['resend_cooldown_seconds'] as int?,
+      purpose: 'account',
     );
 
     if (verified == true && mounted) {

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:startgold/core/services/auth_service.dart' show AuthState;
+import 'package:startgold/features/auth/controller/auth_controller.dart';
+import 'package:startgold/features/auth/registration/email_otp_sheet.dart';
 import 'package:startgold/features/kyc/controllers/kyc_controller.dart';
 import 'package:startgold/features/kyc/controllers/kyc_verification_flow_mixin.dart';
 import 'package:startgold/features/kyc/models/kyc_document.dart';
@@ -22,9 +25,10 @@ import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/custom_button.dart';
 
 /// Single-page KYC + bank validation checklist. Display order:
-/// PAN -> Aadhaar -> Name & DOB Match -> PAN-Aadhaar Link ->
+/// E-mail -> PAN -> Aadhaar -> Name & DOB Match -> PAN-Aadhaar Link ->
 /// Bank Account Validation (BAV, with PAN-Bank Link and Reverse Penny Drop
-/// folded in as sub-items once BAV itself clears).
+/// folded in as sub-items once BAV itself clears). PAN and Aadhaar stay
+/// locked until the e-mail is verified (RULE-KYC-022).
 ///
 /// PAN/Aadhaar are real, independently-verified backend flows (driven by
 /// [KycVerificationFlowMixin], reusing the exact same providers as the live
@@ -75,6 +79,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
   bool _checkingPanBankLink = false;
   bool _retryingPanAadhaarLink = false;
   bool _refreshingNameDob = false;
+  bool _sendingEmailOtp = false;
   // cbankId of the account we've already auto-pushed the customer into
   // Additional Verification for — prevents re-triggering the navigation on
   // every rebuild once BAV clears; only fires once per account, and never
@@ -107,6 +112,13 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     // until manually refreshing.
     ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
       handleAadhaarStateChange(widget.requestFrom, next);
+    });
+    // E-mail step's OTP errors (send, resend, wrong code) — EmailOtpSheet
+    // leaves toasting them to its parent, as on Account Details.
+    ref.listen<AuthState>(authControllerProvider, (prev, next) {
+      if (next.error != null && next.error != prev?.error && mounted) {
+        AppToast.show(context, next.error!, type: ToastType.error);
+      }
     });
 
     return PopScope(
@@ -214,6 +226,9 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     final aadhaarPill = statuses.aadhaarPill;
     final bothIdVerified = statuses.bothIdVerified;
 
+    final email = statuses.email;
+    final emailVerified = statuses.emailVerified;
+
     final nameDobStatus = statuses.nameDobStatus;
     final nameDobPill = statuses.nameDobPill;
     final nameDobSubtitle = statuses.nameDobSubtitle;
@@ -262,6 +277,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     // Dynamic numbering — pure display numbering, recomputed locally since
     // it isn't part of the shared completed/total tally.
     int stepCounter = 0;
+    final emailIndex = ++stepCounter;
     int? panIndex, aadhaarIndex;
     if (digilockerActive) {
       panIndex = ++stepCounter;
@@ -311,9 +327,11 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
 
     final subtitle = completed == total
         ? "You're fully verified — withdrawals and gold delivery are unlocked."
-        : completed >= (total - 1).clamp(0, total)
-            ? 'Finish bank validation to unlock withdrawals and gold delivery.'
-            : 'Complete PAN and Aadhaar validation to continue.';
+        : !emailVerified
+            ? 'Verify your e-mail to continue KYC.'
+            : completed >= (total - 1).clamp(0, total)
+                ? 'Finish bank validation to unlock withdrawals and gold delivery.'
+                : 'Complete PAN and Aadhaar validation to continue.';
     final headline = completed == total
         ? 'All done${profileName.isNotEmpty ? ', $profileName' : ''}!'
         : 'Almost there${profileName.isNotEmpty ? ', $profileName' : ''}';
@@ -323,7 +341,9 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     // are presentational (retry lives inline in their own card), and the
     // BAV sub-items' actions live inside BAV's own expanded card.
     String? footerKey;
-    if (digilockerActive && !bothIdVerified) {
+    if (!emailVerified) {
+      footerKey = 'email';
+    } else if (digilockerActive && !bothIdVerified) {
       footerKey = 'id';
     } else if (pennylessBavStatus != KycStepStatus.verified && pennylessBavStatus != KycStepStatus.locked) {
       // Checked against the pennyless-only status, not the composite
@@ -355,6 +375,19 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                     SizedBox(height: 4.h),
                     Text('Each check runs automatically once the previous one clears.', style: AppTextStyles.bodySmall(isDark)),
                     SizedBox(height: 20.h),
+                    KycStepRow(
+                      index: emailIndex,
+                      title: 'E-mail Verification',
+                      subtitle: email.isEmpty
+                          ? 'Add your e-mail in Account Details'
+                          : emailVerified
+                              ? email
+                              : '$email · tap to verify',
+                      status: statuses.emailStatus,
+                      pillLabel: statuses.emailPill,
+                      expanded: false,
+                      onToggle: emailVerified || _sendingEmailOtp ? null : () => _verifyEmail(email),
+                    ),
                     if (digilockerActive) ...[
                       KycStepRow(
                         index: panIndex!,
@@ -368,6 +401,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                         pillLabel: panPill,
                         expanded: false,
                         onToggle: () => _openIdVerificationScreen(),
+                        lockedHint: panStatus == KycStepStatus.locked ? 'Unlocks once your e-mail is verified' : null,
                       ),
                       KycStepRow(
                         index: aadhaarIndex!,
@@ -379,6 +413,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                         pillLabel: aadhaarPill,
                         expanded: false,
                         onToggle: () => _openIdVerificationScreen(),
+                        lockedHint: aadhaarStatus == KycStepStatus.locked ? 'Unlocks once your e-mail is verified' : null,
                       ),
                     ],
                     KycStepRow(
@@ -859,6 +894,52 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     if (mounted) AppToast.show(context, 'Refreshing validation status…', type: ToastType.info);
   }
 
+  /// Step 1 (RULE-KYC-022) — same OTP sheet and endpoints as Account
+  /// Details' Verify (`AccountDetailsScreen._verifyEmail`). The backend
+  /// stamps cus_email_verified_on because the address is the one on file,
+  /// so on success the checklist is simply re-fetched. With no address on
+  /// file there is nothing to send a code to: Account Details is where one
+  /// is added.
+  Future<void> _verifyEmail(String email) async {
+    if (email.isEmpty) {
+      await Navigator.pushNamed(context, AppRouter.accountDetails);
+      if (mounted) ref.invalidate(kycDocumentsProvider);
+      return;
+    }
+
+    final firstName = ref.read(pc.profileProvider).user.firstName;
+    setState(() => _sendingEmailOtp = true);
+    final auth = ref.read(authControllerProvider.notifier);
+    final sent = await auth.sendEmailOtp(
+      email,
+      firstName: firstName.isNotEmpty ? firstName : null,
+      purpose: 'account',
+    );
+    if (!mounted) return;
+    setState(() => _sendingEmailOtp = false);
+
+    // A failure has already been toasted by the authControllerProvider
+    // listener in build().
+    final otpData = ref.read(authControllerProvider).data;
+    final otpReferenceId = otpData?['otp_reference_id'] as String?;
+    if (!sent || otpReferenceId == null) return;
+
+    final verified = await showEmailOtpSheet(
+      context,
+      email: email,
+      otpReferenceId: otpReferenceId,
+      firstName: firstName,
+      resendCooldownSeconds: otpData?['resend_cooldown_seconds'] as int?,
+      purpose: 'account',
+    );
+    if (verified != true || !mounted) return;
+
+    ref.invalidate(kycDocumentsProvider);
+    // Account Details and the Profile page read the same stamp.
+    ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    AppToast.show(context, 'E-mail verified', type: ToastType.success);
+  }
+
   /// PAN/Aadhaar data entry lives on its own page now — tapping the row or
   /// this footer CTA both land here instead of expanding fields in place.
   Future<void> _openIdVerificationScreen() async {
@@ -885,6 +966,11 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     String label;
     VoidCallback? onTap;
     switch (footerKey) {
+      case 'email':
+        label = 'Verify E-mail';
+        final email = ref.read(kycDocumentsProvider(widget.requestFrom)).valueOrNull?.email ?? '';
+        onTap = _sendingEmailOtp ? null : () => _verifyEmail(email);
+        break;
       case 'id':
         label = panSkippedInConsent ? 'Retry PAN Verification' : 'Continue Verification';
         onTap = () => _openIdVerificationScreen();
