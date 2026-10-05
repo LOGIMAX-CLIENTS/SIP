@@ -201,7 +201,8 @@ Fetches all SIP plans for the user.
   "data": [
     {
       "subscription_id": "G24D042399DA77",
-      "start_date": "2024-04-23",
+      "start_date": "23-04-2024",
+      "end_date": "23-04-2027",
       "frequency": "Daily",
       "frequency_id": 1,
       "amount": 100,
@@ -211,7 +212,8 @@ Fetches all SIP plans for the user.
     },
     {
       "subscription_id": "S25W050199BC44",
-      "start_date": "2024-05-01",
+      "start_date": "01-05-2024",
+      "end_date": "01-05-2027",
       "frequency": "Weekly",
       "frequency_id": 2,
       "amount": 500,
