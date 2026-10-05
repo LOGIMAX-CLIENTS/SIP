@@ -2,10 +2,10 @@
 /// customer's current settings, so the banner and its unit test can never
 /// disagree on what a given combination is worth.
 ///
-///   Biometric ON  + Auto-Lock ≤ 30s → 100% (Fully protected)
-///   Biometric ON  + Auto-Lock > 30s →  90%
-///   Biometric OFF + Auto-Lock ≤ 30s →  50%
-///   Biometric OFF + Auto-Lock > 30s →  40%
+///   Biometric ON  + Auto-Lock ≤ 30 min → 100% (Fully protected)
+///   Biometric ON  + Auto-Lock > 30 min →  90%
+///   Biometric OFF + Auto-Lock ≤ 30 min →  50%
+///   Biometric OFF + Auto-Lock > 30 min →  40%
 ///   MPIN off (Auto-Lock never fires) →  40%
 class SecurityScore {
   final int percent;
@@ -27,9 +27,9 @@ class SecurityScore {
   bool get isFull => percent == 100;
 }
 
-/// Auto-Lock at or below this (including "Immediately") counts as a short
+/// Auto-Lock at or below 30 min (including "Immediately") counts as a short
 /// lock for the score.
-const int kStrongAutoLockSeconds = 30;
+const int kStrongAutoLockSeconds = 1800;
 
 SecurityScore computeSecurityScore({
   required bool mpinEnabled,
@@ -59,7 +59,7 @@ SecurityScore computeSecurityScore({
     return const SecurityScore(
       percent: 90,
       headline: 'Well protected',
-      message: 'Set Auto-Lock on Exit to 30 sec or less for full protection.',
+      message: 'Set Auto-Lock on Exit to 30 min or less for full protection.',
       strengthLabel: 'Good',
     );
   }

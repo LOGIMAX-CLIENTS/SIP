@@ -265,8 +265,10 @@ encrypted if the *endpoint path* also matches `encryptedEndpoints`, which is whe
   Profile and Legal render identical rows.
 - **App Security banner**: `_buildSecurityBanner` at the top of `AppSecurityScreen` shows a percentage from
   `computeSecurityScore` (`lib/features/profile/utils/security_score.dart`, unit-tested in
-  `test/security_score_test.dart`): biometric on + Auto-Lock ≤30s → 100% "Fully protected"; biometric on
-  + >30s → 90%; biometric off → 50% (≤30s) / 40% (>30s); MPIN off → 40%. "Biometric on" is the same value
+  `test/security_score_test.dart`): biometric on + Auto-Lock ≤30 min → 100% "Fully protected"; biometric on
+  + >30 min → 90%; biometric off → 50% (≤30 min) / 40% (>30 min); MPIN off → 40%. The cutoff
+  (`kStrongAutoLockSeconds = 1800`) covers every server option today (`[30, 60, 300, 900, 1800]`), so 40%/90%
+  only appear with MPIN off or an admin-added option over 30 min. "Biometric on" is the same value
   the switch shows (`AppConfig.biometricLoginEnabled && _biometricEnabled`). Recomputed in `build`, so it
   follows the existing `setState`s. Styled to the design canvas: card is always `#0D3A25` with gold
   (`#D4AF37`) shield/ring/label whatever the score; only the strength bar changes — an orange → gold →
