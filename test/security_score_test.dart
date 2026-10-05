@@ -10,9 +10,10 @@ void main() {
       ).percent;
 
   group('computeSecurityScore', () {
-    test('biometric on with a 30s-or-shorter lock is fully protected', () {
+    test('biometric on with a 30-min-or-shorter lock is fully protected', () {
       expect(score(bio: true, timeout: 0), 100);
       expect(score(bio: true, timeout: 30), 100);
+      expect(score(bio: true, timeout: 1800), 100);
       final full = computeSecurityScore(
           mpinEnabled: true, biometricOn: true, timeoutSeconds: 30);
       expect(full.isFull, isTrue);
@@ -22,15 +23,16 @@ void main() {
     });
 
     test('biometric on with a longer lock is 90%', () {
-      expect(score(bio: true, timeout: 31), 90);
-      expect(score(bio: true, timeout: 1800), 90);
+      expect(score(bio: true, timeout: 1801), 90);
+      expect(score(bio: true, timeout: 3600), 90);
     });
 
     test('biometric off is 50% with a short lock, 40% otherwise', () {
       expect(score(bio: false, timeout: 0), 50);
       expect(score(bio: false, timeout: 30), 50);
-      expect(score(bio: false, timeout: 31), 40);
-      expect(score(bio: false, timeout: 1800), 40);
+      expect(score(bio: false, timeout: 1800), 50);
+      expect(score(bio: false, timeout: 1801), 40);
+      expect(score(bio: false, timeout: 3600), 40);
     });
 
     test('MPIN off is 40% whatever the lock', () {
