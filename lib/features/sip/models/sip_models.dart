@@ -208,6 +208,9 @@ class SipCreateResponse {
 class SipPlanDetail {
   final String subscriptionId;
   final String startDate;
+  /// When debits stop (scheme end date or mandate expiry, whichever is
+  /// first). Null when an older backend doesn't send it.
+  final String? endDate;
   final String frequency;
   final int frequencyId;
   final double amount;
@@ -220,6 +223,7 @@ class SipPlanDetail {
   SipPlanDetail({
     required this.subscriptionId,
     required this.startDate,
+    this.endDate,
     required this.frequency,
     required this.frequencyId,
     required this.amount,
@@ -234,6 +238,9 @@ class SipPlanDetail {
     return SipPlanDetail(
       subscriptionId: json['subscription_id']?.toString() ?? '',
       startDate: json['start_date']?.toString() ?? '',
+      endDate: (json['end_date']?.toString() ?? '').isEmpty
+          ? null
+          : json['end_date'].toString(),
       frequency: json['frequency']?.toString() ?? '',
       frequencyId:
           int.tryParse(json['frequency_id']?.toString() ?? '0') ?? 0,

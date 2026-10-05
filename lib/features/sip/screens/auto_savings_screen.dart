@@ -383,7 +383,7 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 SizedBox(height: 20.h),
 
                 // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Detail Grid ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
-                _buildDetailRow('Started On', _formatDate(plan.startDate)),
+                _buildDetailRow('Start Date', _formatDate(plan.startDate)),
                 _buildDetailRow('Savings Amount',
                     '\u20b9${plan.amount.toStringAsFixed(0)}'),
                 _buildDetailRow('Frequency', plan.frequency,
@@ -391,6 +391,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 _buildDetailRow('Reference ID', plan.subscriptionId),
                 _buildDetailRow('Status', plan.status.toUpperCase(),
                     valueColor: statusColor, isNumeric: false),
+                if (plan.endDate != null)
+                  _buildDetailRow('End Date', _formatDate(plan.endDate!)),
               ],
             ),
           ),
@@ -489,10 +491,12 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
   }
 
   /// Format date string (2026-04-24 ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ 24 Apr 2026).
+  /// /sip/details sends DD-MM-YYYY; YYYY-MM-DD is accepted too.
   String _formatDate(String dateStr) {
     try {
       final parts = dateStr.split('-');
       if (parts.length != 3) return dateStr;
+      final yearFirst = parts[0].length == 4;
       final months = [
         '',
         'Jan',
@@ -508,9 +512,9 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         'Nov',
         'Dec'
       ];
-      final day = int.parse(parts[2]);
+      final day = int.parse(yearFirst ? parts[2] : parts[0]);
       final month = int.parse(parts[1]);
-      final year = parts[0];
+      final year = yearFirst ? parts[0] : parts[2];
       return '$day ${months[month]} $year';
     } catch (_) {
       return dateStr;
