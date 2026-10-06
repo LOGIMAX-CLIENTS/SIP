@@ -1260,12 +1260,25 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 Icon(Icons.verified_rounded,
                     size: 14.sp, color: const Color(0xFF16A34A)),
                 SizedBox(width: 4.w),
-                Text(
-                  '$commodityLabel | 100% Safe & Secured',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 11.sp,
-                    color: Colors.black38,
-                    fontWeight: FontWeight.w500,
+                Text.rich(
+                  TextSpan(
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 11.sp,
+                      color: Colors.black38,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    children: [
+                      TextSpan(text: '$commodityLabel | '),
+                      TextSpan(
+                        text: '100%',
+                        style: GoogleFonts.lora(
+                          fontSize: 11.sp,
+                          color: Colors.black38,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const TextSpan(text: ' Safe & Secured'),
+                    ],
                   ),
                 ),
               ],
@@ -1333,12 +1346,25 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 Icon(Icons.verified_rounded,
                     size: 14.sp, color: const Color(0xFF16A34A)),
                 SizedBox(width: 4.w),
-                Text(
-                  '$commodityLabel | 100% Safe & Secured',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 11.sp,
-                    color: Colors.black38,
-                    fontWeight: FontWeight.w500,
+                Text.rich(
+                  TextSpan(
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 11.sp,
+                      color: Colors.black38,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    children: [
+                      TextSpan(text: '$commodityLabel | '),
+                      TextSpan(
+                        text: '100%',
+                        style: GoogleFonts.lora(
+                          fontSize: 11.sp,
+                          color: Colors.black38,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const TextSpan(text: ' Safe & Secured'),
+                    ],
                   ),
                 ),
               ],
