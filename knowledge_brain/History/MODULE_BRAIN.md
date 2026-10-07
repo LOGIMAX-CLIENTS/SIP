@@ -2,7 +2,7 @@
 
 ```
 status: 🔵 100% (Round 1)
-last_updated: 2026-08-19
+last_updated: 2026-10-07
 owns: lib/features/history/  (controller/, models/, screens/, services/)
 ```
 
@@ -84,7 +84,9 @@ fetched so far, merged, never replaced** (except on a fresh filter/refresh). Key
 `transactionDetailsProvider(id)` in `initState` (`transaction_details_screen.dart:38-40`) so
 navigating in always fetches fresh data — no stale-detail caching across visits. Renders:
 top card (icon/type/amount/weight), status card (timeline steps + tone-colored footer message +
-optional invoice download button + "Save Again" CTA for non-SIP purchases), a collapsible Order
+optional invoice download button + "Save Again" CTA for non-SIP purchases), a "Refund Status" card
+(step-by-step refund timeline + refund ID/bank ref/expected-by) only when the backend sends a
+`refund` object — see RULE-HISTORY-014, a collapsible Order
 Details card (rate/quantity/value/GST/total + IDs with copy-to-clipboard), and — only when
 `type == 'sip'` and `schemeInfo != null` — a SIP Plan Details card. Clipboard copy auto-clears
 after 60 seconds (`transaction_details_screen.dart:838-841`) — a deliberate anti-clipboard-sniffing
@@ -122,7 +124,11 @@ why this is a reasonable split rather than a violation of AGENTS.md's feature-is
 3. **`so_type` field is parsed but never consumed** (`TransactionItem.soType`,
    `history_models.dart:51,64,80`) — unconfirmed purpose; likely a buy/sell direction flag not
    yet wired into the UI.
-4. **Two independent filter-sheet implementations** (general history vs. SIP) with near-identical
+4. **Refund card has no backend yet** (RULE-HISTORY-014): the client renders `data.refund` from
+   `transactions/details`, but the backend doesn't send it as of 2026-10-07. The separate SIP
+   detail screen (`sip_transaction_details_screen.dart`) has its own copy of the timeline code and
+   does **not** render refunds.
+5. **Two independent filter-sheet implementations** (general history vs. SIP) with near-identical
    chip/date-range UI — duplication, not a bug, but a refactor candidate.
 
 ## 8. See also

@@ -108,6 +108,9 @@ class TransactionDetailResponse {
   final PriceBreakdown priceBreakdown;
   final TechnicalDetails technicalDetails;
   final SchemeInfo? schemeInfo;
+  /// Present only when the backend has a refund on record for this
+  /// transaction (payment debited but the order/purchase failed).
+  final RefundInfo? refund;
 
   TransactionDetailResponse({
     required this.transactionId,
@@ -126,6 +129,7 @@ class TransactionDetailResponse {
     required this.priceBreakdown,
     required this.technicalDetails,
     this.schemeInfo,
+    this.refund,
   });
 
   factory TransactionDetailResponse.fromJson(Map<String, dynamic> json) {
@@ -155,6 +159,51 @@ class TransactionDetailResponse {
       schemeInfo: root['scheme_info'] != null
           ? SchemeInfo.fromJson(root['scheme_info'])
           : null,
+      refund: root['refund'] is Map<String, dynamic>
+          ? RefundInfo.fromJson(root['refund'])
+          : null,
+    );
+  }
+}
+
+/// Refund tracking for a failed purchase. Steps, statuses, the expected
+/// credit date and the note are all backend-supplied — the app never
+/// derives refund stages or turnaround times on its own.
+class RefundInfo {
+  final String refundId;
+  final String amount;
+  /// Overall refund status, e.g. "Processing" | "Refunded" | "Failed".
+  final String status;
+  /// Masked destination as display text, e.g. "HDFC Bank ••1234".
+  final String refundTo;
+  /// Bank reference (RRN/ARN/UTR) the user can quote to their bank.
+  final String referenceNo;
+  final String expectedBy;
+  final String message;
+  final List<TimelineStep> timeline;
+
+  RefundInfo({
+    required this.refundId,
+    required this.amount,
+    required this.status,
+    required this.refundTo,
+    required this.referenceNo,
+    required this.expectedBy,
+    required this.message,
+    required this.timeline,
+  });
+
+  factory RefundInfo.fromJson(Map<String, dynamic> json) {
+    final timelineList = json['timeline'] as List? ?? [];
+    return RefundInfo(
+      refundId: json['refund_id']?.toString() ?? '',
+      amount: json['amount']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      refundTo: json['refund_to']?.toString() ?? '',
+      referenceNo: json['reference_no']?.toString() ?? '',
+      expectedBy: json['expected_by']?.toString() ?? '',
+      message: json['message']?.toString() ?? '',
+      timeline: timelineList.map((i) => TimelineStep.fromJson(i)).toList(),
     );
   }
 }
@@ -162,6 +211,8 @@ class TransactionDetailResponse {
 class TimelineStep {
   final String stepName;
   final String status;
+  /// Empty for a step that hasn't happened yet (e.g. an "Upcoming" refund
+  /// step).
   final String time;
   /// Failure reason (e.g. "Invalid IFSC code") — only ever populated on a
   /// "Failed" step; empty for every other step.

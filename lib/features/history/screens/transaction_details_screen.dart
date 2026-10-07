@@ -118,6 +118,11 @@ class _TransactionDetailsScreenState
           SizedBox(height: 16.h),
           _buildStatusCard(details, isSaving, isSip, isOffer, cardColor, borderColor, textColor,
               mutedTextColor, isDark),
+          if (details.refund != null) ...[
+            SizedBox(height: 16.h),
+            _buildRefundCard(details.refund!, cardColor, borderColor,
+                textColor, mutedTextColor, isDark),
+          ],
           if (isSip && details.schemeInfo != null) ...[
             SizedBox(height: 16.h),
             _buildSchemeInfoCard(details.schemeInfo!, cardColor, borderColor,
@@ -319,32 +324,7 @@ class _TransactionDetailsScreenState
           Divider(color: borderColor, height: 1),
           SizedBox(height: 8.h),
           if (details.footerMessage.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-              decoration: BoxDecoration(
-                color: footerTone.badgeBgColor,
-                borderRadius: BorderRadius.circular(10.r),
-                border: Border.all(color: footerTone.color.withOpacity(0.3)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(footerTone.icon, size: 16.sp, color: footerTone.color),
-                  SizedBox(width: 8.w),
-                  Expanded(
-                    child: Text(
-                      details.footerMessage,
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 13.sp,
-                        fontWeight: FontWeight.w600,
-                        color: footerTone.badgeTextColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildStatusNote(details.footerMessage, footerTone),
           SizedBox(height: 12.h),
           Row(
             children: [
@@ -449,6 +429,133 @@ class _TransactionDetailsScreenState
     );
   }
 
+  /// Tinted message box under a timeline, colored by [tone].
+  Widget _buildStatusNote(
+      String message,
+      ({Color color, Color badgeBgColor, Color badgeTextColor, IconData icon})
+          tone) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+      decoration: BoxDecoration(
+        color: tone.badgeBgColor,
+        borderRadius: BorderRadius.circular(10.r),
+        border: Border.all(color: tone.color.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(tone.icon, size: 16.sp, color: tone.color),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 13.sp,
+                fontWeight: FontWeight.w600,
+                color: tone.badgeTextColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Refund progress for a failed purchase — rendered entirely from the
+  /// backend's `refund` object (steps, statuses, ETA, note).
+  Widget _buildRefundCard(
+      RefundInfo refund,
+      Color cardColor,
+      Color borderColor,
+      Color textColor,
+      Color mutedTextColor,
+      bool isDark) {
+    final tone = _statusTone(refund.status, isDark);
+
+    return Container(
+      padding: EdgeInsets.all(20.w),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  'Refund Status',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
+                ),
+              ),
+              if (refund.status.isNotEmpty) ...[
+                SizedBox(width: 8.w),
+                Container(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+                  decoration: BoxDecoration(
+                    color: tone.badgeBgColor,
+                    borderRadius: BorderRadius.circular(6.r),
+                  ),
+                  child: Text(
+                    refund.status,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.bold,
+                      color: tone.badgeTextColor,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          SizedBox(height: 14.h),
+          ...refund.timeline
+              .map((step) => _buildTimelineStep(step,
+                  isDark: isDark,
+                  textColor: textColor,
+                  mutedTextColor: mutedTextColor,
+                  isLast: refund.timeline.last == step,
+                  isFirst: refund.timeline.first == step))
+              .toList(),
+          if (refund.timeline.isNotEmpty) ...[
+            SizedBox(height: 8.h),
+            Divider(color: borderColor, height: 1),
+            SizedBox(height: 8.h),
+          ],
+          _buildDetailRow(
+              'Refund Amount',
+              refund.amount.isEmpty ? '' : '₹${refund.amount}',
+              textColor,
+              mutedTextColor),
+          _buildDetailRow('Refund To', refund.refundTo, textColor,
+              mutedTextColor,
+              isNumericValue: false),
+          _buildDetailRow(
+              'Expected By', refund.expectedBy, textColor, mutedTextColor),
+          _buildDetailRow('Refund ID', refund.refundId, textColor,
+              mutedTextColor,
+              showCopy: true),
+          _buildDetailRow('Bank Reference No.', refund.referenceNo, textColor,
+              mutedTextColor,
+              showCopy: true),
+          if (refund.message.isNotEmpty) ...[
+            SizedBox(height: 10.h),
+            _buildStatusNote(refund.message, tone),
+          ],
+        ],
+      ),
+    );
+  }
+
   /// Status -> (line/icon color, badge background, badge text, icon),
   /// shared between each timeline step and the footer status message so
   /// both agree on what "pending"/"failed"/"success" look like.
@@ -462,6 +569,10 @@ class _TransactionDetailsScreenState
     final bool isPending =
         statusLower == 'pending' || statusLower == 'processing';
     final bool isOnHold = statusLower == 'on hold';
+    // A step that hasn't started yet (e.g. "Credited to your account"
+    // while the bank is still processing a refund).
+    final bool isUpcoming =
+        statusLower == 'upcoming' || statusLower == 'not initiated';
 
     if (isFailed) {
       return (
@@ -486,6 +597,14 @@ class _TransactionDetailsScreenState
         badgeTextColor:
             isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
         icon: Icons.pause_circle_rounded,
+      );
+    } else if (isUpcoming) {
+      return (
+        color: const Color(0xFF94A3B8),
+        badgeBgColor: const Color(0xFF94A3B8).withOpacity(0.15),
+        badgeTextColor:
+            isDark ? const Color(0xFFCBD5E1) : const Color(0xFF64748B),
+        icon: Icons.radio_button_unchecked_rounded,
       );
     }
     // Success / default
@@ -541,10 +660,15 @@ class _TransactionDetailsScreenState
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      NumericStyledText(step.stepName,
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w600,
-                          color: textColor),
+                      // Flexible so a long step name (e.g. "Credited to
+                      // your account") wraps instead of overflowing the badge.
+                      Flexible(
+                        child: NumericStyledText(step.stepName,
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w600,
+                            color: textColor),
+                      ),
+                      SizedBox(width: 8.w),
                       Container(
                         padding: EdgeInsets.symmetric(
                             horizontal: 8.w, vertical: 4.h),
@@ -563,12 +687,14 @@ class _TransactionDetailsScreenState
                       ),
                     ],
                   ),
-                  SizedBox(height: 6.h),
-                  Text(
-                    step.time,
-                    style: GoogleFonts.lora(
-                        fontSize: 12.sp, color: mutedTextColor),
-                  ),
+                  if (step.time.isNotEmpty) ...[
+                    SizedBox(height: 6.h),
+                    Text(
+                      step.time,
+                      style: GoogleFonts.lora(
+                          fontSize: 12.sp, color: mutedTextColor),
+                    ),
+                  ],
                   if (step.reason.isNotEmpty) ...[
                     SizedBox(height: 4.h),
                     Text(
@@ -837,40 +963,51 @@ class _TransactionDetailsScreenState
               ],
             ],
           ),
-          Row(
-            children: [
-              Text(
-                value,
-                style: isNumericValue
-                    ? GoogleFonts.lora(
-                        fontSize: 13.sp,
-                        fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-                        color: textColor,
-                      )
-                    : GoogleFonts.playfairDisplay(
-                        fontSize: 13.sp,
-                        fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-                        color: textColor,
-                      ),
-              ),
-              if (showCopy) ...[
-                SizedBox(width: 8.w),
-                GestureDetector(
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: value));
-                    // Auto-clear clipboard after 60s — prevents clipboard sniffing
-                    Future.delayed(const Duration(seconds: 60), () {
-                      Clipboard.setData(const ClipboardData(text: ''));
-                    });
-                    AppToast.show(context, '$label copied!',
-                        type: ToastType.info);
-                  },
-                  child: Icon(Icons.copy_outlined,
-                      color: mutedTextColor, size: 14.sp),
+          SizedBox(width: 12.w),
+          // Flexible so a long value (bank name, reference no.) wraps
+          // instead of overflowing the row.
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    style: isNumericValue
+                        ? GoogleFonts.lora(
+                            fontSize: 13.sp,
+                            fontWeight:
+                                isBold ? FontWeight.bold : FontWeight.w600,
+                            color: textColor,
+                          )
+                        : GoogleFonts.playfairDisplay(
+                            fontSize: 13.sp,
+                            fontWeight:
+                                isBold ? FontWeight.bold : FontWeight.w600,
+                            color: textColor,
+                          ),
+                  ),
                 ),
-              ]
-            ],
-          )
+                if (showCopy) ...[
+                  SizedBox(width: 8.w),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: value));
+                      // Auto-clear clipboard after 60s — prevents clipboard sniffing
+                      Future.delayed(const Duration(seconds: 60), () {
+                        Clipboard.setData(const ClipboardData(text: ''));
+                      });
+                      AppToast.show(context, '$label copied!',
+                          type: ToastType.info);
+                    },
+                    child: Icon(Icons.copy_outlined,
+                        color: mutedTextColor, size: 14.sp),
+                  ),
+                ]
+              ],
+            ),
+          ),
         ],
       ),
     );
