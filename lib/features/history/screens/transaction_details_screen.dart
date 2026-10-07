@@ -258,15 +258,19 @@ class _TransactionDetailsScreenState
                   color: textColor,
                 ),
               ),
-              SizedBox(height: 4.h),
-              Text(
-                '${details.weightGrams.toStringAsFixed(6)} gm',
-                style: GoogleFonts.lora(
-                  fontSize: 13.sp,
-                  color: mutedTextColor,
-                  fontWeight: FontWeight.w500,
+              // No grams line when no metal was bought (failed/pending
+              // AutoPay debits, a refunded setup charge).
+              if (details.weightGrams > 0) ...[
+                SizedBox(height: 4.h),
+                Text(
+                  '${details.weightGrams.toStringAsFixed(6)} gm',
+                  style: GoogleFonts.lora(
+                    fontSize: 13.sp,
+                    color: mutedTextColor,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
@@ -868,19 +872,22 @@ class _TransactionDetailsScreenState
           ),
           if (_isOrderDetailsExpanded) ...[
             SizedBox(height: 4.h),
-            _buildDetailRow(rateLabel,
-                details.priceBreakdown.rate, textColor, mutedTextColor),
-            _buildDetailRow('$baseMetal Quantity', details.priceBreakdown.quantity,
-                textColor, mutedTextColor),
-            _buildDetailRow('$baseMetal Value', details.priceBreakdown.value,
-                textColor, mutedTextColor),
-            _buildDetailRow('CGST', details.priceBreakdown.cgst, textColor,
-                mutedTextColor,
-                percentText: '(${details.priceBreakdown.cgstPercent}%)'),
-            _buildDetailRow('SGST', details.priceBreakdown.sgst, textColor,
-                mutedTextColor,
-                percentText: '(${details.priceBreakdown.sgstPercent}%)'),
-            Divider(color: borderColor, height: 16.h),
+            // Nothing bought → no rate/quantity/GST rows of ₹0 placeholders.
+            if (details.priceBreakdown.hasMetal) ...[
+              _buildDetailRow(rateLabel,
+                  details.priceBreakdown.rate, textColor, mutedTextColor),
+              _buildDetailRow('$baseMetal Quantity', details.priceBreakdown.quantity,
+                  textColor, mutedTextColor),
+              _buildDetailRow('$baseMetal Value', details.priceBreakdown.value,
+                  textColor, mutedTextColor),
+              _buildDetailRow('CGST', details.priceBreakdown.cgst, textColor,
+                  mutedTextColor,
+                  percentText: '(${details.priceBreakdown.cgstPercent}%)'),
+              _buildDetailRow('SGST', details.priceBreakdown.sgst, textColor,
+                  mutedTextColor,
+                  percentText: '(${details.priceBreakdown.sgstPercent}%)'),
+              Divider(color: borderColor, height: 16.h),
+            ],
             _buildDetailRow(
                 isReferral ? 'Reward Amount' : 'Amount',
                 details.priceBreakdown.totalAmount,

@@ -94,16 +94,19 @@ String defaultTypeLabel(String raw) {
 String defaultStatusColorHex(String raw) {
   switch (raw.toLowerCase()) {
     case 'success':
+    case 'refunded':
       return '#10B981';
     case 'pending':
       return '#F59E0B';
     case 'processing':
+    case 'refund processing':
       return '#3B82F6';
     case 'on hold':
       return '#D97706';
     case 'cancelled':
     case 'failed':
     case 'rejected':
+    case 'refund failed':
       return '#DC2626';
     default:
       return '#1B882C';

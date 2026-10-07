@@ -9,8 +9,9 @@ owns: lib/features/history/  (controller/, models/, screens/, services/)
 ## 1. What this module is
 
 The general Transaction History tab (bottom-nav index 2) — a server-paginated, server-filtered
-list of every non-SIP transaction (Instant Saving purchases, Withdrawals, Referral rewards, Offer
-rewards) plus a detail/receipt view. SIP has its own **separate** transaction-history screen and
+list of Instant Saving purchases, Withdrawals, Referral rewards, Offer rewards and the backend's
+SIP rows (`type: sip`, "AutoGold Autopay" — debits, pending/failed cycles, and refunded AutoPay
+setup charges, RULE-HISTORY-015) plus a detail/receipt view. SIP has its own **separate** transaction-history screen and
 controller in `features/sip/` that reuses this module's models but not its controller or
 endpoints — see §6 and `CROSS_MODULE_MAP.md`.
 
@@ -89,7 +90,8 @@ top card (icon/type/amount/weight), status card (timeline steps + tone-colored f
 optional invoice download button + "Save Again" CTA for non-SIP purchases), a "Refund Status" card
 (step-by-step refund timeline + refund ID/bank ref/expected-by) only when the backend sends a
 `refund` object — see RULE-HISTORY-014, a collapsible Order
-Details card (rate/quantity/value/GST/total + IDs with copy-to-clipboard), and — only when
+Details card (rate/quantity/value/GST/total + IDs with copy-to-clipboard; the metal rows are
+dropped when `price_breakdown` has no quantity — `PriceBreakdown.hasMetal`, RULE-HISTORY-010), and — only when
 `type == 'sip'` and `schemeInfo != null` — a SIP Plan Details card. Clipboard copy auto-clears
 after 60 seconds (`transaction_details_screen.dart:838-841`) — a deliberate anti-clipboard-sniffing
 measure, consistent with AGENTS.md §3's security posture even though transaction/order IDs aren't
@@ -132,6 +134,11 @@ why this is a reasonable split rather than a violation of AGENTS.md's feature-is
    does **not** render refunds.
 5. **Two independent filter-sheet implementations** (general history vs. SIP) with near-identical
    chip/date-range UI — duplication, not a bug, but a refactor candidate.
+6. **Refunded AutoPay setup charges depend on an unmerged backend** (RULE-HISTORY-015):
+   `fintect_application` branch `feature/sip-auth-refund-history` (2026-10-07). Until it is
+   merged and deployed, a mandate rejected after its ₹10 was taken still leaves no History row.
+   A ₹10 the backend never learned about (mandate failed before the payment webhook) is not
+   covered at all.
 
 ## 8. See also
 

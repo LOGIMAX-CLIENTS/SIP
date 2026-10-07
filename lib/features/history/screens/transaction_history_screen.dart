@@ -768,15 +768,19 @@ class _TransactionHistoryScreenState
                     color: textColor,
                   ),
                 ),
-                SizedBox(height: 4.h),
-                Text(
-                  '${tx.weightGrams.toStringAsFixed(6)} gm',
-                  style: GoogleFonts.lora(
-                    fontSize: 12.sp,
-                    color: mutedColor,
-                    fontWeight: FontWeight.w500,
+                // No grams line when no metal was bought (failed/pending
+                // AutoPay debits, a refunded setup charge).
+                if (tx.weightGrams > 0) ...[
+                  SizedBox(height: 4.h),
+                  Text(
+                    '${tx.weightGrams.toStringAsFixed(6)} gm',
+                    style: GoogleFonts.lora(
+                      fontSize: 12.sp,
+                      color: mutedColor,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ],
