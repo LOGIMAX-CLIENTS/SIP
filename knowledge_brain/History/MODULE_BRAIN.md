@@ -67,12 +67,14 @@ fetched so far, merged, never replaced** (except on a fresh filter/refresh). Key
   optional per-status hex colors) — the filter sheet never invents its own enum of choices.
   `defaultTypeLabel`/`defaultStatusColorHex` (`history_filter_options_model.dart:75-111`) are
   fallbacks used only when the backend doesn't supply a label/color for a known raw value.
-- **Manual refresh only, no tab-switch auto-refetch**: `MainScreen` calls
-  `historyProvider.notifier.refresh()` (not `ref.invalidate`) when the History tab is
-  re-selected *after* its first visit — deliberately preserves scroll position and loaded pages;
-  a transaction made elsewhere won't appear until the user manually pulls-to-refresh or taps the
-  header refresh icon, or backs fully out and re-enters (`main_screen.dart:96-108`,
-  `transaction_history_screen.dart:174-199`).
+- **Re-fetch on every entry** (corrected 2026-10-07 — was "manual refresh only"): switching to
+  the History tab calls `historyProvider.notifier.refresh()` (not `ref.invalidate`, so the filter
+  survives) on every visit after the first, and a pushed `/transaction-history` refreshes in
+  `initState` (`main_screen.dart:121-137`, `transaction_history_screen.dart:62-67`). Not covered:
+  re-tapping History while on it, or popping back to it from a pushed route — those need
+  pull-to-refresh / the header refresh icon. See RULE-HISTORY-007. The header refresh button's
+  doc comment (`transaction_history_screen.dart:193-200`) still describes the old manual-only
+  behavior and is stale.
 - **Error/empty/loading semantics**: full-page spinner/error only shown on the true first load
   (`hasData == false`); once any data has loaded, a failed refresh/filter re-fetch keeps the
   existing list on screen (`history_controller.dart:117-119`, `transaction_history_screen.dart:
@@ -115,9 +117,9 @@ why this is a reasonable split rather than a violation of AGENTS.md's feature-is
 
 ## 7. Top risks
 
-1. **Manual-refresh-only** (§4) means a transaction completed on another screen (e.g. just
-   finished an Instant Saving purchase) will not appear in History until the user explicitly
-   refreshes — worth confirming this is the intended UX, not a missed invalidation.
+1. **Refresh gaps** (§4): entering the tab re-fetches, but popping back to an already-open
+   History tab from a pushed route does not — a transaction made that way only appears after a
+   pull-to-refresh.
 2. **`pageSize` doc-comment drift**: the code comment says "first 5, then +5" but the actual
    constant is 10 (`history_controller.dart:58-59`) — a stale comment, not a functional bug, but
    flag if touching this file.
