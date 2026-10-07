@@ -128,9 +128,10 @@ why this is a reasonable split rather than a violation of AGENTS.md's feature-is
 3. **`so_type` field is parsed but never consumed** (`TransactionItem.soType`,
    `history_models.dart:51,64,80`) — unconfirmed purpose; likely a buy/sell direction flag not
    yet wired into the UI.
-4. **Refund card's backend is not live yet** (RULE-HISTORY-014): the backend that sends
-   `data.refund` exists on an unmerged branch (`fintect_application` `feature/pg-refund-tracking`,
-   2026-10-07); until it is merged, migrated and deployed, the card never shows. Its HDFC refund
+4. **Refund card's backend is not in production yet** (RULE-HISTORY-014): the backend that sends
+   `data.refund` was merged to `fintect_application` `phase1` on 2026-10-07 (PR #1441), which
+   deploys staging and runs migration `transactions 0063` there; production only gets it on the
+   next `*_production` release, so until then the card never shows for live customers. Its HDFC refund
    parsing still has to be checked against a real HDFC UAT auto-refund. The separate SIP detail
    screen (`sip_transaction_details_screen.dart`) has its own copy of the timeline code and does
    **not** render refunds.
