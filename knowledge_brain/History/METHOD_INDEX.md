@@ -52,15 +52,17 @@ AGENTS.md §5 implication).
 | Method | Line | Purpose |
 |---|---|---|
 | `initState()` | 34-41 | `Future.microtask` invalidates `transactionDetailsProvider(id)` — forces a fresh fetch on every entry |
-| `_buildContent` | 97-133 | Composes top/status/scheme-info/order-details cards based on transaction `type` |
-| `_buildTopCard` | 135-270 | Icon, metal name, type label, amount, weight |
-| `_buildStatusCard` | 272-450 | Timeline steps + tone-colored footer message + invoice download + "Save Again" CTA |
-| `_statusTone(status, isDark)` | 455-499 | Maps a raw status string to `(color, badgeBgColor, badgeTextColor, icon)` — shared by timeline steps and the footer badge |
-| `_buildTimelineStep` | 501-590 | Renders one timeline entry with connecting line, icon, badge, optional failure `reason` text |
-| `_buildSchemeInfoCard` | 592-659 | SIP-only card (plan/frequency/amount/total saved/cycles) |
-| `_buildOrderDetails` | 661-791 | Collapsible rate/quantity/value/GST/total + IDs (copy-to-clipboard) |
-| `_buildDetailRow` | 793-854 | Hides itself when `value` is empty/`'N/A'`/`'null'`; copy button auto-clears clipboard after 60s |
-| `_getTransactionIcon` | 856-876 | Duplicate of the list screen's icon-mapping logic (not shared/extracted) |
+| `_buildContent` | 97-138 | Composes top/status/refund/scheme-info/order-details cards based on transaction `type` and `details.refund` |
+| `_buildTopCard` | 140-275 | Icon, metal name, type label, amount, weight |
+| `_buildStatusCard` | 277-430 | Timeline steps + tone-colored footer message + invoice download + "Save Again" CTA |
+| `_buildStatusNote(message, tone)` | 432-464 | Tinted message box (icon + text) — shared by the status-card footer and the refund card note |
+| `_buildRefundCard(refund, ...)` | 465-558 | "Refund Status" card — overall status badge, backend refund steps via `_buildTimelineStep`, amount/refund-to/expected-by/refund ID/bank ref rows, note. Rendered only when `details.refund != null` (RULE-HISTORY-014) |
+| `_statusTone(status, isDark)` | 559-618 | Maps a raw status string to `(color, badgeBgColor, badgeTextColor, icon)` — shared by timeline steps, the footer note, and the refund card. `upcoming`/`not initiated` → grey outline circle |
+| `_buildTimelineStep` | 620-716 | Renders one timeline entry with connecting line, icon, badge, optional failure `reason` text; step name is `Flexible` (wraps), time row hidden when `time` is empty |
+| `_buildSchemeInfoCard` | 718-785 | SIP-only card (plan/frequency/amount/total saved/cycles) |
+| `_buildOrderDetails` | 787-921 | Collapsible rate/quantity/value/GST/total + IDs (copy-to-clipboard) |
+| `_buildDetailRow` | 923-1014 | Hides itself when `value` is empty/`'N/A'`/`'null'`; value side is `Flexible` (long values wrap, right-aligned); copy button auto-clears clipboard after 60s |
+| `_getTransactionIcon` | 1016-1036 | Duplicate of the list screen's icon-mapping logic (not shared/extracted) |
 
 ## `showTransactionFilterSheet` / `_TransactionFilterSheetState` — `transaction_filter_sheet.dart`
 

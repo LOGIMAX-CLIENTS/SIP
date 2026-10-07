@@ -71,9 +71,16 @@ TransactionDetailResponse
 ├── footerMessage, invoiceNumber, invoiceUrl
 ├── priceBreakdown: PriceBreakdown
 ├── technicalDetails: TechnicalDetails
-└── schemeInfo: SchemeInfo?          // present only for SIP-originated transactions
+├── schemeInfo: SchemeInfo?          // present only for SIP-originated transactions
+└── refund: RefundInfo?              // present only when backend sends a `refund` object
 ```
-- `TimelineStep { stepName, status, time, reason }` — `reason` populated only on a "Failed" step.
+- `TimelineStep { stepName, status, time, reason }` — `reason` populated only on a "Failed" step;
+  `time` is empty for a step that hasn't happened yet (e.g. an "Upcoming" refund step).
+- `RefundInfo { refundId, amount, status, refundTo, referenceNo, expectedBy, message,
+  timeline: List<TimelineStep> }` — parsed from `data.refund` only when it is a JSON object
+  (`history_models.dart:162-164, 172-209`); every field is a backend display string (amount
+  without the `₹`, `refundTo` already masked, `expectedBy` already formatted). Reuses
+  `TimelineStep` so refund steps render through the same `_buildTimelineStep`.
 - `PriceBreakdown { quantity, rate, value, gst, totalAmount }` — **all pre-formatted strings**
   (`'₹$rate'`, `'0.000123 gm'`) built inside `fromJson`, not raw numerics — the model itself owns
   currency/unit formatting rather than leaving it to the widget layer, unlike `TransactionItem`.

@@ -95,3 +95,19 @@ absence of either condition (e.g. a SIP-typed transaction whose backend response
 logic in this module reads it. **Unconfirmed** whether it's reserved for a future feature (e.g.
 distinguishing buy vs. sell direction within a type) or truly dead.
 - Code: `history_models.dart:51, 64, 80`.
+
+### RULE-HISTORY-014 — Refund progress is shown only from the backend's `refund` object
+When `transactions/details` returns a `data.refund` object, the detail screen adds a "Refund
+Status" card directly under Transaction Status: an overall status badge, the backend's refund
+steps (same `step_name`/`status`/`time`/`reason` shape as the main timeline), then Refund
+Amount / Refund To / Expected By / Refund ID (copy) / Bank Reference No. (copy) rows and an
+optional tinted note. The app never derives refund stages, turnaround times, or the "expected by"
+date itself — no `refund` object, no card.
+- Step status vocabulary the UI colors: `Success`/`Refunded` → green check, `Pending`/`Processing`
+  → amber clock, `Failed` → red, `Upcoming`/`Not Initiated` → grey outline circle (a step not yet
+  reached). Overall badge uses the same mapping, so in-flight refunds should be `Processing`, not
+  `Initiated` (which falls through to green).
+- Contract status (2026-10-07): **client side only** — the backend does not send `refund` yet;
+  `apis.md` has no refund fields for `transactions/details`.
+- Code: `history_models.dart:162-209`, `transaction_details_screen.dart:121-125, 465-558,
+  572-575, 601-608`. Test: `test/transaction_refund_status_test.dart`.
