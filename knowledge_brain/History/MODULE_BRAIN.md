@@ -128,10 +128,12 @@ why this is a reasonable split rather than a violation of AGENTS.md's feature-is
 3. **`so_type` field is parsed but never consumed** (`TransactionItem.soType`,
    `history_models.dart:51,64,80`) — unconfirmed purpose; likely a buy/sell direction flag not
    yet wired into the UI.
-4. **Refund card has no backend yet** (RULE-HISTORY-014): the client renders `data.refund` from
-   `transactions/details`, but the backend doesn't send it as of 2026-10-07. The separate SIP
-   detail screen (`sip_transaction_details_screen.dart`) has its own copy of the timeline code and
-   does **not** render refunds.
+4. **Refund card's backend is not live yet** (RULE-HISTORY-014): the backend that sends
+   `data.refund` exists on an unmerged branch (`fintect_application` `feature/pg-refund-tracking`,
+   2026-10-07); until it is merged, migrated and deployed, the card never shows. Its HDFC refund
+   parsing still has to be checked against a real HDFC UAT auto-refund. The separate SIP detail
+   screen (`sip_transaction_details_screen.dart`) has its own copy of the timeline code and does
+   **not** render refunds.
 5. **Two independent filter-sheet implementations** (general history vs. SIP) with near-identical
    chip/date-range UI — duplication, not a bug, but a refactor candidate.
 6. **Refunded AutoPay setup charges depend on an unmerged backend** (RULE-HISTORY-015):
