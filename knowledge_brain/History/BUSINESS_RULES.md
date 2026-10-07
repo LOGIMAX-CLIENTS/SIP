@@ -112,7 +112,15 @@ date itself — no `refund` object, no card.
   → amber clock, `Failed` → red, `Upcoming`/`Not Initiated` → grey outline circle (a step not yet
   reached). Overall badge uses the same mapping, so in-flight refunds should be `Processing`, not
   `Initiated` (which falls through to green).
-- Contract status (2026-10-07): **client side only** — the backend does not send `refund` yet;
-  `apis.md` has no refund fields for `transactions/details`.
+- Contract status (2026-10-07): **backend built, not live.** `D:intect_application` branch
+  `feature/pg-refund-tracking` (unmerged, migration `transactions 0063` not run) records refunds
+  the gateway reports (HDFC `AUTO_REFUNDED`, portal refunds) in a new `pg_refund` table and returns
+  `refund` on `transactions/details` for a **cancelled** spot purchase only (`null` otherwise).
+  What it sends: `status` `Processing`/`Refunded`/`Failed`; `refund_to` "Your UPI account" / "Your
+  card" / "Your bank account" / "Original payment method" (never a VPA or digits); `expected_by`
+  always `""` (no gateway gives one, so the row hides); two steps "Refund initiated" (Success) and
+  "Refund processed" (Pending with empty time → Success/Failed). It never sends `Upcoming`. The
+  Payment step reads `Success` when a refund exists, and the footer is refund-aware. Backend rule:
+  that repo's `knowledge_brain/Transactions/BUSINESS_RULES.md` TXN-025. `apis.md` here is not updated.
 - Code: `history_models.dart:162-209`, `transaction_details_screen.dart:121-125, 465-558,
   572-575, 601-608`. Test: `test/transaction_refund_status_test.dart`.
