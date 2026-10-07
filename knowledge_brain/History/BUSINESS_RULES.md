@@ -118,8 +118,8 @@ date itself — no `refund` object, no card.
   → amber clock, `Failed` → red, `Upcoming`/`Not Initiated` → grey outline circle (a step not yet
   reached). Overall badge uses the same mapping, so in-flight refunds should be `Processing`, not
   `Initiated` (which falls through to green).
-- Contract status (2026-10-07): **backend built, not live.** `D:intect_application` branch
-  `feature/pg-refund-tracking` (unmerged, migration `transactions 0063` not run) records refunds
+- Contract status (2026-10-07): **backend merged to `phase1`, not in production.** Backend repo
+  `fintect_application` PR #1441 (branch `feature/pg-refund-tracking`, merge `f3964a24`) records refunds
   the gateway reports (HDFC `AUTO_REFUNDED`, portal refunds) in a new `pg_refund` table and returns
   `refund` on `transactions/details` for a **cancelled** spot purchase only (`null` otherwise).
   What it sends: `status` `Processing`/`Refunded`/`Failed`; `refund_to` "Your UPI account" / "Your
