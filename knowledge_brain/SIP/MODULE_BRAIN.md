@@ -1,7 +1,7 @@
 ---
 module: sip
 brain_status: 🟢 (Round 1, ~92% — see COVERAGE_TRACKER.md)
-last_updated: 2026-10-02
+last_updated: 2026-10-07
 round: 1
 ---
 
@@ -193,6 +193,12 @@ when reading only part of `sip_payment_screen.dart`.
    `auto_savings_screen.dart`) vs `BankDetailsSheet` (ad-hoc typed form) — unclear if the latter is
    still reachable; verify before removing either.
 5. **`daily_savings` confusion risk** (inherited, not sip's own bug) — see §0.
+6. **The ₹10 AutoPay setup charge is only visible in the general History tab** — setting up a
+   UPI/card mandate charges ₹10 (backend `MANDATE_AUTH_AMOUNT`), which buys gold. If the backend
+   rejects the mandate afterwards (payer-account check), the ₹10 is refunded and shows as a
+   `SIPAUTH{id}` row in the History tab, not on `SipTransactionHistoryScreen` — see
+   `knowledge_brain/History/BUSINESS_RULES.md` RULE-HISTORY-015 (backend not merged as of
+   2026-10-07). `SipFailureScreen` doesn't mention the debit or point to History.
 
 ## 10. See Also
 

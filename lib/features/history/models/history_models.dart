@@ -244,6 +244,10 @@ class PriceBreakdown {
   final String sgstPercent;
   final String sgst;
   final String totalAmount;
+  /// False when the backend sent no metal quantity — nothing was bought
+  /// (e.g. a refunded AutoPay setup charge), so rate/quantity/value/GST
+  /// would only be ₹0 placeholders.
+  final bool hasMetal;
 
   PriceBreakdown({
     required this.quantity,
@@ -254,6 +258,7 @@ class PriceBreakdown {
     required this.sgstPercent,
     required this.sgst,
     required this.totalAmount,
+    this.hasMetal = true,
   });
 
   factory PriceBreakdown.fromJson(Map<String, dynamic> json) {
@@ -276,6 +281,7 @@ class PriceBreakdown {
       sgstPercent: sgstPercent,
       sgst: '₹$sgst',
       totalAmount: '₹$total',
+      hasMetal: json['quantity'] != null || json['gold_quantity'] != null,
     );
   }
 }

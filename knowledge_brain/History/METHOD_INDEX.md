@@ -61,6 +61,7 @@ AGENTS.md §5 implication).
 | `_buildTimelineStep` | 620-716 | Renders one timeline entry with connecting line, icon, badge, optional failure `reason` text; step name is `Flexible` (wraps), time row hidden when `time` is empty |
 | `_buildSchemeInfoCard` | 718-785 | SIP-only card (plan/frequency/amount/total saved/cycles) |
 | `_buildOrderDetails` | 787-921 | Collapsible rate/quantity/value/GST/total + IDs (copy-to-clipboard) |
+| ↳ `PriceBreakdown.hasMetal` (`history_models.dart:250, 284`) | — | 🆕 2026-10-07 — false when `price_breakdown` has no `quantity`/`gold_quantity`; `_buildOrderDetails` then skips the Rate/Quantity/Value/CGST/SGST rows (line 876). The top card (263) and the list row (`transaction_history_screen.dart:773`) skip the grams line when `weightGrams` is 0 — RULE-HISTORY-010/015 |
 | `_buildDetailRow` | 923-1014 | Hides itself when `value` is empty/`'N/A'`/`'null'`; value side is `Flexible` (long values wrap, right-aligned); copy button auto-clears clipboard after 60s |
 | `_getTransactionIcon` | 1016-1036 | Duplicate of the list screen's icon-mapping logic (not shared/extracted) |
 

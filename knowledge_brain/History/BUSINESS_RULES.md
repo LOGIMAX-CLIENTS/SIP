@@ -81,6 +81,12 @@ id later in the same session always re-fetches rather than showing a stale cache
 missing field from the backend collapses the row entirely rather than showing a blank or literal
 "null" to the user.
 - Code: `transaction_details_screen.dart:796-799`.
+- Same idea for metal (2026-10-07): when `price_breakdown` has no `quantity`/`gold_quantity`
+  (`PriceBreakdown.hasMetal == false`), the Rate / Quantity / Value / CGST / SGST rows are not
+  built at all — `fromJson` would otherwise fill them with ₹0 placeholders. Amount and the ID rows
+  still show. Likewise the grams line under the amount (list row and top card) is hidden when
+  `weight_grams` is 0. Code: `history_models.dart:250, 284`, `transaction_details_screen.dart:263,
+  876`, `transaction_history_screen.dart:773`.
 
 ### RULE-HISTORY-011 — Copied IDs auto-clear from the clipboard after 60 seconds
 Tapping the copy icon next to Order ID / Transaction ID copies the value, then schedules a clear
@@ -116,3 +122,20 @@ date itself — no `refund` object, no card.
   `apis.md` has no refund fields for `transactions/details`.
 - Code: `history_models.dart:162-209`, `transaction_details_screen.dart:121-125, 465-558,
   572-575, 601-608`. Test: `test/transaction_refund_status_test.dart`.
+
+### RULE-HISTORY-015 — A refunded AutoPay setup charge is a History row
+Setting up AutoPay (UPI/card) charges ₹10, which normally buys gold and shows as an ordinary
+"AutoGold Autopay" purchase. When the backend's payer-account check rejects the mandate after
+that debit, the plan is cancelled and the ₹10 refunded, and the backend lists it as its own row:
+`transaction_id` `SIPAUTH{apm_id}`, `type: sip`, subtitle "AutoPay setup charge", `weight_grams`
+0, status **Refund Processing** / **Refunded** / **Refund Failed**. Tapping it opens the normal
+detail screen with the RULE-HISTORY-014 refund card and an amount-only breakdown
+(RULE-HISTORY-010). The app adds nothing of its own: label, icon and colour come from
+`type: sip` and the filter-options status colours. Fallback colours for the three statuses
+(blue / green / red) are in `defaultStatusColorHex` (`history_filter_options_model.dart:97-109`).
+- Backend (2026-10-07): `fintect_application` branch `feature/sip-auth-refund-history`, **not
+  merged yet** — that repo's `knowledge_brain/Transactions/BUSINESS_RULES.md` TXN-026 and
+  `knowledge_brain/SIP/BUSINESS_RULES.md` RULE-SIP-041.
+- Not covered: a ₹10 the backend never recorded (the mandate failed before the payment webhook
+  arrived), and the Auto Savings screen's own history (`sip/transactions`).
+- Test: `test/transaction_refund_status_test.dart`.
