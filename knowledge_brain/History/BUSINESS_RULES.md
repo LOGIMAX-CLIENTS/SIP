@@ -47,14 +47,19 @@ rows from a prior page (e.g. "16 Aug 2026" spanning pages 2 and 3) accumulates c
 of losing page-2's rows.
 - Code: `history_controller.dart:144-150`.
 
-### RULE-HISTORY-007 — No automatic refetch on tab switch; manual refresh only
-Re-selecting the History tab after its first visit does **not** re-fetch by default — the
-already-loaded pages and scroll position are preserved. `MainScreen` explicitly calls
-`refresh()` (not `invalidate`) on every re-entry, which is the *sole* automatic refresh trigger
-beyond pull-to-refresh and the header refresh button.
-- Code: `main_screen.dart:96-108`, comment explains the "why" explicitly.
-- Consequence: a transaction completed on another screen while History was last open will not
-  appear until one of these three refresh paths fires.
+### RULE-HISTORY-007 — Page 1 is re-fetched on every entry into History
+*(Corrected 2026-10-07 — this rule previously said "manual refresh only"; the code has since
+changed.)* Switching **to** the History tab from another tab calls
+`historyProvider.notifier.refresh()` (not `invalidate`, so an applied filter survives) on every
+visit after the first; a pushed `/transaction-history` route also refreshes in `initState`.
+Pull-to-refresh and the header refresh icon are the other two triggers.
+- Code: `main_screen.dart:100-102, 121-137`; `transaction_history_screen.dart:62-67`.
+- Gaps: tapping History while already on it is a no-op (`main_screen.dart:102`), and popping back
+  to the History tab from a pushed route (e.g. "Save Again" → Instant Saving → back) does not
+  re-fetch — a transaction made that way needs a pull-to-refresh.
+- Date groups come only from the backend's `grouped_transactions` keys
+  (`history_models.dart:20-34`): a day with no transactions returned has no header at all — the
+  app never inserts empty days.
 
 ### RULE-HISTORY-008 — Errors are surfaced as plain `Exception(message)`, not a `Failure` type
 `HistoryService`'s three methods throw `Exception(errorMsg)` extracted from
