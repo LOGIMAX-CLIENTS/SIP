@@ -12,6 +12,7 @@ import '../../../core/utils/navigation_utils.dart';
 import '../../../routes/app_router.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/numeric_styled_text.dart';
 import '../services/profile_service.dart';
 import '../utils/security_score.dart';
 
@@ -214,15 +215,13 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(
+                              child: NumericStyledText(
                                 _formatDuration(seconds),
-                                style: GoogleFonts.playfairDisplay(
-                                  fontSize: 15.sp,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  color: isDark ? Colors.white : _ink,
-                                ),
+                                fontSize: 15.sp,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isDark ? Colors.white : _ink,
                               ),
                             ),
                             Icon(
@@ -594,12 +593,11 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
                     ),
                   ),
                   SizedBox(height: 2.h),
-                  Text(
+                  NumericStyledText(
                     subtitle,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 12.sp,
-                      color: isDark ? Colors.white54 : Colors.black45,
-                    ),
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w400,
+                    color: isDark ? Colors.white54 : Colors.black45,
                   ),
                 ],
               ),
@@ -717,13 +715,11 @@ class _AppSecurityScreenState extends ConsumerState<AppSecurityScreen> {
               color: const Color(0xFFFEF3C7),
               borderRadius: BorderRadius.circular(100.r),
             ),
-            child: Text(
+            child: NumericStyledText(
               _formatDuration(_selectedTimeoutSeconds),
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 11.sp,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFFB45309),
-              ),
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFFB45309),
             ),
           ),
           SizedBox(width: 4.w),

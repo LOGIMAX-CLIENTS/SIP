@@ -274,3 +274,6 @@ encrypted if the *endpoint path* also matches `encryptedEndpoints`, which is whe
   (`#D4AF37`) shield/ring/label whatever the score; only the strength bar changes — an orange → gold →
   green gradient revealed up to the score. The shield pulse and bar fill are skipped under reduce-motion.
 - **Default Auto-Lock is 1800s (30 min)** — see `MPIN/BUSINESS_RULES.md` RULE-MPIN-014.
+- **Fonts (2026-10-08)**: the Auto-Lock option list, the Auto-Lock badge ("15 min") and every tile
+  subtitle ("A 6-digit PIN…") use `NumericStyledText`, so digits render in Lora and words in Playfair
+  Display — plain Playfair drew "30 sec" with old-style figures. The banner stays Inter, per the design canvas.
