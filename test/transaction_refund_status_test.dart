@@ -102,8 +102,8 @@ void main() {
     expect(stepTops, [...stepTops]..sort());
     expect(find.text('Upcoming'), findsOneWidget);
     expect(find.byIcon(Icons.radio_button_unchecked_rounded), findsOneWidget);
-    expect(find.text('RFND123'), findsOneWidget);
-    expect(find.text('13 Oct 26'), findsOneWidget);
+    expect(find.text('RFND123', findRichText: true), findsOneWidget);
+    expect(find.text('13 Oct 26', findRichText: true), findsOneWidget);
     // Empty reference number is hidden rather than shown blank.
     expect(find.text('Bank Reference No.'), findsNothing);
   });
@@ -174,7 +174,7 @@ void main() {
 
     expect(find.text('Refund Status'), findsOneWidget);
     expect(find.text('AutoPay setup charge', findRichText: true), findsOneWidget);
-    expect(find.text('0.000000 gm'), findsNothing);
+    expect(find.text('0.000000 gm', findRichText: true), findsNothing);
 
     await tester.ensureVisible(find.text('AutoGold Order Details'));
     await tester.tap(find.text('AutoGold Order Details'));
@@ -184,7 +184,7 @@ void main() {
     expect(find.text('Gold Quantity'), findsNothing);
     expect(find.text('CGST'), findsNothing);
     expect(find.text('Amount'), findsOneWidget);
-    expect(find.text('₹10.00'), findsWidgets);
+    expect(find.text('₹10.00', findRichText: true), findsWidgets);
   });
 
   testWidgets('a purchase still shows its metal rows', (tester) async {
@@ -196,7 +196,7 @@ void main() {
     };
     await pump(tester, TransactionDetailResponse.fromJson(json));
 
-    expect(find.text('0.000764 gm'), findsOneWidget);
+    expect(find.text('0.000764 gm', findRichText: true), findsOneWidget);
     await tester.ensureVisible(find.text('Order Details'));
     await tester.tap(find.text('Order Details'));
     await tester.pumpAndSettle();

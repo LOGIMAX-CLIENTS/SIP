@@ -75,12 +75,11 @@ class _TransactionDetailsScreenState
                         ),
                       ),
                       SizedBox(height: 8.h),
-                      Text(
+                      NumericStyledText(
                         errorMessage,
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 14.sp,
-                          color: isDark ? Colors.white54 : Colors.black54,
-                        ),
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w400,
+                        color: isDark ? Colors.white54 : Colors.black54,
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -206,43 +205,12 @@ class _TransactionDetailsScreenState
                 ),
                 if ((isSip || isOffer) && details.subtitle.isNotEmpty) ...[
                   SizedBox(height: 2.h),
-                  Builder(builder: (_) {
-                    final parts = RegExp(r'(\d+)').allMatches(details.subtitle);
-                    final spans = <TextSpan>[];
-                    int lastEnd = 0;
-                    for (final m in parts) {
-                      if (m.start > lastEnd) {
-                        spans.add(TextSpan(
-                          text: details.subtitle.substring(lastEnd, m.start),
-                          style: GoogleFonts.playfairDisplay(
-                            fontSize: 11.sp,
-                            fontWeight: FontWeight.w500,
-                            color: mutedTextColor,
-                          ),
-                        ));
-                      }
-                      spans.add(TextSpan(
-                        text: m.group(0),
-                        style: GoogleFonts.lora(
-                          fontSize: 11.sp,
-                          fontWeight: FontWeight.w600,
-                          color: mutedTextColor,
-                        ),
-                      ));
-                      lastEnd = m.end;
-                    }
-                    if (lastEnd < details.subtitle.length) {
-                      spans.add(TextSpan(
-                        text: details.subtitle.substring(lastEnd),
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 11.sp,
-                          fontWeight: FontWeight.w500,
-                          color: mutedTextColor,
-                        ),
-                      ));
-                    }
-                    return RichText(text: TextSpan(children: spans));
-                  }),
+                  NumericStyledText(
+                    details.subtitle,
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.w500,
+                    color: mutedTextColor,
+                  ),
                 ],
               ],
             ),
@@ -262,13 +230,11 @@ class _TransactionDetailsScreenState
               // AutoPay debits, a refunded setup charge).
               if (details.weightGrams > 0) ...[
                 SizedBox(height: 4.h),
-                Text(
+                NumericStyledText(
                   '${details.weightGrams.toStringAsFixed(6)} gm',
-                  style: GoogleFonts.lora(
-                    fontSize: 13.sp,
-                    color: mutedTextColor,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  fontSize: 13.sp,
+                  fontWeight: FontWeight.w500,
+                  color: mutedTextColor,
                 ),
               ],
             ],
@@ -418,11 +384,10 @@ class _TransactionDetailsScreenState
                             borderRadius: BorderRadius.circular(100.r)),
                         elevation: 0,
                       ),
-                      child: Text('Save ₹${details.amount} Again',
-                          style: GoogleFonts.playfairDisplay(
-                              color: Colors.white,
-                              fontSize: 13.sp,
-                              fontWeight: FontWeight.bold)),
+                      child: NumericStyledText('Save ₹${details.amount} Again',
+                          color: Colors.white,
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -452,13 +417,11 @@ class _TransactionDetailsScreenState
           Icon(tone.icon, size: 16.sp, color: tone.color),
           SizedBox(width: 8.w),
           Expanded(
-            child: Text(
+            child: NumericStyledText(
               message,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w600,
-                color: tone.badgeTextColor,
-              ),
+              fontSize: 13.sp,
+              fontWeight: FontWeight.w600,
+              color: tone.badgeTextColor,
             ),
           ),
         ],
@@ -540,9 +503,8 @@ class _TransactionDetailsScreenState
               refund.amount.isEmpty ? '' : '₹${refund.amount}',
               textColor,
               mutedTextColor),
-          _buildDetailRow('Refund To', refund.refundTo, textColor,
-              mutedTextColor,
-              isNumericValue: false),
+          _buildDetailRow(
+              'Refund To', refund.refundTo, textColor, mutedTextColor),
           _buildDetailRow(
               'Expected By', refund.expectedBy, textColor, mutedTextColor),
           _buildDetailRow('Refund ID', refund.refundId, textColor,
@@ -693,21 +655,21 @@ class _TransactionDetailsScreenState
                   ),
                   if (step.time.isNotEmpty) ...[
                     SizedBox(height: 6.h),
-                    Text(
+                    NumericStyledText(
                       step.time,
-                      style: GoogleFonts.lora(
-                          fontSize: 12.sp, color: mutedTextColor),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w400,
+                      color: mutedTextColor,
                     ),
                   ],
                   if (step.reason.isNotEmpty) ...[
                     SizedBox(height: 4.h),
-                    Text(
+                    NumericStyledText(
                       step.reason,
-                      style: GoogleFonts.playfairDisplay(
-                        fontSize: 12.sp,
-                        color: stepColor,
-                        fontStyle: FontStyle.italic,
-                      ),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w400,
+                      fontStyle: FontStyle.italic,
+                      color: stepColor,
                     ),
                   ],
                 ],
@@ -772,11 +734,9 @@ class _TransactionDetailsScreenState
             ],
           ),
           SizedBox(height: 14.h),
-          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor,
-              isNumericValue: false),
+          _buildDetailRow('Plan', scheme.label, textColor, mutedTextColor),
           _buildDetailRow(
-              'Frequency', scheme.frequency, textColor, mutedTextColor,
-              isNumericValue: false),
+              'Frequency', scheme.frequency, textColor, mutedTextColor),
           _buildDetailRow(
               'AutoGold Amount', '₹${scheme.amount}', textColor, mutedTextColor),
           _buildDetailRow(
@@ -919,21 +879,21 @@ class _TransactionDetailsScreenState
                 textColor, mutedTextColor),
             if (!isReferral && !isOffer)
               _buildDetailRow('Paid Via',
-                  details.technicalDetails.paidVia, textColor, mutedTextColor,
-                  isNumericValue: false),
+                  details.technicalDetails.paidVia, textColor, mutedTextColor),
           ]
         ],
       ),
     );
   }
 
-  /// [percentText] (e.g. "(1.50%)") renders in Lora, same as [value] —
+  /// [value] renders letters in Playfair and numbers in Lora
+  /// ([NumericStyledText]), so an ID or a date mixes both.
+  /// [percentText] (e.g. "(1.50%)") renders in Lora, like [value]'s numbers —
   /// Playfair/AppTextStyles' stylized digits look mismatched next to Lora's
   /// plain numerals when a rate is embedded in the label itself.
   Widget _buildDetailRow(
       String label, String value, Color textColor, Color mutedTextColor,
-      {bool isBold = false, bool showCopy = false, bool isNumericValue = true,
-      String? percentText}) {
+      {bool isBold = false, bool showCopy = false, String? percentText}) {
     // Hide row when server returns empty / placeholder data
     if (value.isEmpty || value == 'N/A' || value == 'null') {
       return const SizedBox.shrink();
@@ -978,22 +938,12 @@ class _TransactionDetailsScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 Flexible(
-                  child: Text(
+                  child: NumericStyledText(
                     value,
                     textAlign: TextAlign.end,
-                    style: isNumericValue
-                        ? GoogleFonts.lora(
-                            fontSize: 13.sp,
-                            fontWeight:
-                                isBold ? FontWeight.bold : FontWeight.w600,
-                            color: textColor,
-                          )
-                        : GoogleFonts.playfairDisplay(
-                            fontSize: 13.sp,
-                            fontWeight:
-                                isBold ? FontWeight.bold : FontWeight.w600,
-                            color: textColor,
-                          ),
+                    fontSize: 13.sp,
+                    fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+                    color: textColor,
                   ),
                 ),
                 if (showCopy) ...[
