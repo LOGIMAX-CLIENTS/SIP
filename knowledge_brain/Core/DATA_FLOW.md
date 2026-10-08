@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-08-19
+last_updated: 2026-10-08
 ---
 
 # Core — Data Flow
@@ -17,6 +17,9 @@ Feature screen/controller
 ```
 
 Inside `onRequest`:
+0. **Secure-server routing** — if the relative path matches `AppConfig.secureServerRoutes`
+   (`AppConfig.isSecureServerRoute`), `options.baseUrl` becomes `AppConfig.secureBaseUrl`. The token-refresh
+   retries reuse these same `RequestOptions`, so they hit the secure host too. See RULE-CORE-013.
 1. **Force-logout gate** (`:103`) — if `SessionManager.isForceLoggedOut`, reject immediately with
    `DioExceptionType.cancel`, no network I/O.
 2. **Offline check** (`:117`) — `Connectivity().checkConnectivity()`; reject with

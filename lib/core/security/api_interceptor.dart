@@ -95,6 +95,13 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
     RequestInterceptorHandler handler,
   ) async {
     final path = options.path;
+
+    // KYC, payment, mandate, bank and MPIN routes live on the secure server.
+    // A retry after a token refresh reuses these options, so it goes there too.
+    if (!path.startsWith('http') && AppConfig.isSecureServerRoute(path)) {
+      options.baseUrl = AppConfig.secureBaseUrl;
+    }
+
     SecureLogger.logRequest(options);
 
     // ── Force Logout Gate ─────────────────────────────────────────────────

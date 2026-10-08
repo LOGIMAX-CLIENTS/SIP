@@ -1,7 +1,7 @@
 ---
 module: core/ (shared layer, not a feature)
 brain_folder: Core
-last_updated: 2026-08-19
+last_updated: 2026-10-08
 round: 1
 files_read: 47 / 47 (100%)
 ---
@@ -17,7 +17,7 @@ rule this module anchors: `Screen → Controller/StateNotifier → Service (core
 
 | Folder | Files | Purpose |
 |---|---|---|
-| `config/` | 1 | `AppConfig` — base URL, storage-key names, timeouts, cert pins, the two encryption gate lists (`encryptedEndpoints`, `sensitiveFields`). |
+| `config/` | 1 | `AppConfig` — base URL and secure-server base URL + `secureServerRoutes` (RULE-CORE-013), storage-key names, timeouts, cert pins, the two encryption gate lists (`encryptedEndpoints`, `sensitiveFields`). |
 | `constants/` | 1 | `AppConstants` — static UI copy strings (screen titles/subtitles) and withdrawal numeric limits. |
 | `error/` | 1 | `failures.dart` — `Failure` hierarchy + `ApiFailureMapper.map(DioException)`, the single place HTTP status codes become typed app errors. |
 | `ldui/` | 1 | `LduiParser` — a JSON→Widget tree renderer. **Confirmed dead code** — see below. |
@@ -40,7 +40,7 @@ core/services/*.dart  ──uses──►  core/network/api_client.dart (ApiClie
         │                        _dio.interceptors = [ApiSecurityInterceptor]
         │                                │  (QueuedInterceptor — see security/api_interceptor.dart)
         │                                ▼
-        │                    onRequest:  force-logout gate → offline check → RSA key
+        │                    onRequest:  secure-server routing → force-logout gate → offline check → RSA key
         │                                bootstrap → Bearer token attach → field encryption
         │                                (RSA-OAEP-SHA256) for AppConfig.encryptedEndpoints
         │                                ▼
