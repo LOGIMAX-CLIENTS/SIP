@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-08-19
+last_updated: 2026-10-08
 ---
 
 # Core — Business Rules
@@ -127,3 +127,12 @@ app-wide. Individual screens (`otp_screen.dart`, `mpin_screen.dart` confirmed vi
 server-driven via `savings/config`/`savings/denominations/*`), these withdrawal bounds live as static Dart
 constants in `core/`. Per AGENTS.md §2, treat this as tech debt to flag if touched, not a pattern to copy —
 verify against the actual server-side withdrawal validation contract before relying on these as authoritative.
+
+## RULE-CORE-013: KYC, payment, mandate, bank and MPIN routes go to the secure server's base URL
+The backend serves these routes only from `secure_service` once production turns on `SPLIT_SECURE_ROUTES`
+(fintect_application `secure_service/config/urls.py`). `ApiSecurityInterceptor.onRequest` sends every
+relative path matching `AppConfig.secureServerRoutes` to `AppConfig.secureBaseUrl`; everything else,
+including `users/auth/*` and `crypto/public-key` (served by both servers), stays on `AppConfig.baseUrl`.
+`EnvironmentService` sets both URLs per environment. Staging and VAPT have no secure server, so their secure
+URL equals their base URL. The route list must stay in step with the backend's — a route missing here would
+404 on the customer server once the backend split is on. Tests: `test/secure_server_route_test.dart`.
