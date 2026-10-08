@@ -2,7 +2,7 @@
 
 ```
 status: 🔵 100% (Round 1)
-last_updated: 2026-10-07
+last_updated: 2026-10-08
 owns: lib/features/history/  (controller/, models/, screens/, services/)
 ```
 
@@ -96,6 +96,14 @@ dropped when `price_breakdown` has no quantity — `PriceBreakdown.hasMetal`, RU
 after 60 seconds (`transaction_details_screen.dart:838-841`) — a deliberate anti-clipboard-sniffing
 measure, consistent with AGENTS.md §3's security posture even though transaction/order IDs aren't
 classified as "sensitive fields" in the strict PII/financial-secret sense.
+
+**Typography (2026-10-08):** every backend-supplied string on this screen — step names, step
+times, failure reasons, status/refund notes, detail-row values (IDs, dates, quantities), the SIP
+subtitle, the grams line, the error message and the "Save ₹X Again" CTA — goes through
+`NumericStyledText`, so letters render in Playfair Display and numbers in Lora. Fixed labels and
+status badges stay plain Playfair; the top-card amount and CGST/SGST `(x%)` stay plain Lora.
+`NumericStyledText`'s pattern treats K/T/X as numeric only when attached to a number (24KT, 2x,
+XXXX1234) — test: `test/numeric_styled_text_test.dart`.
 
 ## 6. The SIP split (cross-module)
 
