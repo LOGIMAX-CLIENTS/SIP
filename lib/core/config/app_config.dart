@@ -14,6 +14,43 @@ class AppConfig {
     //defaultValue: 'https://vaptapi.startgold.com/api/api/v1/', // VAPT Server
   );
 
+  /// Host for [secureServerRoutes]. EnvironmentService sets it with [baseUrl].
+  static String secureBaseUrl = baseUrl;
+
+  /// Routes the backend serves only from its secure server: KYC, MPIN,
+  /// payments, mandates, bank accounts, nominee, uploads and invoices. Must
+  /// match secure_service/config/urls.py in fintect_application. An entry
+  /// ending in '/' covers everything under it; any other entry covers that
+  /// route and its sub-paths.
+  static const List<String> secureServerRoutes = [
+    'kyc/',
+    'mpin/',
+    'payments/',
+    'withdrawal/',
+    'account/',
+    'sip/',
+    'transactions/invoice/',
+    'savings/check-eligibility',
+    'savings/initiate',
+    'savings/confirm-payment',
+    'savings/cancel_order',
+    'profile/accountdetails',
+    'profile/bank-accounts',
+    'customer/accountdetails',
+    'customer/bank-accounts',
+    'crypto/encrypt',
+    'crypto/decrypt',
+    'users/nominee/',
+    'users/upload',
+  ];
+
+  static bool isSecureServerRoute(String path) {
+    final route = path.split('?').first.replaceFirst(RegExp(r'^/+'), '');
+    return secureServerRoutes.any((r) => r.endsWith('/')
+        ? route.startsWith(r)
+        : route == r || route.startsWith('$r/'));
+  }
+
   // Storage Keys
   static const String keyHasSeenOnboarding = 'hasSeenOnboarding';
   static const String keyAccessToken = 'access_token';
