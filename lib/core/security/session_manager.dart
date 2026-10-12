@@ -21,9 +21,16 @@ class SessionManager {
     return token != null && token.isNotEmpty;
   }
 
-  /// Standard logout — user-initiated or token refresh failure.
+  /// Standard logout — user-initiated (Logout button, account deletion).
   static Future<void> logout() async {
     await SecureStorageService.logout();
+  }
+
+  /// The session lapsed (refresh token rejected / SESSION_EXPIRED) — ends it
+  /// but keeps this device's biometric and auto-lock choices for the same
+  /// customer's next login. See [SecureStorageService.endExpiredSession].
+  static Future<void> endExpiredSession() async {
+    await SecureStorageService.endExpiredSession();
   }
 
   /// Force logout — triggered by 409 SESSION_INVALIDATED.

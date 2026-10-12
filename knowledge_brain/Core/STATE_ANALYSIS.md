@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 ---
 
 # Core — State Analysis
@@ -106,7 +106,9 @@ last_updated: 2026-08-19
 | `refresh_token` (`keyRefreshToken`) | refresh token | same | `ApiSecurityInterceptor.onError` (401 refresh) | No |
 | `mobile_number` (`keyMobileNumber`) | last logged-in mobile | `AuthService.verifyOtp` | `AuthNotifier.rehydrateFromStorage`, `NavigationUtils` fallback logic (indirectly via `SessionManager`) | No |
 | `is_mpin_enabled` (`keyIsMpinEnabled`) | `'true'`/`'false'` string | `AuthService.verifyOtp`, MPIN-setup flow | `AppLifecycleObserver._preCacheSecurityState`, `NavigationUtils` | No |
-| `is_biometric_enabled` (`keyIsBiometricEnabled`) | `'true'`/`'false'` string | Settings biometric toggle | `BiometricService.canUseBiometric` (self-heals to `false` if device biometric was removed) | No |
+| `is_biometric_enabled` (`keyIsBiometricEnabled`) | `'true'`/`'false'` string | Profile > App Security biometric toggle | `BiometricService.canUseBiometric` (self-heals to `false` only when the OS reports no screen lock / nothing enrolled — a `local_auth` exception keeps it) | No — but **yes** across `endExpiredSession()` for the same customer |
+| `mpin_lock_timeout_seconds` (`keyMpinLockTimeoutSeconds`) | seconds, as string | App Security Auto-Lock picker, `ProfileNotifier` (server sync) | `AppLifecycleObserver._preCacheSecurityState` | No — but **yes** across `endExpiredSession()` for the same customer |
+| `app_lock_owner_customer_id` (`keyAppLockOwnerId`) | customer id | `SecureStorageService.endExpiredSession` | `SecureStorageService.keepAppLockPrefsOnlyFor` (verify-otp, register), which deletes it | No |
 | `customer_id` (`keyCustomerId`) | numeric customer ID (string) | `AuthService.verifyOtp/.register` | `AuthNotifier.rehydrateFromStorage`, `portfolioProvider` (via `userProvider.id`) | No |
 | `customer_name` (`keyCustomerName`) | display name | same | `AuthNotifier.rehydrateFromStorage` | No |
 | `customer_photo` (`keyCustomerPhoto`) | photo URL | `AuthService.verifyOtp` | `AuthNotifier.rehydrateFromStorage` | No |
@@ -117,9 +119,12 @@ last_updated: 2026-08-19
 | `persistent_device_type` | `'android'`/`'ios'`/`'web'`/`'other'` | `DeviceIdService.getDeviceType` | same | **Yes** |
 | `ssl_cert_pins` | JSON-encoded pin array | `CertificatePinning.updatePins` (server-pushed) | `CertificatePinning.init` (startup cache load) | Not cleared by `SecureStorageService.logout()` — only by `CertificatePinning.clearCache()`, which is documented for logout but not confirmed as actually called anywhere this pass |
 
-`SecureStorageService.logout()` (`:117-141`) performs a `deleteAll()` then restores only the three explicitly
+`SecureStorageService.logout()` performs a `deleteAll()` then restores only the three explicitly
 preserved keys — every other key above (including the RSA public key cache and FCM token) is wiped on both
 normal and force logout, meaning a fresh login re-fetches the RSA key and re-registers the FCM token.
+`SecureStorageService.endExpiredSession()` (refresh token rejected, mpin/validate `SESSION_EXPIRED`) does
+the same wipe but also keeps `is_biometric_enabled` + `mpin_lock_timeout_seconds`, tagged with
+`app_lock_owner_customer_id` — see `MPIN/BUSINESS_RULES.md` RULE-MPIN-015.
 
 ## Shared Models (used across `core/` and consumed by features)
 

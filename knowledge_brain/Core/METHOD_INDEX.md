@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 scope: every public class + public method/getter across all 47 files in lib/core/
 ---
 
@@ -56,6 +56,7 @@ understanding.
 `core/security/api_interceptor.dart`
 | Member | Location | Callers |
 |---|---|---|
+| `isTransientRefreshFailure` (static) | `:42` | `onError` refresh path (keeps the session on no-answer / 5xx / throttle), `test/app_lock_persistence_test.dart` |
 | `fetchAndCachePublicKey` (static) | `:38` | `ApiClient._internal()` constructor (`network/api_client.dart:33`, fire-and-forget bootstrap); re-invoked defensively from its own `onRequest` (`:137`) for sensitive endpoints if key not yet ready |
 | `onRequest` | `:93` | Dio interceptor chain (automatic, every outbound request) |
 | `onResponse` | `:189` | Dio interceptor chain (automatic, every response) |
@@ -110,10 +111,11 @@ understanding.
 `core/services/biometric_service.dart`
 | Member | Location | Callers |
 |---|---|---|
-| `deviceHasBiometric` | `:25` | `canUseBiometric` |
-| `canUseBiometric` | `:48` | `AppLifecycleObserver._preCacheSecurityState` (`security/app_lifecycle_observer.dart:83`) |
-| `checkBeforeEnable` | `:69` | Profile/Settings biometric-toggle screen (not re-verified) |
-| `authenticate` | `:90` | `AppLifecycleObserver._tryBiometricThenMpin` (`:172`) |
+| `deviceHasBiometric` | `:25` | `AppSecurityScreen._load` (errors → `false`) |
+| `_enrolledBiometricPresent` | `:36` | `deviceHasBiometric`, `canUseBiometric` (lets platform errors through) |
+| `canUseBiometric` | `:56` | `AppLifecycleObserver._preCacheSecurityState`, `MpinScreen._loadMpinStatus`, `AppSecurityScreen._load` — auto-disables only on a definitive "none enrolled", not on an exception |
+| `checkBeforeEnable` | `:83` | Profile/Settings biometric-toggle screen (not re-verified) |
+| `authenticate` | `:104` | `AppLifecycleObserver._tryBiometricThenMpin` (`:172`) |
 
 ## CertificatePinning
 `core/security/certificate_pinning.dart`
@@ -349,7 +351,9 @@ understanding.
 | `saveServerPublicKey` / `getServerPublicKey` | `:81,85` | `EncryptionService.setPublicKeyFromServer`/`.loadPublicKey` |
 | `saveMobile` / `getMobile` | `:90,94` | `AuthService.verifyOtp`, `AuthNotifier.rehydrateFromStorage` |
 | `saveFcmToken` / `getFcmToken` | `:99,103` | `NotificationService.registerFcmToken` |
-| `logout` | `:117` | `SessionManager.logout`/`.forceLogout` |
+| `logout` | `:149` | `SessionManager.logout`/`.forceLogout`, `SessionInvalidatedDialog`, `OtpScreen` (forgot-PIN "Edit"), `DeleteAccountScreen` |
+| `endExpiredSession` | `:177` | `SessionManager.endExpiredSession` — same wipe, keeps biometric/auto-lock tagged with the customer id |
+| `keepAppLockPrefsOnlyFor` | `:193` | `AuthService.verifyOtp`, `AuthService.register` (before saving the new customer id) |
 
 ## SessionManager
 `core/security/session_manager.dart`
@@ -357,9 +361,10 @@ understanding.
 |---|---|---|
 | `isForceLoggedOut` (static getter) | `:16` | `ApiSecurityInterceptor.onRequest` (`:103`), `AppLifecycleObserver._checkAppLockOnResume` (`:114`) |
 | `isAuthenticated` | `:18` | `AppLifecycleObserver._preCacheSecurityState`, `NavigationUtils._navigateToFallback` |
-| `logout` | `:25` | `ApiSecurityInterceptor.onError` (401 refresh-failed path) |
-| `forceLogout` | `:32` | `ApiSecurityInterceptor.onError` (409 path, deduplicated) |
-| `resetForceLogout` | `:41` | `AuthService.verifyOtp` (`:75`, fresh-login clears force-logout) |
+| `logout` | `:25` | `SessionInvalidatedDialog.show` (409, idempotent second wipe) |
+| `endExpiredSession` | `:32` | `ApiSecurityInterceptor.onError` (refresh token rejected), `MpinScreen` `SESSION_EXPIRED` listener |
+| `forceLogout` | `:39` | `ApiSecurityInterceptor.onError` (409 path, deduplicated) |
+| `resetForceLogout` | `:48` | `AuthService.verifyOtp` (`:75`, fresh-login clears force-logout) |
 | `hasSeenOnboarding` / `setOnboardingSeen` | `:45,50` | splash routing / onboarding-complete action |
 
 ## SharedService

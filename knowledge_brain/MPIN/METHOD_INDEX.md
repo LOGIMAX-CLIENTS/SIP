@@ -1,6 +1,6 @@
 ---
 module: mpin
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 ---
 
 # METHOD_INDEX — MPIN
@@ -68,10 +68,18 @@ Alphabetical by class. Files outside `lib/features/mpin/` are marked `[core]`.
 
 | Method | file:line | Callers | Notes |
 |---|---|---|---|
-| `authenticate({required String reason})` | `:90` | `mpin_screen.dart _authenticateBiometric`, `app_lifecycle_observer.dart _tryBiometricThenMpin` | Swallows all exceptions → `false` |
-| `canUseBiometric()` | `:48` | `mpin_screen.dart _loadMpinStatus`, `app_lifecycle_observer.dart _preCacheSecurityState` | Side-effect: auto-disables stored flag if device biometrics were removed |
-| `checkBeforeEnable()` | `:69` | Outside this module (Settings biometric-toggle flow — not read in this pass) | |
-| `deviceHasBiometric()` | `:25` | `canUseBiometric` | |
+| `authenticate({required String reason})` | `:104` | `mpin_screen.dart _authenticateBiometric`, `app_lifecycle_observer.dart _tryBiometricThenMpin` | Swallows all exceptions → `false` |
+| `canUseBiometric()` | `:56` | `mpin_screen.dart _loadMpinStatus`, `app_lifecycle_observer.dart _preCacheSecurityState`, `app_security_screen.dart _load` | Side-effect: auto-disables stored flag only when the OS says no screen lock / nothing enrolled; a `local_auth` exception returns `false` but keeps the flag (RULE-MPIN-015) |
+| `checkBeforeEnable()` | `:83` | `profile/screens/app_security_screen.dart _onBiometricToggle` | |
+| `deviceHasBiometric()` | `:25` | `app_security_screen.dart _load` | Exceptions → `false` |
+| `_enrolledBiometricPresent()` | `:36` | `deviceHasBiometric`, `canUseBiometric` | Lets platform exceptions through |
+
+## `SessionManager` / `SecureStorageService` session-end paths `[core]`
+
+| Method | file:line | Callers | Notes |
+|---|---|---|---|
+| `SessionManager.endExpiredSession()` → `SecureStorageService.endExpiredSession()` | `session_manager.dart:32`, `secure_storage_service.dart:177` | `mpin_screen.dart` `SESSION_EXPIRED` listener (`:211`), `api_interceptor.dart` refresh-rejected paths | Keeps biometric + auto-lock for the same customer |
+| `SecureStorageService.keepAppLockPrefsOnlyFor(id)` | `secure_storage_service.dart:193` | `auth_service.dart verifyOtp`, `register` | Drops kept choices if a different customer logs in or registers |
 
 ## `AppLifecycleObserver` `[core]` (`lib/core/security/app_lifecycle_observer.dart`)
 

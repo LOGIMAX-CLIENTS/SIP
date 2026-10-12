@@ -77,8 +77,11 @@ class AuthService {
         await SecureStorageService.setMpinEnabled(data['mpin_enabled'] == true);
       }
       if (data['user']?['id_customer'] != null) {
-        await SecureStorageService.saveCustomerId(
-            data['user']['id_customer'].toString());
+        final customerId = data['user']['id_customer'].toString();
+        // Biometric/auto-lock choices kept from an expired session only
+        // carry over to the customer who made them.
+        await SecureStorageService.keepAppLockPrefsOnlyFor(customerId);
+        await SecureStorageService.saveCustomerId(customerId);
       }
       if (data['user']?['name'] != null) {
         await SecureStorageService.saveCustomerName(data['user']['name']);
@@ -185,8 +188,11 @@ class AuthService {
         await SecureStorageService.saveRefreshToken(refreshToken);
       }
       if (data['user']?['id_customer'] != null) {
-        await SecureStorageService.saveCustomerId(
-            data['user']['id_customer'].toString());
+        final customerId = data['user']['id_customer'].toString();
+        // A new account on a device where another customer's session
+        // expired must not inherit their biometric/auto-lock choices.
+        await SecureStorageService.keepAppLockPrefsOnlyFor(customerId);
+        await SecureStorageService.saveCustomerId(customerId);
       }
       if (data['user']?['name'] != null) {
         await SecureStorageService.saveCustomerName(data['user']['name']);

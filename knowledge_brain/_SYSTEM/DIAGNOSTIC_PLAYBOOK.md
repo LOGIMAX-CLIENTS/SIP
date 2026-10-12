@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 source: Synthesized from all 24 Round-1 module brains' FORENSIC_TEMPLATE.md files
 ---
 
@@ -11,9 +11,27 @@ scratch (`AGENTS.md` §0 Step Zero for bug fixes).
 ## Rule 1: User reports being logged out randomly / session drops unexpectedly
 1. Check for a `409` response anywhere in recent logs — `SessionManager`'s force-logout path fires on any
    409, by design (`AGENTS.md` §3). This may be correct behavior (concurrent session) or a false positive.
-2. Check `core/security/api_interceptor.dart`'s 401-refresh logic — a refresh failure also routes to logout.
+2. Check `core/security/api_interceptor.dart`'s 401-refresh logic — a rejected refresh token (401
+   `TOKEN_REFRESH_FAILED`) ends the session via `SessionManager.endExpiredSession()`; no-answer / 5xx /
+   throttled refreshes deliberately do not.
 3. If it happens specifically on app resume, check `core/security/app_lifecycle_observer.dart`'s app-lock
    trigger — this is a re-auth prompt, not a true logout, but can look identical to a user.
+
+## Rule 1a: "Biometric / MPIN got switched off" — typically reported right after a Play Store update
+1. Ask whether the customer had to log in with OTP again. The backend refresh token lasts 1 day from its
+   last use (access token 15 min), so a customer who skipped a day gets an expired refresh token on the
+   first open, and that is often the first open after an update. The session ending is expected. Losing
+   biometric/auto-lock with it is not: `endExpiredSession()` keeps them for the same customer
+   (`MPIN/BUSINESS_RULES.md` RULE-MPIN-015).
+2. If they were also asked to **set** a new MPIN (the `setup` screen, not verify), verify-otp returned
+   `mpin_enabled=false`. On the backend that means the MPIN is locked after 5 wrong attempts
+   (`ccr_status=2`, it never unlocks on its own), not missing. Check the customer's `customer_credentials`
+   rows before assuming an app bug.
+3. If only the biometric toggle is off and they were not logged out, check `BiometricService.canUseBiometric()`:
+   it clears the flag when the OS reports no screen lock or nothing enrolled.
+4. A logout with no OTP prompt beforehand on a flaky network: check that `isTransientRefreshFailure` covers
+   the refresh response seen. Only no-answer, 5xx and the HTTP-200 `TOO_MANY_REQUESTS` throttle keep the
+   session.
 
 ## Rule 2: A "sensitive" field appears to have reached the server in plaintext
 1. Check `AppConfig.sensitiveFields` (`core/config/app_config.dart`) for the exact field name — coverage

@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 ---
 
 # Core — Data Flow
@@ -66,8 +66,14 @@ err.response.statusCode == 401
           retry original request with new Authorization header                                :427-444
             → 409 on retry? → rejectAsSessionInvalidated (refreshed token still carries an
               already-invalidated session_id — refresh endpoint doesn't check session validity) :438
-        200 but no access_token / non-200 / DioException:
-          _refreshLock.complete(false); _refreshLock = null; SessionManager.logout()          :449-486
+        no answer / 5xx / throttled (HTTP 200 + error.code TOO_MANY_REQUESTS, or 429)
+          — isTransientRefreshFailure:
+          _refreshLock.complete(false); keep tokens; fail this request with the refresh error
+          (→ NetworkFailure / ServerFailure, never the 401)
+        200 but no access_token / other non-200 / 4xx DioException / no refresh token stored:
+          _refreshLock.complete(false); _refreshLock = null;
+          SessionManager.endExpiredSession() — wipes the session but keeps is_biometric_enabled +
+          mpin_lock_timeout_seconds for the same customer (RULE-MPIN-015)
 ```
 
 Caller-side: `ApiClient.get/post` catches the eventual `DioException` and maps it via

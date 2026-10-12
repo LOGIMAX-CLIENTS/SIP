@@ -146,17 +146,65 @@ class SecureStorageService {
   /// Wiping them causes a new UUID to be generated on next login, making
   /// the server treat the same physical device as a "new device" — which
   /// triggers spurious 409 SESSION_INVALIDATED errors on other devices.
-  static Future<void> logout() async {
-    // Keys that MUST survive logout
-    const preserveKeys = [
-      'persistent_device_id',
-      'persistent_device_type',
-      AppConfig.keyHasSeenOnboarding,
-    ];
+  static Future<void> logout() => _wipeExcept(const []);
 
+  /// Keys that MUST survive every kind of logout.
+  static const _deviceKeys = [
+    'persistent_device_id',
+    'persistent_device_type',
+    AppConfig.keyHasSeenOnboarding,
+  ];
+
+  /// This device's app-lock choices — kept by [endExpiredSession].
+  static const _appLockPrefKeys = [
+    AppConfig.keyIsBiometricEnabled,
+    AppConfig.keyMpinLockTimeoutSeconds,
+  ];
+
+  /// Ends a session that lapsed on its own — the server stopped accepting
+  /// the refresh token, or mpin/validate answered SESSION_EXPIRED.
+  ///
+  /// Unlike [logout] (customer tapped Logout / deleted the account) and the
+  /// 409 force-logout (signed in elsewhere), this keeps the customer's
+  /// Biometric Login and Auto-Lock choices, so logging back in doesn't make
+  /// them set those up again. The backend's refresh token only lasts a day
+  /// from its last use, so any customer who skips a day lands here, very
+  /// often on the first open after a Play Store update.
+  /// The choices stay tagged with the customer who made them;
+  /// [keepAppLockPrefsOnlyFor] drops them if a different customer logs in
+  /// next. MPIN needs nothing kept here: verify-otp's `mpin_enabled` sets
+  /// [isMpinEnabled] again on that login.
+  static Future<void> endExpiredSession() async {
+    final owner = await getCustomerId();
+    if (owner == null || owner.isEmpty) {
+      // Can't tell whose choices these are — don't carry them over.
+      return logout();
+    }
+    await _wipeExcept(_appLockPrefKeys);
+    if (await _storage.containsKey(key: AppConfig.keyIsBiometricEnabled) ||
+        await _storage.containsKey(key: AppConfig.keyMpinLockTimeoutSeconds)) {
+      await _storage.write(key: AppConfig.keyAppLockOwnerId, value: owner);
+    }
+  }
+
+  /// Call on every OTP login or registration that identifies the customer,
+  /// BEFORE their id is saved. Keeps the app-lock choices on this device
+  /// only if they belong to [customerId]; a different customer starts with
+  /// them off.
+  static Future<void> keepAppLockPrefsOnlyFor(String customerId) async {
+    final owner = await _storage.read(key: AppConfig.keyAppLockOwnerId) ??
+        await getCustomerId();
+    await _storage.delete(key: AppConfig.keyAppLockOwnerId);
+    if (owner == null || owner == customerId) return;
+    for (final key in _appLockPrefKeys) {
+      await _storage.delete(key: key);
+    }
+  }
+
+  static Future<void> _wipeExcept(List<String> extraKeys) async {
     // 1. Read values to preserve
     final preserved = <String, String>{};
-    for (final key in preserveKeys) {
+    for (final key in [..._deviceKeys, ...extraKeys]) {
       final value = await _storage.read(key: key);
       if (value != null && value.isNotEmpty) {
         preserved[key] = value;

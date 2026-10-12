@@ -32,6 +32,21 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
     return null;
   }
 
+  /// Whether a `users/auth/token/refresh` call that produced no new token says
+  /// nothing about the refresh token itself: the server never answered
+  /// (offline, timeout, TLS/pinning), answered 5xx, or throttled the call.
+  /// The backend sends its throttle as HTTP 200 with `error.code`
+  /// TOO_MANY_REQUESTS (its response middleware turns every status except
+  /// 401/409 into 200). A rejected token comes back as 401
+  /// TOKEN_REFRESH_FAILED.
+  static bool isTransientRefreshFailure({int? statusCode, dynamic body}) {
+    if (statusCode == null || statusCode == 429 || statusCode >= 500) {
+      return true;
+    }
+    final error = body is Map ? body['error'] : null;
+    return error is Map && error['code'] == 'TOO_MANY_REQUESTS';
+  }
+
   // ── Public Key Bootstrap ─────────────────────────────────────────────────
   /// Fetches the RSA public key from the server and caches it.
   /// Safe to call multiple times – skips fetch if already loaded.
@@ -451,20 +466,32 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
                 SecureLogger.e('TOKEN REFRESH: Retry after refresh failed: $e');
                 return handler.next(err);
               }
+            } else if (isTransientRefreshFailure(
+                statusCode: refreshResponse.statusCode, body: respData)) {
+              // Throttled — the token is fine. Keep the session and fail
+              // just this request with the server's "too many attempts".
+              SecureLogger.e('TOKEN REFRESH: Throttled. Keeping the session.');
+              _refreshLock!.complete(false);
+              _refreshLock = null;
+              return handler.next(DioException(
+                requestOptions: err.requestOptions,
+                response: refreshResponse,
+                type: DioExceptionType.badResponse,
+              ));
             } else {
               // Refresh returned 200 but no access token in response
               SecureLogger.e(
                   'TOKEN REFRESH: No access token in refresh response. Logging out.');
               _refreshLock!.complete(false);
               _refreshLock = null;
-              await SessionManager.logout();
+              await SessionManager.endExpiredSession();
             }
           } else {
             SecureLogger.e(
                 'TOKEN REFRESH: Server rejected refresh (${refreshResponse.statusCode}). Logging out.');
             _refreshLock!.complete(false);
             _refreshLock = null;
-            await SessionManager.logout();
+            await SessionManager.endExpiredSession();
           }
         } on DioException catch (e) {
           // The refresh endpoint itself can reject with 409 when the
@@ -476,23 +503,40 @@ class ApiSecurityInterceptor extends QueuedInterceptor {
             return rejectAsSessionInvalidated(e, handler,
                 message: _extractServerMessage(e.response?.data));
           }
-          SecureLogger.e('TOKEN REFRESH: Failed with error: $e. Logging out.');
           _refreshLock?.complete(false);
           _refreshLock = null;
-          await SessionManager.logout();
+          // No answer (offline, timeout, TLS) or a 5xx says nothing about
+          // the refresh token — keep the session and fail just this request
+          // as the network/server error it is. Logging out here wiped the
+          // customer's tokens and app-lock setup on any blip during the
+          // first refresh after an app update.
+          if (isTransientRefreshFailure(
+              statusCode: e.response?.statusCode, body: e.response?.data)) {
+            SecureLogger.e(
+                'TOKEN REFRESH: Server unreachable ($e). Keeping the session.');
+            return handler.next(DioException(
+              requestOptions: err.requestOptions,
+              response: e.response,
+              type: e.type,
+              error: e.error,
+              message: e.message,
+            ));
+          }
+          SecureLogger.e('TOKEN REFRESH: Failed with error: $e. Logging out.');
+          await SessionManager.endExpiredSession();
         } catch (e) {
           SecureLogger.e('TOKEN REFRESH: Failed with error: $e. Logging out.');
           // Defensive: the lock may already be null if this exception
           // somehow originated after a successful .complete(true) above.
           _refreshLock?.complete(false);
           _refreshLock = null;
-          await SessionManager.logout();
+          await SessionManager.endExpiredSession();
         }
       } else {
         SecureLogger.e('TOKEN REFRESH: No refresh token found. Logging out.');
         _refreshLock!.complete(false);
         _refreshLock = null;
-        await SessionManager.logout();
+        await SessionManager.endExpiredSession();
       }
     }
 
