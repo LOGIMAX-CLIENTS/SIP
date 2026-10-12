@@ -16,6 +16,7 @@ import '../../core/services/biometric_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/fcm_service.dart';
 import '../../core/security/secure_storage_service.dart';
+import '../../core/security/session_manager.dart';
 import '../../routes/app_router.dart';
 import '../../shared/theme/app_theme.dart';
 import 'package:local_auth/local_auth.dart';
@@ -205,8 +206,9 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
             'Session expired. Please login again.',
             type: ToastType.error,
           );
-          // Clear storage & navigate to login
-          SecureStorageService.logout().then((_) {
+          // End the session & navigate to login — keeps the customer's
+          // biometric/auto-lock choices for their next login.
+          SessionManager.endExpiredSession().then((_) {
             if (mounted) {
               Navigator.pushNamedAndRemoveUntil(
                 context,

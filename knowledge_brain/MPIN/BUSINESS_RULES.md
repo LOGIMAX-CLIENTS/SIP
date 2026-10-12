@@ -1,6 +1,6 @@
 ---
 module: mpin
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 ---
 
 # BUSINESS_RULES — MPIN
@@ -15,7 +15,7 @@ last_updated: 2026-08-19
 Both `MpinService.verifyMpin` (`mpin_service.dart:36`) and `changeMpin`/`setMpin`/`resetMpin` explicitly comment and code around "Server returns HTTP 200 even on failure — must check app-level flag" — callers must check `data['success']`, not rely on HTTP status, except for the synthesized 401 (see RULE-MPIN-004).
 
 ## RULE-MPIN-004: A `SESSION_EXPIRED` code inside a 200 response is manually escalated to a 401 DioException
-`MpinService.verifyMpin` (`mpin_service.dart:39-51`) checks `data.error.code` / `data.data.code` for `'SESSION_EXPIRED'` on an otherwise-200 response and synthesizes a `DioException(statusCode: 401)` to force it through the standard error-handling path in `MpinNotifier.verifyMpin`, which then sets `state.error = 'SESSION_EXPIRED'` — consumed by `mpin_screen.dart`'s `ref.listen` (`:199-222`) to toast, wipe secure storage, and redirect to `/login`.
+`MpinService.verifyMpin` (`mpin_service.dart:39-51`) checks `data.error.code` / `data.data.code` for `'SESSION_EXPIRED'` on an otherwise-200 response and synthesizes a `DioException(statusCode: 401)` to force it through the standard error-handling path in `MpinNotifier.verifyMpin`, which then sets `state.error = 'SESSION_EXPIRED'` — consumed by `mpin_screen.dart`'s `ref.listen` (`:199-222`) to toast, end the session with `SessionManager.endExpiredSession()` (keeps biometric/auto-lock — RULE-MPIN-015), and redirect to `/login`.
 
 ## RULE-MPIN-005: A 409 (session invalidated) never surfaces a local error — the interceptor dialog owns it
 `MpinNotifier.verifyMpin`'s `DioException` 409 branch (`mpin_service.dart:224-236`) and its `SessionInvalidatedFailure` catch clause (`:264-277`) both deliberately leave `state.error` unset, explicitly to avoid a duplicate toast stacked on top of `SessionInvalidatedDialog` (shown by `api_interceptor.dart:244,276`). `ApiClient` converts the interceptor's rejected `DioException` into a `SessionInvalidatedFailure` before it reaches the notifier, so in practice the `SessionInvalidatedFailure` branch — not the raw `DioException` 409 branch — is the one that actually fires (per the code's own comment at `:264-267`).
@@ -52,3 +52,29 @@ on every poll). The pre-fetch fallbacks — `AppConfig.mpinLockDefaultTimeoutSec
 `DEFAULT_MPIN_LOCK`. The live config row overrides all of these, so changing the default in production is a
 config edit (admin → Configuration → `APP_CONTROL_MPIN_LOCK`), not an app release. Once a customer picks a
 value it is stored per-customer (`profile/mpin-lock-timing`) and the default no longer applies to them.
+
+## RULE-MPIN-015: Biometric Login and Auto-Lock survive a lapsed session, not a deliberate or security logout
+(PM-STG-0452, "Biometric & MPIN reset after Play Store update".) There are two kinds of logout. `SecureStorageService.logout()`
+wipes everything except device identity and is used for the Logout button, account deletion, the 409
+force-logout and the forgot-PIN "Edit number" escape. `SecureStorageService.endExpiredSession()` is used when
+the refresh token is rejected (4xx, or 200 with no token, or none stored) and for mpin/validate's
+`SESSION_EXPIRED`. It ends the session too, but keeps `is_biometric_enabled` and `mpin_lock_timeout_seconds`,
+tagging them with the customer id (`app_lock_owner_customer_id`). On the next verify-otp or register that names the
+customer, `keepAppLockPrefsOnlyFor(id)` keeps them for the same customer and deletes them for anyone else. If
+no customer id was stored, it falls back to a full `logout()`. MPIN itself needs nothing kept: verify-otp's
+`mpin_enabled` re-seeds `is_mpin_enabled`. So after the same customer logs back in with OTP, the untyped MPIN
+screen auto-prompts biometric again (RULE-MPIN-008). A refresh that gets no answer, a 5xx, or the backend's
+throttle (HTTP 200 with `TOO_MANY_REQUESTS`) no longer ends the session at all
+(`ApiSecurityInterceptor.isTransientRefreshFailure`, RULE-CORE-003).
+
+Why the session lapses so often: backend `SIMPLE_JWT` gives a 15-minute access token and a 1-day refresh token,
+and each refresh resets that day (`fintect_application` `config/settings.py`; `TokenRefreshView` calls
+`set_exp()` without the `CUSTOMER_LOGIN_SECURITY` override). Anyone who doesn't open the app for a day must log
+in with OTP again, and the first open after a Play Store update is usually such a case. Before this rule, that
+re-login also wiped biometric/auto-lock, which is what PM-STG-0452 reported. The backend never resets an MPIN
+or ends a session because of `appVersion`/`device_id`. Its only "MPIN off" state is the 5-wrong-attempts lock
+(`ccr_status=2`), and verify-otp reports that as `mpin_enabled=false`, so the app routes to `setup`.
+
+Separately, `BiometricService.canUseBiometric()` only auto-disables the stored flag when the OS answers "no
+screen lock / nothing enrolled". If `local_auth` throws, it falls back to MPIN for that attempt and keeps the
+customer's choice. Tests: `test/app_lock_persistence_test.dart`.

@@ -24,17 +24,23 @@ class BiometricService {
   /// exists.
   static Future<bool> deviceHasBiometric() async {
     try {
-      // First: confirm the device is capable at all.
-      final isSupported = await _auth.isDeviceSupported();
-      if (!isSupported) return false;
-
-      // Second: confirm at least one biometric is ENROLLED.
-      final enrolled = await _auth.getAvailableBiometrics();
-      return enrolled.isNotEmpty;
+      return await _enrolledBiometricPresent();
     } catch (e) {
       debugPrint('[BiometricService] deviceHasBiometric error: $e');
       return false;
     }
+  }
+
+  /// Like [deviceHasBiometric], but lets a platform error through so
+  /// callers can tell "the OS couldn't answer" apart from "none enrolled".
+  static Future<bool> _enrolledBiometricPresent() async {
+    // First: confirm the device is capable at all.
+    final isSupported = await _auth.isDeviceSupported();
+    if (!isSupported) return false;
+
+    // Second: confirm at least one biometric is ENROLLED.
+    final enrolled = await _auth.getAvailableBiometrics();
+    return enrolled.isNotEmpty;
   }
 
   // ── Combined flag (UI should use this) ───────────────────────────────────
@@ -44,12 +50,20 @@ class BiometricService {
   ///
   /// Side-effect: if the stored flag is true but the device has NO enrolled
   /// biometric (e.g. user removed fingerprint from phone settings), this
-  /// method automatically resets the stored flag to false.
+  /// method automatically resets the stored flag to false. A platform error
+  /// while checking only falls back to MPIN this time — it isn't proof the
+  /// fingerprint was removed, so the customer's choice is kept.
   static Future<bool> canUseBiometric() async {
     final storedEnabled = await SecureStorageService.isBiometricEnabled();
     if (!storedEnabled) return false;
 
-    final hasDevice = await deviceHasBiometric();
+    final bool hasDevice;
+    try {
+      hasDevice = await _enrolledBiometricPresent();
+    } catch (e) {
+      debugPrint('[BiometricService] canUseBiometric check failed: $e');
+      return false;
+    }
     if (!hasDevice) {
       // Auto-disable: fingerprint was removed from device settings.
       debugPrint(

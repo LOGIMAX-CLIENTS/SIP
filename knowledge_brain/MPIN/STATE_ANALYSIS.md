@@ -1,6 +1,6 @@
 ---
 module: mpin
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 ---
 
 # STATE_ANALYSIS — MPIN
@@ -49,9 +49,9 @@ Fully local `ConsumerState` fields — the 3-step wizard progress, both PIN valu
 | Key constant | Storage key string | Read by | Written by |
 |---|---|---|---|
 | `AppConfig.keyIsMpinEnabled` | `is_mpin_enabled` | `mpin_screen.dart:_loadMpinStatus` (`:70`), `app_router.dart` fallback, `splash_screen.dart`, `navigation_utils.dart`, `app_lifecycle_observer.dart` (cached) | `mpin_screen.dart:_handleAction` on every successful `setup`/`reset_pin`/verify (`:673,689,717`) — note: **all three** paths call `setMpinEnabled(true)`, including plain login-verify, which is a no-op if already `true` but means this flag is re-asserted on every login |
-| `AppConfig.keyIsBiometricEnabled` | `is_biometric_enabled` | `BiometricService.canUseBiometric()` | `BiometricService.canUseBiometric()` — auto-disables (`setBiometricEnabled(false)`) if the device's enrolled biometrics were removed (`biometric_service.dart:56-58`) |
+| `AppConfig.keyIsBiometricEnabled` | `is_biometric_enabled` | `BiometricService.canUseBiometric()` | `BiometricService.canUseBiometric()` — auto-disables (`setBiometricEnabled(false)`) only when the OS answers "no screen lock / nothing enrolled"; a `local_auth` exception falls back to MPIN and keeps the flag |
 | `AppConfig.keyMobileNumber` | `mobile_number` | `mpin_screen.dart:_handleForgotPin` via `SecureStorageService.getMobile()` (`:768`) | Not written by this module (written during login/registration in `auth`) |
-| (all keys) | — | — | `SecureStorageService.logout()` — called from `mpin_screen.dart`'s `SESSION_EXPIRED` handler (`:209`) to wipe everything before redirecting to `/login` |
+| (all session keys) | — | — | `SessionManager.endExpiredSession()` — called from `mpin_screen.dart`'s `SESSION_EXPIRED` handler (`:211`) before redirecting to `/login`; keeps biometric + auto-lock for the same customer (RULE-MPIN-015) |
 
 No module file reads/writes the RSA public key cache (`keyServerPublicKey`) or FCM token cache directly — those are owned by `EncryptionService`/`NotificationService` respectively and only invoked, not managed, from here.
 

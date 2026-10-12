@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-08-19
+last_updated: 2026-10-12
 ---
 
 # Core — Business Rules
@@ -27,8 +27,13 @@ still a live field name before removing it.
 - **401**: `ApiSecurityInterceptor.onError` (`security/api_interceptor.dart:290`) attempts exactly one
   `POST users/auth/token/refresh` per refresh window, using a static `Completer<bool>` lock so N concurrent
   401s share one refresh call and each retries with the resulting token. A refresh within the last 30
-  seconds is skipped in favor of retrying with the already-current token (`:336`). If the refresh endpoint
-  itself returns 200 with no access token, or fails, or throws — full logout (`SessionManager.logout()`).
+  seconds is skipped in favor of retrying with the already-current token (`:336`). If the refresh call gets
+  no answer (offline/timeout/TLS), a 5xx, or is throttled (backend sends HTTP 200 + `error.code`
+  `TOO_MANY_REQUESTS`; a raw 429 counts too) — `ApiSecurityInterceptor.isTransientRefreshFailure` — the
+  session is kept and only that request fails, with the refresh error rather than the 401. Any other failure
+  (401 `TOKEN_REFRESH_FAILED`, 200 with no access token, no refresh token stored) ends the session with
+  `SessionManager.endExpiredSession()`, which keeps biometric/auto-lock for the same customer
+  (`MPIN/BUSINESS_RULES.md` RULE-MPIN-015). Backend lifetimes: access 15 min, refresh 1 day sliding.
 - **409**: checked *before* 401 in the same `onError` (`:214`, comment at `:212` explains the ordering is
   deliberate) and never attempts a refresh. `SessionManager.forceLogout()` is deduplicated (only the first
   concurrent 409 shows the dialog, `session_manager.dart:32-37`) and sets a persistent
@@ -98,7 +103,9 @@ check is code-based, not path-based. Confirmed consumers: `features/withdrawal/s
 `AppConfig.keyHasSeenOnboarding` across a `deleteAll()` + restore. Rationale in the code comment: wiping the
 device ID would make the next login look like a brand-new device to the backend, which triggers spurious 409
 `SESSION_INVALIDATED` errors on the user's *other* logged-in devices. Do not "simplify" this to a bare
-`deleteAll()`.
+`deleteAll()`. `SecureStorageService.endExpiredSession()` is the second, narrower variant for a session that
+lapsed on its own: same wipe, plus it keeps `is_biometric_enabled`/`mpin_lock_timeout_seconds` for the same
+customer (RULE-MPIN-015). Logout button, account deletion and the 409 force-logout keep using `logout()`.
 
 ## RULE-CORE-010: Maintenance/alert gating is polled globally but re-checked fresh before any critical action
 `AppControlNotifier` (`providers/app_control_provider.dart`) polls `POST app/control` every 1 minute normally
