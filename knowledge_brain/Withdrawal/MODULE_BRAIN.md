@@ -88,6 +88,9 @@ screen — see `CROSS_MODULE_MAP.md` and `FORENSIC_TEMPLATE.md` for the bug this
   `fetch()` call) — see `withdrawal_screen.dart:1085` which calls `fetchWithdrawalPolicy` directly through the
   service, bypassing the notifier's `fetch()` method entirely (two independent code paths reach the same
   endpoint — the `withdrawalPolicyProvider` notifier appears unused by the live screen).
+- `withdrawalLimitsProvider` (`withdrawal_service.dart`) — `FutureProvider.autoDispose<WithdrawalLimits>`,
+  `withdrawal/policy` without `amount`, keyed on `selectedMetalIdProvider`. Drives the inline min/max/balance
+  error on `WithdrawalScreen` (see `BUSINESS_RULES.md` RULE-WITHDRAWAL-005).
 - `accountDetailsProvider` (`withdrawal_service.dart:182`) — `profile/accountdetails`, used only by
   `UpiSelectionScreen` (the orphaned screen). The live flow uses `bankAccountsProvider` (profile module,
   `profile/bank-accounts`) via `BankAccountPickerScreen` instead.

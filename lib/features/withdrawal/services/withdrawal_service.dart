@@ -204,13 +204,15 @@ class WithdrawalService {
   /// Fetch withdrawal policy for a given metal + amount.
   /// Endpoint: POST withdrawal/policy
   /// Payload:  { "id_metal": 1, "amount": 1000.00 }
+  /// [amount] is optional — omitting it returns just the per-commodity
+  /// limits (min/max) without validating an amount.
   Future<WithdrawalPolicy> fetchWithdrawalPolicy({
     required int metalId,
-    required double amount,
+    double? amount,
   }) async {
     final response = await _apiClient.post('withdrawal/policy', data: {
       'id_metal': metalId,
-      'amount': amount,
+      if (amount != null) 'amount': amount,
     });
     if (response.data != null && response.data['success'] == true) {
       final data = response.data['data'] as Map<String, dynamic>? ?? {};
@@ -269,6 +271,19 @@ final withdrawalBalanceProvider =
 });
 
 // ── Withdrawal Policy ─────────────────────────────────────────────────────
+
+/// Per-commodity min/max withdrawal limits (INR) for the selected metal,
+/// fetched without an amount so the screen can validate inline as the user
+/// types. Rebuilds on commodity switch. The server still re-validates the
+/// amount on submit — this is for early feedback only.
+final withdrawalLimitsProvider =
+    FutureProvider.autoDispose<WithdrawalLimits>((ref) async {
+  final metalId = int.tryParse(ref.watch(selectedMetalIdProvider)) ?? 1;
+  final policy = await ref
+      .read(withdrawalServiceProvider)
+      .fetchWithdrawalPolicy(metalId: metalId);
+  return policy.limits;
+});
 
 /// Holds the last fetched policy. Call [WithdrawalPolicyNotifier.fetch] to
 /// refresh (on screen load and every amount change).

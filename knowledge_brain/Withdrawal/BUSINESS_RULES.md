@@ -56,6 +56,14 @@ method. The **live, authoritative** limits are `WithdrawalLimits.minWithdrawal`/
 (`models/withdrawal_policy.dart:25-53`) and enforced via `WithdrawalValidation.isValid`/`message`
 (`:55-73`), consumed in `_handleWithdraw()` (`withdrawal_screen.dart:1091-1099`).
 
+**Inline validation (PM-STG-0488, 2026-10-13):** `withdrawalLimitsProvider` (`withdrawal_service.dart`) calls
+`withdrawal/policy` with `id_metal` only (no `amount`) on screen load / commodity switch to get the
+min/max limits up front. `WithdrawalScreen._amountError()` then shows an inline error under the amount field as the user
+types, checked in order: below `minWithdrawal`, above `maxWithdrawal`, above the withdrawable balance in INR
+(withdrawable grams × live buy rate), then any last server policy error. The Withdrawal button is disabled
+while any of these errors is showing. A "Min ₹X · Max ₹Y" hint is shown when there's no error. If limits fail to
+load, the min/max checks are skipped and the submit-time `withdrawal/policy` call remains the gate.
+
 ## RULE-WITHDRAWAL-006 — Field-level RSA encryption (verified against `AppConfig`, NOT the hand-written doc)
 
 `ApiSecurityInterceptor` treats a path as sensitive if it `.contains()` ANY entry in

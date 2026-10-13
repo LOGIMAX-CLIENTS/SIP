@@ -16,6 +16,7 @@ import '../providers/withdrawal_provider.dart';
 import '../services/withdrawal_service.dart';
 import '../models/withdrawal_balance.dart';
 import '../models/withdrawal_method.dart';
+import '../models/withdrawal_policy.dart';
 import '../../../routes/app_router.dart';
 import '../../profile/models/bank_account.dart';
 import '../../sip/screens/bank_account_picker_screen.dart';
@@ -80,6 +81,46 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
     super.dispose();
   }
 
+  /// Max INR the user can withdraw right now (withdrawable grams × live buy
+  /// rate), or null while balance/market data hasn't loaded.
+  double? _maxWithdrawableInr(CommodityType type,
+      AsyncValue<MarketRates> market, AsyncValue<WithdrawalBalance> balanceAsync) {
+    final withdrawableQty = balanceAsync.valueOrNull?.withdrawable ?? 0.0;
+    final liveRate = type == CommodityType.gold
+        ? market.valueOrNull?.goldBuy ?? 0.0
+        : market.valueOrNull?.silverBuy ?? 0.0;
+    final maxInr = withdrawableQty * liveRate;
+    return (balanceAsync.hasValue && market.hasValue && maxInr > 0)
+        ? maxInr
+        : null;
+  }
+
+  /// Inline amount error, checked in order: min limit, max limit, then
+  /// withdrawable balance. Falls back to the last server policy error.
+  /// Limits come from [withdrawalLimitsProvider]; if they haven't loaded the
+  /// min/max checks are skipped (the server re-validates on submit).
+  String? _amountError(double amount, double? maxInr, WithdrawalLimits? limits) {
+    if (amount > 0) {
+      if (limits != null &&
+          limits.minWithdrawal > 0 &&
+          amount < limits.minWithdrawal) {
+        return 'Minimum withdrawal amount is ₹${_formatInr(limits.minWithdrawal)}';
+      }
+      if (limits != null &&
+          limits.maxWithdrawal > 0 &&
+          amount > limits.maxWithdrawal) {
+        return 'Maximum withdrawal amount is ₹${_formatInr(limits.maxWithdrawal)}';
+      }
+      if (maxInr != null && amount > maxInr) {
+        return 'Amount exceeds your withdrawable balance of ₹${maxInr.toStringAsFixed(2)}';
+      }
+    }
+    return _policyError;
+  }
+
+  String _formatInr(double v) =>
+      v == v.truncateToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+
   @override
   Widget build(BuildContext context) {
     final selectedCommodity = ref.watch(commodityProvider);
@@ -87,6 +128,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
     final withdrawalState = ref.watch(withdrawalProvider);
     final timerState = ref.watch(buyRateTimerProvider);
     final balanceAsync = ref.watch(withdrawalBalanceProvider);
+    final limits = ref.watch(withdrawalLimitsProvider).valueOrNull;
 
     // Watch config to trigger the API fetch
     final configAsync = ref.watch(savingConfigProvider);
@@ -287,7 +329,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   SizedBox(height: 24.h),
                   _buildMainInputCard(
                       selectedCommodity, market, withdrawalState,
-                      balanceAsync),
+                      balanceAsync, limits),
                   SizedBox(height: 16.h),
                 ],
               ),
@@ -296,7 +338,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
           // ── Pinned Footer ─────────────────────────────────────────
           _buildFooter(
               withdrawalState, market, selectedCommodity,
-              isCurrentMarketClosed, balanceAsync),
+              isCurrentMarketClosed, balanceAsync, limits),
         ],
       ),
       ),
@@ -576,8 +618,12 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       CommodityType type,
       AsyncValue<MarketRates> market,
       WithdrawalState state,
-      AsyncValue<WithdrawalBalance> balanceAsync) {
+      AsyncValue<WithdrawalBalance> balanceAsync,
+      WithdrawalLimits? limits) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final errorMsg = _amountError(
+        state.amount, _maxWithdrawableInr(type, market, balanceAsync), limits);
+    final hasError = errorMsg != null;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 24.w),
       child: Container(
@@ -691,7 +737,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       color: const Color(0xFFF9FAFB),
                       borderRadius: BorderRadius.circular(16.r),
                       border: Border.all(
-                        color: _policyError != null
+                        color: hasError
                             ? Colors.red.withOpacity(0.45)
                             : Colors.black.withOpacity(0.05),
                       ),
@@ -769,6 +815,47 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       ],
                     ),
                   ),
+            if (hasError) ...[
+              SizedBox(height: 6.h),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE53935).withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(10.r),
+                  border: Border.all(
+                      color: const Color(0xFFE53935).withOpacity(0.18)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 14.sp, color: const Color(0xFFE53935)),
+                    SizedBox(width: 8.w),
+                    Expanded(
+                      child: Text(
+                        errorMsg,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFFE53935),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (limits != null && limits.minWithdrawal > 0) ...[
+              SizedBox(height: 6.h),
+              Text(
+                limits.maxWithdrawal > 0
+                    ? 'Min ₹${_formatInr(limits.minWithdrawal)} · Max ₹${_formatInr(limits.maxWithdrawal)}'
+                    : 'Min ₹${_formatInr(limits.minWithdrawal)}',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black45,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -779,31 +866,26 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
       AsyncValue<MarketRates> market,
       CommodityType type,
       bool isCurrentMarketClosed,
-      AsyncValue<WithdrawalBalance> balanceAsync) {
-    // ── Client-side balance check ──────────────────────────────────────
+      AsyncValue<WithdrawalBalance> balanceAsync,
+      WithdrawalLimits? limits) {
+    // ── Client-side amount check ───────────────────────────────────────
     // Withdrawable is the authoritative figure for both display and
     // validation here — the server re-validates against its own locked
     // Withdrawable at submission time regardless (see initiate_withdrawal).
-    final withdrawableQty = balanceAsync.valueOrNull?.withdrawable ?? 0.0;
-    final liveRate = type == CommodityType.gold
-        ? market.valueOrNull?.goldBuy ?? 0.0
-        : market.valueOrNull?.silverBuy ?? 0.0;
-    final maxInr = withdrawableQty * liveRate;
-    // Balance/market not loaded yet (maxInr <= 0) must NOT be treated as "no
-    // limit" — that silently let a large amount typed before this data
+    // Balance/market not loaded yet (maxInr == null) must NOT be treated as
+    // "no limit" — that silently let a large amount typed before this data
     // arrived through to the server-side check with the button still
     // enabled. Block submission until we actually know the real limit.
-    final balanceKnown = balanceAsync.hasValue && market.hasValue && maxInr > 0;
-    final exceedsBalance = withdrawalState.amount > 0 &&
-        (!balanceKnown || withdrawalState.amount > maxInr);
+    final maxInr = _maxWithdrawableInr(type, market, balanceAsync);
+    final amountError = _amountError(withdrawalState.amount, maxInr, limits);
 
     // Button enabled when: amount > 0, not processing, market open,
-    // no balance exceeded, and no pending policy error.
+    // balance known, and no inline (min/max/balance/policy) error.
     final isEnabled = withdrawalState.amount > 0 &&
         !withdrawalState.isProcessing &&
         !isCurrentMarketClosed &&
-        !exceedsBalance &&
-        _policyError == null;
+        maxInr != null &&
+        amountError == null;
     return SafeArea(
       top: false,
       child: Container(
