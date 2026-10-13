@@ -356,13 +356,8 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     // when isActive briefly went false, the UI flicked to a different
     // data source causing the zig-zag shake effect.
     final liveMarket = ref.watch(marketRatesStreamProvider);
-    final MarketRates? displayRates = isCurrentMarketClosed
-        ? liveMarket.valueOrNull // market closed \u2192 use socket (0)
-        : (timerState.lockedRates ?? // timer active OR just expired
-            liveMarket.valueOrNull); // fallback to live rate
-    final marketState = displayRates != null
-        ? AsyncData<MarketRates>(displayRates)
-        : liveMarket; // still loading on first open
+    final marketState = _resolveDisplayRates(
+        isCurrentMarketClosed, timerState.lockedRates, liveMarket);
 
     if (_isProcessing) {
       return Scaffold(
@@ -1488,38 +1483,64 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
     };
   }
 
-  void _showBreakdownSheet(AsyncValue<dynamic> market, CommodityType type,
-      AsyncValue<SavingConfig> configAsync) {
-    final b = _computeBreakdown(market, type, configAsync);
+  /// The rate every figure on this screen is computed from: the timer-locked
+  /// rate while the market is open, falling back to the live socket rate.
+  static AsyncValue<MarketRates> _resolveDisplayRates(bool isMarketClosed,
+      MarketRates? lockedRates, AsyncValue<MarketRates> liveMarket) {
+    final MarketRates? displayRates = isMarketClosed
+        ? liveMarket.valueOrNull // market closed → use socket (0)
+        : (lockedRates ?? // timer active OR just expired
+            liveMarket.valueOrNull); // fallback to live rate
+    return displayRates != null
+        ? AsyncData<MarketRates>(displayRates)
+        : liveMarket; // still loading on first open
+  }
+
+  void _showBreakdownSheet(CommodityType type) {
     final metalLabel =
         type == CommodityType.gold ? 'Gold Value' : 'Silver Value';
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _BreakdownSheet(
-        totalPayable: b['total']!,
-        metalValue: b['metalValue']!,
-        gstAmount: b['gst']!,
-        grams: b['grams']!,
-        gstRate: b['gstRate']!,
-        cgstRate: b['cgstRate']!,
-        sgstRate: b['sgstRate']!,
-        cgstAmount: b['cgst']!,
-        sgstAmount: b['sgst']!,
-        metalLabel: metalLabel,
-        isInvalid: b['total']! <= 0 ||
-            b['total']! < (configAsync.valueOrNull?.minAmount ?? 0) ||
-            b['total']! >
-                (configAsync.valueOrNull?.maxAmount ?? double.infinity),
-        isProcessing: _isProcessing,
-        onPayNow: () {
-          Navigator.pop(context); // close breakdown sheet
-          // Show payment method selection before proceeding
-          _showPaymentMethodSheet(
-            market, type, b['total']!, configAsync.valueOrNull!, b['grams']!);
-        },
-      ),
+      // The sheet watches the same providers as the screen and recomputes on
+      // every rate re-lock. Computing the split once at open time left its
+      // Quantity on the old rate while the input card moved to the new one
+      // (PM-STG-0473: 0.031618gm on screen vs 0.031616gm in the sheet).
+      builder: (_) => Consumer(builder: (_, ref, __) {
+        final marketStatusMap =
+            ref.watch(marketStatusProvider).valueOrNull ?? const {};
+        final commodityId = type == CommodityType.gold ? '1' : '3';
+        final market = _resolveDisplayRates(
+            marketStatusMap[commodityId] == false,
+            ref.watch(sellRateTimerProvider).lockedRates,
+            ref.watch(marketRatesStreamProvider));
+        final configAsync = ref.watch(savingConfigProvider);
+        final b = _computeBreakdown(market, type, configAsync);
+        return _BreakdownSheet(
+          totalPayable: b['total']!,
+          metalValue: b['metalValue']!,
+          gstAmount: b['gst']!,
+          grams: b['grams']!,
+          gstRate: b['gstRate']!,
+          cgstRate: b['cgstRate']!,
+          sgstRate: b['sgstRate']!,
+          cgstAmount: b['cgst']!,
+          sgstAmount: b['sgst']!,
+          metalLabel: metalLabel,
+          isInvalid: b['total']! <= 0 ||
+              b['total']! < (configAsync.valueOrNull?.minAmount ?? 0) ||
+              b['total']! >
+                  (configAsync.valueOrNull?.maxAmount ?? double.infinity),
+          isProcessing: _isProcessing,
+          onPayNow: () {
+            Navigator.pop(context); // close breakdown sheet
+            // Show payment method selection before proceeding
+            _showPaymentMethodSheet(market, type, b['total']!,
+                configAsync.valueOrNull!, b['grams']!);
+          },
+        );
+      }),
     );
   }
 
@@ -1594,7 +1615,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 // ── Left: ₹Amount dropdown ──
                 GestureDetector(
                   onTap: totalPayable > 0
-                      ? () => _showBreakdownSheet(market, type, configAsync)
+                      ? () => _showBreakdownSheet(type)
                       : null,
                   child: Padding(
                     padding:

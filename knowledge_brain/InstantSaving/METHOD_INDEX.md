@@ -1,6 +1,6 @@
 ---
 module: InstantSaving
-last_updated: 2026-08-19
+last_updated: 2026-10-13
 ---
 
 # InstantSaving — Method Index
@@ -93,7 +93,8 @@ See `CROSS_MODULE_MAP.md`.
 |---|---|---|---|
 | `initState` | 51 | Applies deep-link `initialAmount` arg; on first frame, clears + restarts `sellRateTimerProvider` with fresh live rate (unless market closed); invalidates `savingConfigProvider`/denomination providers. | Flutter lifecycle |
 | `_computeBreakdown(market, type, configAsync)` → `Map<String,double>` | 1304 | GST-aware amount↔weight breakdown — see `BUSINESS_RULES.md` RULE-INSTANTSAVING-001/002 for the exact formula. | `_showBreakdownSheet`, `_buildBottomAction` |
-| `_showBreakdownSheet(...)` | 1336 | Shows `_BreakdownSheet` (private `StatelessWidget`, same file) with computed totals; its "Pay Now" closes the sheet and calls `_showPaymentMethodSheet`. | Footer "₹Amount" dropdown tap |
+| `_showBreakdownSheet(type)` | 1499 | Shows `_BreakdownSheet` inside a `Consumer` that watches `marketStatusProvider`, `sellRateTimerProvider`, `marketRatesStreamProvider` and `savingConfigProvider`, so the split is recomputed on every rate re-lock and always matches the input card (PM-STG-0473 — it used to be computed once at open and went stale). Its "Pay Now" closes the sheet and calls `_showPaymentMethodSheet` with the current rate. | Footer "₹Amount" dropdown tap |
+| `_resolveDisplayRates(isMarketClosed, lockedRates, liveMarket)` (static) | 1488 | Single source for the rate the screen shows: locked rate while open, else live socket rate. Used by `build` and the breakdown sheet. | `build`, `_showBreakdownSheet` |
 | `_showPaymentMethodSheet(market, type, totalPayable, config, grams)` | 1530 | Shows `PaymentMethodSheet`; `onProceed` → `_handleConfirmOrder`. | `_showBreakdownSheet`'s Pay Now, footer "Pay Now" pill |
 | `_handleConfirmOrder(market, type, totalPayable, config, [grams, paymentMethod])` | 1550 | The orchestration method — see `MODULE_BRAIN.md` flow diagram and `DATA_FLOW.md` for full trace. Calls `checkEligibility`, branches on `next_step`, invokes `KycVerificationFlow.start` and/or `PaymentHandler.startPayment`. | Pay Now / breakdown sheet Pay Now |
 | `_trunc6(v)` / `_trunc2(v)` (static) | 1698 / 1699 | Floor-truncation helpers — 6dp for weight, 2dp for money. **Not rounding.** | `_computeBreakdown`, `_buildAmountInputCard`, `_buildBestOfferBlock` |
