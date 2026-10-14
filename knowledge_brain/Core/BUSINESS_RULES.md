@@ -118,15 +118,17 @@ open (`MaintenanceGateResult.clear`, `:236-238,280-283`) — client-side connect
 transaction on their own.
 
 ## RULE-CORE-011: Screenshot/recording protection is a runtime-toggleable global flag, not a per-screen opt-in list
-`AppConfig.enableScreenshotProtection` (`config/app_config.dart:39`) starts `false` and is flipped by
-`AppControlNotifier._fetch()` whenever the `app/control` response's `data.security.enable_screenshot_protection`
-boolean differs from the current value (`providers/app_control_provider.dart:130-138`), immediately calling
-`ScreenshotSecurityService.initialize()` to apply/remove `FLAG_SECURE` (Android) or the blur overlay (iOS)
-app-wide. Individual screens (`otp_screen.dart`, `mpin_screen.dart` confirmed via grep) additionally call
-`secureScreen()`/`releaseScreen()` in `initState`/`dispose` — but both are no-ops if the global flag is off
-(`screenshot_security_service.dart:43,56`). `releaseScreen()` deliberately never calls
-`preventScreenshotOff()` — only `protectDataLeakageWithBlurOff()` — because doing so on Android would remove
-`FLAG_SECURE`, making content visible in the recent-apps switcher (`:59-61`).
+Source of truth is the admin "APP control Security" config row (`APP_CONTROL_SECURITY.enable_screenshot_protection`),
+returned by `app/control` as `data.security.enable_screenshot_protection`: `true` = screenshots/recording blocked,
+`false` = allowed. `AppConfig.enableScreenshotProtection` (`config/app_config.dart`) defaults to `true` (secure
+until the server value is known); `main.dart` calls `ScreenshotSecurityService.loadCachedSetting()` (last server
+value from `shared_preferences` key `screenshot_protection_enabled` — not a secret) then `initialize()`.
+`AppControlNotifier._fetch()` passes every fetched value to `ScreenshotSecurityService.applyServerSetting()`,
+which caches it and re-syncs native protection. `initialize()` tracks the last applied state (`_applied`) so the
+1-minute poll never re-applies it. Android: `FLAG_SECURE` via the `com.startgold.app/security` method channel
+(`MainActivity` also sets it in `onCreate` so the first frame is protected). iOS: `ScreenProtector.preventScreenshotOn/Off`
+(screen_protector) — must not be stacked, hence the `_applied` guard. `secureScreen()`/`releaseScreen()` in
+`otp_screen.dart`/`mpin_screen.dart` are effectively no-ops; leaving a screen never clears protection.
 
 ## RULE-CORE-012: Withdrawal weight limits are hardcoded client-side constants, not server config
 `AppConstants.minWithdrawalGrams = 0.001`, `maxWithdrawalGrams = 100.0`, `amountDecimalLimit = 4`

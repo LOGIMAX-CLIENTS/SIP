@@ -131,10 +131,7 @@ class AppControlNotifier extends StateNotifier<AppControlState> {
       if (security is Map) {
         final enableSec = security['enable_screenshot_protection'];
         if (enableSec is bool) {
-          if (AppConfig.enableScreenshotProtection != enableSec) {
-            AppConfig.enableScreenshotProtection = enableSec;
-            await ScreenshotSecurityService.initialize();
-          }
+          await ScreenshotSecurityService.applyServerSetting(enableSec);
         }
       }
 
