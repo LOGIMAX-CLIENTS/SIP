@@ -48,13 +48,13 @@ class LegalScreen extends StatelessWidget {
                         Navigator.pushNamed(context, AppRouter.refundPolicy),
                   ),
                   MenuTile(
-                    title: 'AutoGold Terms & Conditions',
+                    title: 'AutoGOLD Terms & Conditions',
                     iconPath: 'assets/sidemenu/autosaving.svg',
                     onTap: () =>
                         Navigator.pushNamed(context, AppRouter.autoGoldTerms),
                   ),
                   MenuTile(
-                    title: 'Grievances',
+                    title: 'Grievance Redressal Policy',
                     iconPath: 'assets/sidemenu/enquiry.svg',
                     onTap: () =>
                         Navigator.pushNamed(context, AppRouter.grievances),

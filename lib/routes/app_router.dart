@@ -419,11 +419,11 @@ class AppRouter {
             ),
         legal: (context) => const LegalScreen(),
         autoGoldTerms: (context) => ContentScreen(
-              title: 'AutoGold Terms & Conditions',
+              title: 'AutoGOLD Terms & Conditions',
               provider: autoGoldTermsProvider,
             ),
         grievances: (context) => ContentScreen(
-              title: 'Grievances',
+              title: 'Grievance Redressal Policy',
               provider: grievancesProvider,
             ),
         sipTransactions: (context) => const SipTransactionHistoryScreen(),
