@@ -1536,8 +1536,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
           onPayNow: () {
             Navigator.pop(context); // close breakdown sheet
             // Show payment method selection before proceeding
-            _showPaymentMethodSheet(market, type, b['total']!,
-                configAsync.valueOrNull!, b['grams']!);
+            _showPaymentMethodSheet(type);
           },
         );
       }),
@@ -1571,7 +1570,6 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
     final b = _computeBreakdown(market, type, configAsync);
     final totalPayable = b['total']!;
-    final grams = b['grams']!;
     final isInvalid = (totalPayable < config.minAmount ||
         totalPayable > config.maxAmount ||
         totalPayable <= 0);
@@ -1642,8 +1640,7 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
                 GestureDetector(
                   onTap: (isInvalid || _isProcessing)
                       ? null
-                      : () => _showPaymentMethodSheet(
-                          market, type, totalPayable, config, grams),
+                      : () => _showPaymentMethodSheet(type),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     height: 48.h,
@@ -1707,21 +1704,39 @@ class _InstantSavingScreenState extends ConsumerState<InstantSavingScreen>
 
   /// Shows the payment method bottom sheet and then calls _handleConfirmOrder
   /// with the selected method once the user taps "Proceed to Pay".
-  void _showPaymentMethodSheet(
-    AsyncValue<dynamic> market,
-    CommodityType type,
-    double totalPayable,
-    SavingConfig config,
-    double grams,
-  ) {
+  void _showPaymentMethodSheet(CommodityType type) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => PaymentMethodSheet(
         onProceed: (String paymentMethod) {
+          if (!mounted) return;
+          // Re-resolve the rate here rather than capturing it when the sheet
+          // opened: the rate timer can expire and re-lock while the customer
+          // is choosing a method, and the order must use the rate shown now.
+          final marketStatusMap =
+              ref.read(marketStatusProvider).valueOrNull ?? const {};
+          final commodityId = type == CommodityType.gold ? '1' : '3';
+          final market = _resolveDisplayRates(
+              marketStatusMap[commodityId] == false,
+              ref.read(sellRateTimerProvider).lockedRates,
+              ref.read(marketRatesStreamProvider));
+          final configAsync = ref.read(savingConfigProvider);
+          final config = configAsync.valueOrNull;
+          final b = _computeBreakdown(market, type, configAsync);
+          final total = b['total']!;
+          if (config == null ||
+              total <= 0 ||
+              total < config.minAmount ||
+              total > config.maxAmount) {
+            AppToast.show(
+                context, 'Market rates not ready. Please wait a moment.',
+                type: ToastType.warning, position: ToastPosition.center);
+            return;
+          }
           _handleConfirmOrder(
-              market, type, totalPayable, config, grams, paymentMethod);
+              market, type, total, config, b['grams']!, paymentMethod);
         },
       ),
     );
