@@ -56,7 +56,9 @@ void main() async {
 
     // 2. Screenshot & Screen Recording Protection
     //    Initializes and sets FLAG_SECURE on Android and blur overlay on iOS
-    //    based on configuration.
+    //    based on the last admin setting (APP_CONTROL_SECURITY) cached from
+    //    app/control; AppControlNotifier re-syncs it on every fetch.
+    await ScreenshotSecurityService.loadCachedSetting();
     await ScreenshotSecurityService.initialize();
     // 3. Clear clipboard on launch (VAPT: Clipboard Leakage)
     //    Clears both system clipboard AND keyboard clipboard strip (Gboard).
