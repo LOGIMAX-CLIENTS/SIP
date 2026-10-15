@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'full_swipe_page_transitions_builder.dart';
+
 class AppTheme {
   // Brand Palette
   static const Color midnightNavy   = Color(0xFF020817);
@@ -53,6 +55,8 @@ class AppTheme {
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+          // Back swipe from anywhere on the screen, not just the left edge.
+          TargetPlatform.iOS: FullSwipePageTransitionsBuilder(),
         },
       ),
       primaryColor: primaryGreen,
@@ -122,6 +126,8 @@ class AppTheme {
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+          // Back swipe from anywhere on the screen, not just the left edge.
+          TargetPlatform.iOS: FullSwipePageTransitionsBuilder(),
         },
       ),
       primaryColor: primaryGreen,

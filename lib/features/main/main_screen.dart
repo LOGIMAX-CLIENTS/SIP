@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +38,7 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen> {
   final Set<int> _visitedTabs = {0};
   DateTime? _lastBackPressTime; // tracks double-tap-to-exit timing
+  double _tabSwipeDx = 0; // iOS swipe-back (either way) on tabs 1-3, see _buildTabSwipeBack
   // Dedupe guards for MainScreen's OWN navigation decision only — kept
   // PRIVATE, deliberately NOT the same Set that KycScreen claims into
   // (AadhaarNotifier.handledMismatchIds/etc.). These two concerns looked
@@ -159,7 +161,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// tapped into it from Profile themselves.
   void _navigateToKycAndLetItHandle() {
     if (!mounted) return;
-    Navigator.of(context).pushNamed(AppRouter.kycVerification, arguments: {'request_from': 'profile'});
+    Navigator.of(context).pushNamed(AppRouter.kycVerification,
+        arguments: {'request_from': 'profile'});
   }
 
   /// Grace period before MainScreen's own fallback claims a given outcome.
@@ -183,14 +186,18 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// exact attempt (the normal case where nothing disposes it), and still
   /// allows a genuine reverify (new verification_id) to trigger again.
   void _maybeShowAadhaarMismatchDialog(NameMismatchPrompt prompt) {
-    SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: scheduling fallback for ${prompt.verificationId}');
+    SecureLogger.d(
+        '[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: scheduling fallback for ${prompt.verificationId}');
     Future.delayed(_fallbackGracePeriod, () {
-      final alreadyShown = AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId);
-      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: grace period elapsed, mounted=$mounted, alreadyShownByKycScreen=$alreadyShown, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
+      final alreadyShown =
+          AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId);
+      SecureLogger.d(
+          '[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: grace period elapsed, mounted=$mounted, alreadyShownByKycScreen=$alreadyShown, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
       if (!mounted || alreadyShown) return;
       if (KycVerificationFlowMixin.hasMountedHost) return;
       if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
-      SecureLogger.d('[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: navigating');
+      SecureLogger.d(
+          '[KYC DEBUG] MainScreen._maybeShowAadhaarMismatchDialog: navigating');
       _navigateToKycAndLetItHandle();
     });
   }
@@ -200,7 +207,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// doc comment in kyc_controller.dart for why PAN reuses this field name).
   void _maybeShowPanMismatchDialog(NameMismatchPrompt prompt) {
     Future.delayed(_fallbackGracePeriod, () {
-      if (!mounted || AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId)) return;
+      if (!mounted ||
+          AadhaarNotifier.handledMismatchIds.contains(prompt.verificationId))
+        return;
       if (KycVerificationFlowMixin.hasMountedHost) return;
       if (!_navigatedMismatchIds.add(prompt.verificationId)) return;
       _navigateToKycAndLetItHandle();
@@ -233,14 +242,17 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   /// side, is what keeps that from also triggering a redundant navigation).
   void _maybeHandleAadhaarApproved(AadhaarState state) {
     final key = state.verificationId ?? 'approved-${state.maskedNumber}';
-    SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: scheduling fallback for $key');
+    SecureLogger.d(
+        '[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: scheduling fallback for $key');
     Future.delayed(_fallbackGracePeriod, () {
       final alreadyClaimed = AadhaarNotifier.handledApprovedKeys.contains(key);
-      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: grace elapsed, mounted=$mounted, alreadyClaimedByKycScreen=$alreadyClaimed, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
+      SecureLogger.d(
+          '[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: grace elapsed, mounted=$mounted, alreadyClaimedByKycScreen=$alreadyClaimed, hostMounted=${KycVerificationFlowMixin.hasMountedHost}');
       if (!mounted || alreadyClaimed) return;
       if (KycVerificationFlowMixin.hasMountedHost) return;
       if (!_navigatedApprovedKeys.add(key)) return;
-      SecureLogger.d('[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: navigating');
+      SecureLogger.d(
+          '[KYC DEBUG] MainScreen._maybeHandleAadhaarApproved: navigating');
       _navigateToKycAndLetItHandle();
     });
   }
@@ -264,7 +276,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     // kyc_screen.dart's _runVerifyAadhaar) — without that, the provider
     // would already be disposed by the time this fires.
     ref.listen<AadhaarState>(aadhaarProvider, (previous, next) {
-      SecureLogger.d('[KYC DEBUG] MainScreen.ref.listen fired: previous=${previous?.phase} next=${next.phase} mounted=$mounted');
+      SecureLogger.d(
+          '[KYC DEBUG] MainScreen.ref.listen fired: previous=${previous?.phase} next=${next.phase} mounted=$mounted');
       if (next.phase == AadhaarPhase.awaitingNameMismatchConfirm &&
           next.aadhaarMismatchPrompt != null) {
         _maybeShowAadhaarMismatchDialog(next.aadhaarMismatchPrompt!);
@@ -327,20 +340,23 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
-            IndexedStack(
-              index: selectedIndex,
-              children: [
-                const HomeScreen(),
-                _visitedTabs.contains(1)
-                    ? const InstantSavingScreen()
-                    : const SizedBox.shrink(),
-                _visitedTabs.contains(2)
-                    ? const TransactionHistoryScreen()
-                    : const SizedBox.shrink(),
-                _visitedTabs.contains(3)
-                    ? const ProfileScreen()
-                    : const SizedBox.shrink(),
-              ],
+            _buildTabSwipeBack(
+              selectedIndex,
+              IndexedStack(
+                index: selectedIndex,
+                children: [
+                  const HomeScreen(),
+                  _visitedTabs.contains(1)
+                      ? const InstantSavingScreen()
+                      : const SizedBox.shrink(),
+                  _visitedTabs.contains(2)
+                      ? const TransactionHistoryScreen()
+                      : const SizedBox.shrink(),
+                  _visitedTabs.contains(3)
+                      ? const ProfileScreen()
+                      : const SizedBox.shrink(),
+                ],
+              ),
             ),
             _buildBottomNav(ref, selectedIndex, isDark, keyboardOpen),
           ],
@@ -349,7 +365,32 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     );
   }
 
-  Widget _buildBottomNav(WidgetRef ref, int selectedIndex, bool isDark, bool keyboardOpen) {
+  /// iOS has no system back button, so on the Savings/History/Profile tabs a
+  /// swipe in either direction does what Android's back press does in the PopScope above:
+  /// return to Home. Home itself has nothing to go back to, so no recognizer
+  /// is attached there. Horizontal scrollables inside a tab still win their
+  /// own drags (they are deeper in the hit test).
+  Widget _buildTabSwipeBack(int selectedIndex, Widget child) {
+    if (defaultTargetPlatform != TargetPlatform.iOS || selectedIndex == 0) {
+      return child;
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: (_) => _tabSwipeDx = 0,
+      onHorizontalDragUpdate: (d) => _tabSwipeDx += d.primaryDelta ?? 0,
+      onHorizontalDragEnd: (d) {
+        final velocity = d.primaryVelocity ?? 0;
+        final dx = _tabSwipeDx.abs();
+        if (dx > 80 || (velocity.abs() > 500 && dx > 0)) {
+          ref.read(selectedTabProvider.notifier).state = 0;
+        }
+      },
+      child: child,
+    );
+  }
+
+  Widget _buildBottomNav(
+      WidgetRef ref, int selectedIndex, bool isDark, bool keyboardOpen) {
     final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
 
     // Hide navbar completely when the soft keyboard is visible
@@ -386,11 +427,16 @@ class _MainScreenState extends ConsumerState<MainScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(ref, 'Home',      selectedIndex == 0, isDark, 0, 'assets/footer/home'),
-                _buildNavItem(ref, 'Savings',   selectedIndex == 1, isDark, 1, 'assets/footer/invest'),
-                _buildNavItem(ref, 'History',   selectedIndex == 2, isDark, 2, 'assets/footer/history'),
-                _buildNavItem(ref, 'Profile',   selectedIndex == 3, isDark, 3, 'assets/footer/profile'),
-                _buildNavItem(ref, 'Jewellery', selectedIndex == 4, isDark, 4, 'assets/footer/jewelley'),
+                _buildNavItem(ref, 'Home', selectedIndex == 0, isDark, 0,
+                    'assets/footer/home'),
+                _buildNavItem(ref, 'Savings', selectedIndex == 1, isDark, 1,
+                    'assets/footer/invest'),
+                _buildNavItem(ref, 'History', selectedIndex == 2, isDark, 2,
+                    'assets/footer/history'),
+                _buildNavItem(ref, 'Profile', selectedIndex == 3, isDark, 3,
+                    'assets/footer/profile'),
+                _buildNavItem(ref, 'Jewellery', selectedIndex == 4, isDark, 4,
+                    'assets/footer/jewelley'),
               ],
             ),
           ),
