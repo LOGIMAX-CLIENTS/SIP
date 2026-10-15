@@ -166,8 +166,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Header shows immediately; content shimmer-loads below.
 
     final String customerName = profileState.user.name.isNotEmpty
-            ? profileState.user.name
-            : (userProfile?.name ?? '');
+        ? profileState.user.name
+        : (userProfile?.name ?? '');
 
     final String? photoUrl =
         profileState.user.photoUrl ?? userProfile?.photoUrl;
@@ -270,8 +270,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     data.isNewCustomer) {
                                   return KeyedSubtree(
                                     key: const ValueKey('new_customer_banner'),
-                                    child: _buildNewCustomerBanner(context,
-                                        selectedCommodity, isCurrentMarketClosed),
+                                    child: _buildNewCustomerBanner(
+                                        context,
+                                        selectedCommodity,
+                                        isCurrentMarketClosed),
                                   );
                                 }
                                 return KeyedSubtree(
@@ -291,7 +293,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   if (userProfile?.isNewUser == true ||
                                       prev.isNewCustomer) {
                                     return KeyedSubtree(
-                                      key: const ValueKey('new_customer_banner'),
+                                      key:
+                                          const ValueKey('new_customer_banner'),
                                       child: _buildNewCustomerBanner(
                                           context,
                                           selectedCommodity,
@@ -371,7 +374,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Builder(builder: (context) {
                   final dashAsync = ref.watch(homeDashboardProvider);
                   // Keep previous data visible during commodity switch (no shimmer flash)
-                  final dashboard = dashAsync.valueOrNull ?? dashAsync.whenData((d) => d).valueOrNull;
+                  final dashboard = dashAsync.valueOrNull ??
+                      dashAsync.whenData((d) => d).valueOrNull;
                   if (dashAsync.isLoading && dashboard == null) {
                     return _buildHomeScreenSkeleton(isDark);
                   }
@@ -1367,7 +1371,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               fontSize: 28.sp,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
-                              fontFeatures: const [FontFeature.tabularFigures()],
+                              fontFeatures: const [
+                                FontFeature.tabularFigures()
+                              ],
                             ),
                           ),
                         ),
@@ -1917,57 +1923,70 @@ class PremiumHomeHeader extends SliverPersistentHeaderDelegate {
                       ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRouter.notifications),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _buildActionIcon(isDark,
-                            Icons.notifications_none_rounded, Colors.white),
-                        if (unreadCount > 0)
-                          Positioned(
-                            right: -2,
-                            top: -2,
-                            child: Container(
-                              padding:
-                                  EdgeInsets.all(unreadCount > 9 ? 3.r : 4.r),
-                              constraints: BoxConstraints(
-                                  minWidth: 18.r, minHeight: 18.r),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFFFF1A1A),
-                                    Color(0xFFCC0000)
-                                  ],
-                                ),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: const Color(0xFF003716), width: 1.5),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFFFF1A1A)
-                                        .withOpacity(0.5),
-                                    blurRadius: 6,
-                                    spreadRadius: 1,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      GestureDetector(
+                        onTap: () =>
+                            Navigator.pushNamed(context, AppRouter.enquiryForm),
+                        child: _buildActionIcon(
+                            isDark, Icons.headset_mic_outlined, Colors.white),
+                      ),
+                      SizedBox(width: 10.w),
+                      GestureDetector(
+                        onTap: () => Navigator.pushNamed(
+                            context, AppRouter.notifications),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _buildActionIcon(isDark,
+                                Icons.notifications_none_rounded, Colors.white),
+                            if (unreadCount > 0)
+                              Positioned(
+                                right: -2,
+                                top: -2,
+                                child: Container(
+                                  padding: EdgeInsets.all(
+                                      unreadCount > 9 ? 3.r : 4.r),
+                                  constraints: BoxConstraints(
+                                      minWidth: 18.r, minHeight: 18.r),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFFFF1A1A),
+                                        Color(0xFFCC0000)
+                                      ],
+                                    ),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: const Color(0xFF003716),
+                                        width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFFF1A1A)
+                                            .withOpacity(0.5),
+                                        blurRadius: 6,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  unreadCount > 99 ? '99+' : '$unreadCount',
-                                  style: GoogleFonts.lora(
-                                    fontSize: unreadCount > 9 ? 8.sp : 9.sp,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                    height: 1,
+                                  child: Center(
+                                    child: Text(
+                                      unreadCount > 99 ? '99+' : '$unreadCount',
+                                      style: GoogleFonts.lora(
+                                        fontSize: unreadCount > 9 ? 8.sp : 9.sp,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        height: 1,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                      ],
-                    ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
