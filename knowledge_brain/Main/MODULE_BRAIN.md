@@ -59,7 +59,7 @@ widget**:
 | Providers watched | `selectedTabProvider` (`:118`) |
 | Providers invalidated/read (cross-module — see `CROSS_MODULE_MAP.md`) | `homeDashboardProvider`, `portfolioProvider`, `profileProvider`, `savingConfigProvider`, `historyProvider`, `notificationProvider`, `authControllerProvider` |
 | API calls | None directly — all delegated to the hosted screens' own controllers/services via the invalidations above |
-| Security | `PopScope(canPop: false)` with custom back-press handling (non-Home tab → jump to Home; Home tab → double-tap-to-exit within 2s, `AppToast` shown on first press) |
+| Security | `PopScope(canPop: false)` with custom back-press handling (non-Home tab → jump to Home; Home tab → double-tap-to-exit within 2s, `AppToast` shown on first press). **iOS (added 2026-10-15):** `_buildTabSwipeBack` wraps the `IndexedStack` on tabs 1-3 — a swipe either way (>80px or fling) sets `selectedTabProvider` to 0, mirroring the Android back press; no recognizer on Home. App-wide full-width iOS back swipe for pushed routes lives in `shared/theme/full_swipe_page_transitions_builder.dart` (registered in `AppTheme`'s `pageTransitionsTheme`) and respects `PopScope(canPop: false)`; right swipe tracks the finger, left swipe pops on release (>25% width or fling). |
 
 ### 2.1 Mount-time bootstrap (`initState`, `:36-66`)
 
