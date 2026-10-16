@@ -177,6 +177,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     _buildSection(
                         'General',
                         [
+                          // Change MPIN, Biometric Login and Auto-Lock
+                          // Timeout live one level down, on App Security.
+                          _buildMenuItem(
+                            'App Security',
+                            'assets/sidemenu/app_security.svg',
+                            onTap: () => Navigator.pushNamed(
+                                context, AppRouter.appSecurity),
+                          ),
                           _buildMenuItem(
                             'Refer & Earn',
                             'assets/sidemenu/refer.svg',
@@ -208,14 +216,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             'assets/sidemenu/help.svg',
                             onTap: () =>
                                 Navigator.pushNamed(context, AppRouter.contact),
-                          ),
-                          // Change MPIN, Biometric Login and Auto-Lock
-                          // Timeout live one level down, on App Security.
-                          _buildMenuItem(
-                            'App Security',
-                            'assets/sidemenu/app_security.svg',
-                            onTap: () => Navigator.pushNamed(
-                                context, AppRouter.appSecurity),
                           ),
                         ],
                         isDark),

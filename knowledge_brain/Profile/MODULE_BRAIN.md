@@ -277,3 +277,8 @@ encrypted if the *endpoint path* also matches `encryptedEndpoints`, which is whe
 - **Fonts (2026-10-08)**: the Auto-Lock option list, the Auto-Lock badge ("15 min") and every tile
   subtitle ("A 6-digit PIN…") use `NumericStyledText`, so digits render in Lora and words in Playfair
   Display — plain Playfair drew "30 sec" with old-style figures. The banner stays Inter, per the design canvas.
+
+## 2026-10-16 — App Security moved to top of General
+
+- General order is now **App Security**, Refer & Earn, FAQ, Legal, Enquiry, Contact Us (supersedes the
+  2026-10-02 order above). Still 6 rows, so the loading skeleton is unchanged.
