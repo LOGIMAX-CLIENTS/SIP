@@ -78,12 +78,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           _buildMenuItem(
                             'Personal Details',
                             'assets/sidemenu/account.svg',
+                            subtitle: 'Your name, contact and address',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.accountDetails),
                           ),
                           _buildMenuItem(
                             'KYC Status',
                             'assets/sidemenu/kyc.svg',
+                            subtitle: 'PAN and Aadhaar verification',
                             onTap: () async {
                               // Always open the KYC screen — even when already
                               // verified, so the user can view their masked
@@ -143,24 +145,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           _buildMenuItem(
                             'Bank Details',
                             'assets/sidemenu/bank.svg',
+                            subtitle: 'Manage your linked bank account',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.bankDetails),
                           ),
                           _buildMenuItem(
                             'Auto Savings',
                             'assets/sidemenu/autosaving.svg',
+                            subtitle: 'Your automatic savings plans',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.sipOverview),
                           ),
                           _buildMenuItem(
                             'Transaction History',
                             'assets/sidemenu/transhistory.svg',
+                            subtitle: 'All your past transactions',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.transactionHistory),
                           ),
                           _buildMenuItem(
                             'Nominee Details',
                             'assets/sidemenu/nominee.svg',
+                            subtitle: 'Add or update your nominee',
                             onTap: () =>
                                 Navigator.pushNamed(context, AppRouter.nominee),
                           ),
@@ -182,18 +188,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           _buildMenuItem(
                             'App Security',
                             'assets/sidemenu/app_security.svg',
+                            subtitle: 'MPIN, biometric login and auto-lock',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.appSecurity),
                           ),
                           _buildMenuItem(
                             'Refer & Earn',
                             'assets/sidemenu/refer.svg',
+                            subtitle: 'Invite friends and earn rewards',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.referral),
                           ),
                           _buildMenuItem(
                             'FAQ',
                             'assets/sidemenu/faq.svg',
+                            subtitle: 'Answers to common questions',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.faq),
                           ),
@@ -202,18 +211,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           _buildMenuItem(
                             'Legal',
                             'assets/sidemenu/tc.svg',
+                            subtitle: 'Terms, policies and grievances',
                             onTap: () =>
                                 Navigator.pushNamed(context, AppRouter.legal),
                           ),
                           _buildMenuItem(
                             'Enquiry',
                             'assets/sidemenu/enquiry.svg',
+                            subtitle: 'Raise and track your enquiries',
                             onTap: () => Navigator.pushNamed(
                                 context, AppRouter.enquiryList),
                           ),
                           _buildMenuItem(
                             'Contact Us',
                             'assets/sidemenu/help.svg',
+                            subtitle: 'Get in touch with our support team',
                             onTap: () =>
                                 Navigator.pushNamed(context, AppRouter.contact),
                           ),
@@ -226,11 +238,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           _buildMenuItem(
                             'Logout',
                             'assets/sidemenu/logout.svg',
+                            subtitle: 'Sign out of this device',
                             onTap: () => _handleLogout(context, ref),
                           ),
                           _buildMenuItem(
                             'Delete Account',
                             'assets/sidemenu/deleteacc.svg',
+                            subtitle: 'Permanently close your account',
                             isDestructive: true,
                             onTap: () => _handleDeleteAccount(context),
                           ),
@@ -326,13 +340,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ),
                 SizedBox(width: 16.w),
-                Container(
-                  width: 140.w,
-                  height: 14.h,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(7.r),
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 140.w,
+                      height: 14.h,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(7.r),
+                      ),
+                    ),
+                    SizedBox(height: 6.h),
+                    Container(
+                      width: 180.w,
+                      height: 10.h,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(5.r),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -733,12 +761,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildMenuItem(String title, String iconPath,
       {required VoidCallback onTap,
+      String? subtitle,
       bool isDestructive = false,
       Widget? trailing}) {
     return MenuTile(
       title: title,
       iconPath: iconPath,
       onTap: onTap,
+      subtitle: subtitle,
       isDestructive: isDestructive,
       trailing: trailing,
     );

@@ -11,6 +11,9 @@ class MenuTile extends StatelessWidget {
   final VoidCallback onTap;
   final bool isDestructive;
 
+  /// One-line description under the title; omitted when null.
+  final String? subtitle;
+
   /// Replaces the default arrow (e.g. Profile's KYC progress badge).
   final Widget? trailing;
 
@@ -20,6 +23,7 @@ class MenuTile extends StatelessWidget {
     required this.iconPath,
     required this.onTap,
     this.isDestructive = false,
+    this.subtitle,
     this.trailing,
   });
 
@@ -66,14 +70,36 @@ class MenuTile extends StatelessWidget {
                 ),
                 SizedBox(width: 16.w),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w500,
-                      color:
-                          isDestructive ? Colors.red : const Color(0xFF4B5563),
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w500,
+                          color: isDestructive
+                              ? Colors.red
+                              : const Color(0xFF4B5563),
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        SizedBox(height: 2.h),
+                        Text(
+                          subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 11.sp,
+                            fontWeight: FontWeight.w400,
+                            color: isDestructive
+                                ? Colors.red.withValues(alpha: 0.7)
+                                : const Color(0xFF9CA3AF),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 trailing ??

@@ -278,7 +278,11 @@ encrypted if the *endpoint path* also matches `encryptedEndpoints`, which is whe
   subtitle ("A 6-digit PIN…") use `NumericStyledText`, so digits render in Lora and words in Playfair
   Display — plain Playfair drew "30 sec" with old-style figures. The banner stays Inter, per the design canvas.
 
-## 2026-10-16 — App Security moved to top of General
+## 2026-10-16 — App Security moved to top of General + row descriptions
 
 - General order is now **App Security**, Refer & Earn, FAQ, Legal, Enquiry, Contact Us (supersedes the
   2026-10-02 order above). Still 6 rows, so the loading skeleton is unchanged.
+- **Row descriptions**: every Profile row now has a one-line grey description under its title (e.g. App
+  Security → "MPIN, biometric login and auto-lock"). They come from `MenuTile`'s optional `subtitle`,
+  passed through `_buildMenuItem(subtitle: …)`. Legal's rows don't pass one, so they look the same as
+  before. The skeleton `menuCard` has a matching second line.
