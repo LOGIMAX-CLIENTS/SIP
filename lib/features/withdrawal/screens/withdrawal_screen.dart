@@ -791,8 +791,11 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                             },
                             style: AppTextStyles.numericLarge(isDark)
                                 .copyWith(color: Colors.black),
-                            decoration: const InputDecoration(
-                                border: InputBorder.none, hintText: '0'),
+                            decoration: InputDecoration(
+                                border: InputBorder.none,
+                                hintText: '0',
+                                hintStyle: AppTextStyles.numericLarge(isDark)
+                                    .copyWith(color: Colors.black26)),
                           ),
                         ),
                         if (state.amount > 0)
@@ -849,7 +852,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                 limits.maxWithdrawal > 0
                     ? 'Min ₹${_formatInr(limits.minWithdrawal)} · Max ₹${_formatInr(limits.maxWithdrawal)}'
                     : 'Min ₹${_formatInr(limits.minWithdrawal)}',
-                style: GoogleFonts.playfairDisplay(
+                style: GoogleFonts.lora(
                   fontSize: 11.sp,
                   fontWeight: FontWeight.w500,
                   color: Colors.black45,
