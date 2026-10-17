@@ -37,31 +37,34 @@ class NomineeService {
     return response.data;
   }
 
-  /// Fetch dynamic relationship list from server.
+  /// Fetch the form settings from server: the dynamic relationship list and
+  /// whether Email ID is mandatory (NOMINEE_FORM_VALIDATION).
   ///
-  /// Returns a list of [NomineeRelationship] objects (id + name).
-  /// Returns `null` on failure so the caller can fall back to the
-  /// hardcoded [nomineeRelationships] list.
-  Future<List<NomineeRelationship>?> fetchRelationships() async {
+  /// Falls back to the hardcoded [nomineeRelationships] list and a mandatory
+  /// e-mail ([NomineeFormOptions.fallback]) for whatever the server didn't give.
+  Future<NomineeFormOptions> fetchFormOptions() async {
     try {
-      SecureLogger.d('NOMINEE: Fetching relationship list');
+      SecureLogger.d('NOMINEE: Fetching form options');
       final response = await _apiClient.post('users/nominee/relationships');
       if (response.data != null &&
           response.data['success'] == true &&
           response.data['data'] != null) {
         final data = response.data['data'] as Map<String, dynamic>;
-        final list = data['relationships'] as List<dynamic>?;
-        if (list != null && list.isNotEmpty) {
-          return list
-              .whereType<Map<String, dynamic>>()
-              .map((e) => NomineeRelationship.fromJson(e))
-              .where((r) => r.name.isNotEmpty)
-              .toList();
-        }
+        final list = (data['relationships'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .map((e) => NomineeRelationship.fromJson(e))
+            .where((r) => r.name.isNotEmpty)
+            .toList();
+        return NomineeFormOptions(
+          relationships:
+              (list != null && list.isNotEmpty) ? list : nomineeRelationships,
+          // Only an explicit false makes it optional.
+          emailMandatory: data['email_mandatory'] != false,
+        );
       }
     } catch (e) {
-      SecureLogger.e('NOMINEE: Failed to fetch relationships: $e');
+      SecureLogger.e('NOMINEE: Failed to fetch form options: $e');
     }
-    return null;
+    return NomineeFormOptions.fallback;
   }
 }

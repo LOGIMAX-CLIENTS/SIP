@@ -22,12 +22,29 @@ final hasNomineeProvider = Provider<bool>((ref) {
   );
 });
 
+// --- Form Options Provider ----------------------------------------------
+/// Fetches the relationship list and the email-mandatory setting in one call.
+/// Use `ref.invalidate(nomineeFormOptionsProvider)` to force refresh.
+final nomineeFormOptionsProvider =
+    FutureProvider<NomineeFormOptions>((ref) async {
+  final service = ref.watch(nomineeServiceProvider);
+  return service.fetchFormOptions();
+});
+
 // --- Dynamic Relationship List Provider ---------------------------------
-/// Fetches the relationship list from the API.
+/// Relationship list from the API.
 /// Falls back to the hardcoded [nomineeRelationships] list on failure.
 final nomineeRelationshipsProvider =
     FutureProvider<List<NomineeRelationship>>((ref) async {
-  final service = ref.watch(nomineeServiceProvider);
-  final result = await service.fetchRelationships();
-  return result ?? nomineeRelationships;
+  final options = await ref.watch(nomineeFormOptionsProvider.future);
+  return options.relationships;
+});
+
+/// Whether Email ID is mandatory (NOMINEE_FORM_VALIDATION). Mandatory while
+/// loading or on error, so the form never starts out more lenient than the server.
+final nomineeEmailMandatoryProvider = Provider<bool>((ref) {
+  return ref.watch(nomineeFormOptionsProvider).maybeWhen(
+        data: (options) => options.emailMandatory,
+        orElse: () => true,
+      );
 });

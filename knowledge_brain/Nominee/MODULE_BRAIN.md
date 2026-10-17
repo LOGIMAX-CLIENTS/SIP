@@ -16,10 +16,10 @@ and edit via one form/detail screen. Standard feature-first layout (`controller/
 ### File Map
 | Layer | File | Purpose |
 |---|---|---|
-| Controller/Providers | `lib/features/nominee/controller/nominee_controller.dart` | `nomineeServiceProvider`, `nomineeDetailsProvider` (FutureProvider), `hasNomineeProvider`, `nomineeRelationshipsProvider` |
+| Controller/Providers | `lib/features/nominee/controller/nominee_controller.dart` | `nomineeServiceProvider`, `nomineeDetailsProvider` (FutureProvider), `hasNomineeProvider`, `nomineeFormOptionsProvider`, `nomineeRelationshipsProvider`, `nomineeEmailMandatoryProvider` |
 | Model | `lib/features/nominee/models/nominee_model.dart` | `NomineeDetails`, `NomineeRelationship`, hardcoded fallback lists `nomineeRelationships` / `nomineeIdProofTypes` |
 | Screen | `lib/features/nominee/screens/nominee_screen.dart` | View mode (existing nominee) + Form mode (add/edit), pincode auto-fill |
-| Service | `lib/features/nominee/services/nominee_service.dart` | `getNomineeDetails()`, `updateNominee()`, `fetchRelationships()` |
+| Service | `lib/features/nominee/services/nominee_service.dart` | `getNomineeDetails()`, `updateNominee()`, `fetchFormOptions()` |
 | Widget | `lib/features/nominee/widgets/nominee_otp_sheet.dart` | `showNomineeMobileOtpSheet` / `showNomineeEmailOtpSheet` → channel-agnostic `NomineeOtpSheet` (OTP entry, resend with cooldown, verify). Calls `core/services/auth_service.dart` directly — NOT `authControllerProvider` (login/registration-scoped, saves tokens on verify) |
 | Route | `lib/routes/app_router.dart:120` (const `nominee = '/nominee'`), builder at `app_router.dart:356` | |
 | Entry point | `lib/features/profile/profile_screen.dart:228-233` | "Nominee Details" menu item |
@@ -27,7 +27,7 @@ and edit via one form/detail screen. Standard feature-first layout (`controller/
 ### Connection Flow
 ```
 ProfileScreen menu → Navigator.pushNamed(AppRouter.nominee)
-  → NomineeScreen.initState() → ref.invalidate(nomineeDetailsProvider) + nomineeRelationshipsProvider
+  → NomineeScreen.initState() → ref.invalidate(nomineeDetailsProvider) + nomineeFormOptionsProvider
        (forces a fresh fetch every time the screen opens — no session cache reuse on screen entry,
         DESPITE the provider's own doc comment calling it "cached for the session lifetime")
   → nomineeDetailsProvider (FutureProvider) → NomineeService.getNomineeDetails()
@@ -36,7 +36,7 @@ ProfileScreen menu → Navigator.pushNamed(AppRouter.nominee)
        hasNominee = nominee != null && nominee.isValid
        showForm = !hasNominee || _isEditing
        → showForm ? _buildFormView() : _buildDetailView()
-  → nomineeRelationshipsProvider (FutureProvider) → NomineeService.fetchRelationships()
+  → nomineeRelationshipsProvider (FutureProvider) → NomineeService.fetchFormOptions()
        → POST users/nominee/relationships → list of {id, name}, falls back to hardcoded
          `nomineeRelationships` const list on any failure
   → User submits form → _handleSubmit() client-side validation → NomineeService.updateNominee()
@@ -75,7 +75,7 @@ Screen behavior:
   Editing the value away from the verified one un-verifies it. An existing nominee's on-file
   mobile/email are seeded as the verified baseline in `_populateFields` (so editing only the
   address doesn't force re-verification).
-- Save/Update is enabled only when `_isMobileConfirmed && _isEmailConfirmed && _isPincodeConfirmed`;
+- Save/Update is enabled only when `_isMobileConfirmed && _isEmailSatisfied && _isPincodeConfirmed`;
   tapping it while disabled toasts the first blocking reason (`_showSaveBlockedReason`).
 - Client-side validation before submit (`_handleSubmit`): name non-empty & ≥2 chars, relationship
   selected, DOB selected, mobile valid + verified, email valid + verified, pincode (optional) 6 digits
@@ -106,7 +106,7 @@ No dedicated `NomineeState` class; the screen's own `State` object holds all edi
 |---|---|---|---|
 | `POST users/nominee/details` | `NomineeService.getNomineeDetails()` | Fetch existing nominee | No |
 | `POST users/nominee/update` | `NomineeService.updateNominee(nominee)` | Create or update (same endpoint for both — no separate create endpoint) | **Yes** — endpoint is in `AppConfig.encryptedEndpoints`; only the `mobile` field within the payload is transformed (it's the only key present that also appears in `AppConfig.sensitiveFields`) |
-| `POST users/nominee/relationships` | `NomineeService.fetchRelationships()` | Dynamic relationship list (id+name) | No |
+| `POST users/nominee/relationships` | `NomineeService.fetchFormOptions()` | Dynamic relationship list (id+name) + `email_mandatory` (NOMINEE_FORM_VALIDATION) | No |
 | `POST users/auth/generate-otp` (`type: NOMINEE_MOBILE`, resend `RESEND`) | `AuthService.sendOtp()` via `_handleMobileVerify` / mobile sheet | SMS OTP to the nominee's mobile | Yes (`mobile`) |
 | `POST users/auth/verify-mobile-otp` | `AuthService.verifyMobileOtpOnly()` via mobile sheet | Verify nominee mobile OTP — no token/session side effects | **No** — `auth/verify-mobile-otp` does not substring-match any `encryptedEndpoints` entry, so `mobile` + `otp` go plaintext (pre-existing gap) |
 | `POST users/auth/generate-email-otp` | `AuthService.sendEmailOtp()` via `_handleEmailVerify` / email sheet | E-mail OTP to the nominee's address; returns `otp_reference_id` + `resend_cooldown_seconds` | Endpoint listed, but no payload key is a sensitive field |
