@@ -1,6 +1,6 @@
 ---
 module: splash
-last_updated: 2026-08-19
+last_updated: 2026-10-17
 ---
 
 # Splash — Business Rules
@@ -16,3 +16,4 @@ last_updated: 2026-08-19
 | RULE-SPLASH-007 | The update dialog shown from splash always uses `forceUpdate: true`, regardless of the server's actual `AppVersionInfo.forceUpdate` flag or the soft/hard-update distinction the model otherwise supports (`minVersion` vs `latestVersion`). Any detected update is a hard block on this screen. **Unconfirmed whether intentional** — contrast with `core/providers/app_control_provider.dart`, which computes a real `forceUpdate` vs `updateRequired` split for its own consumer. | `splash_screen.dart:213-217` vs `core/providers/app_control_provider.dart:168-190` |
 | RULE-SPLASH-008 | Onboarding status is never checked during the splash routing decision. No call to `SessionManager.hasSeenOnboarding()` exists in this file, and no code path anywhere in `lib/` navigates to `AppRouter.onboarding` (repo-wide grep confirmed, see `Onboarding/MODULE_BRAIN.md`). | `splash_screen.dart:50-135` (absence), confirmed via grep |
 | RULE-SPLASH-009 | Back press during splash exits the app immediately — no confirmation, no "press again" pattern (unlike `main`'s home-tab double-tap-to-exit). | `splash_screen.dart:232-238` |
+| RULE-SPLASH-010 | Before the session check, `SecureStorageService.clearIfReinstalled()` compares the install time (Android `firstInstallTime`, iOS Documents-folder creation; null on web → skipped) with the `app_install_stamp` saved in secure storage. A different saved stamp means the stored session survived an uninstall (iOS Keychain, some Android devices), so it runs `logout()` and the app routes to `/login`. No stamp yet just records it. The stamp is kept through logouts (`_deviceKeys`). Added 2026-10-17. | `splash_screen.dart` `_initializeApp`, `secure_storage_service.dart` `clearIfReinstalled` |

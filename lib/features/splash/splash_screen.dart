@@ -55,6 +55,9 @@ class _SplashScreenState extends State<SplashScreen>
     bool mpinEnabled = false;
 
     try {
+      // A reinstall must start at Login, not on a session the old install
+      // left in secure storage.
+      await SecureStorageService.clearIfReinstalled();
       loggedIn = await SessionManager.isAuthenticated();
       mpinEnabled = await SecureStorageService.isMpinEnabled();
     } catch (e) {
