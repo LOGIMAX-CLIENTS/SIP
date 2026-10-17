@@ -679,19 +679,31 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                     ? market.valueOrNull?.goldBuy ?? 0
                     : market.valueOrNull?.silverBuy ?? 0;
                 final inrValue = withdrawable * rate;
+                // Small label under each figure: the weight held, and what
+                // that weight is worth at the live price.
+                Widget figure(String value, String label) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(value,
+                            style: AppTextStyles.numericLarge(isDark)
+                                .copyWith(color: Colors.black)),
+                        SizedBox(height: 2.h),
+                        Text(label,
+                            style: GoogleFonts.playfairDisplay(
+                                fontSize: 10.sp,
+                                color: Colors.black38,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    );
                 return Row(
                   children: [
-                    Text('${withdrawable.toStringAsFixed(6)} gm',
-                        style: AppTextStyles.numericLarge(isDark)
-                            .copyWith(color: Colors.black)),
+                    figure('${withdrawable.toStringAsFixed(6)} gm', 'Weight'),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12.w),
                       child: Container(
-                          width: 1.5, height: 20.h, color: Colors.black12),
+                          width: 1.5, height: 32.h, color: Colors.black12),
                     ),
-                    Text('\u20b9 ${inrValue.toStringAsFixed(2)}',
-                        style: AppTextStyles.numericLarge(isDark)
-                            .copyWith(color: Colors.black)),
+                    figure('\u20b9 ${inrValue.toStringAsFixed(2)}', 'Value'),
                   ],
                 );
               },
