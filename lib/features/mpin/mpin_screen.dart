@@ -24,6 +24,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../shared/widgets/animations.dart';
 import '../../shared/widgets/custom_button.dart';
 import '../../shared/widgets/app_toast.dart';
+import '../auth/controller/auth_controller.dart';
 
 class MpinScreen extends ConsumerStatefulWidget {
   const MpinScreen({super.key});
@@ -605,6 +606,25 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
               ],
             ),
           ),
+
+          // Back to the mobile-number login — only on the untyped quick-login
+          // screen, which has nothing behind it to pop to. Other modes keep
+          // their existing back behaviour (RULE-MPIN-009).
+          if (screenType == null)
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(left: 8.w, top: 4.h),
+                child: IconButton(
+                  onPressed: _handleBackToLogin,
+                  tooltip: 'Back to login',
+                  icon: Icon(
+                    Icons.arrow_back_rounded,
+                    size: 24.sp,
+                    color: isDark ? Colors.white : const Color(0xFF064E3B),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
       ),    // closes Scaffold (child of PopScope)
@@ -763,6 +783,38 @@ class _MpinScreenState extends ConsumerState<MpinScreen>
         if (kDebugMode) debugPrint('[FCM] Token registration skipped: $e');
       }
     });
+  }
+
+  /// Back button on the quick-login screen: confirm, end the stored session
+  /// (same as Profile → Logout) and go to the mobile-number login, e.g. to
+  /// sign in with a different number.
+  Future<void> _handleBackToLogin() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Login with mobile number?',
+            style: GoogleFonts.playfairDisplay(
+                fontSize: 16.sp, fontWeight: FontWeight.w700)),
+        content: Text(
+            'You will be logged out and need to verify your mobile number with OTP again.',
+            style: GoogleFonts.playfairDisplay(fontSize: 13.sp)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancel', style: GoogleFonts.playfairDisplay())),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Continue',
+                style: GoogleFonts.playfairDisplay(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref.read(authControllerProvider.notifier).logout();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(
+        context, AppRouter.login, (route) => false);
   }
 
   /// Forgot PIN flow: Send OTP → verify identity → reset PIN

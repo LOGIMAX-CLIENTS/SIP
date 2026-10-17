@@ -31,6 +31,7 @@ Both `MpinService.verifyMpin` (`mpin_service.dart:36`) and `changeMpin`/`setMpin
 
 ## RULE-MPIN-009: `PopScope` back-navigation behavior is mode-dependent, not a single blanket rule
 `isRootFlow = type==null || type=='setup' || type=='app_lock' || (type=='reset_pin' && from_app_lock) || type=='verify_after_reset'` (`mpin_screen.dart:248-251`). Root flows fully intercept back-press: `app_lock`/`reset_pin`-from-app-lock/`verify_after_reset` block exit entirely with an info toast; the untyped login/`setup` root flow instead allows exit via double-tap-within-2-seconds (`SystemNavigator.pop()`). Non-root types (`verify_only`, `withdrawal_pin`, `authorize_withdrawal`, plain `reset_pin`) get a normal `Navigator.pop`.
+The untyped quick-login screen also shows an on-screen back arrow (added 2026-10-17, `_handleBackToLogin`): after a confirm dialog it runs `authControllerProvider.logout()` (full wipe, same as Profile → Logout) and goes to `AppRouter.login` with the stack cleared — for signing in with a different mobile number. No other mode shows it.
 
 ## RULE-MPIN-010: "Forgot PIN?" is visible only in login-verify and app-lock contexts
 `showForgotPin = routeType == null || routeType == 'app_lock'` (`mpin_screen.dart:513`) — hidden for `setup`, `reset_pin`, `verify_only`, `withdrawal_pin`, `authorize_withdrawal`, `verify_after_reset`. It remains tappable even when `isLocked` is true (the link's `onTap` is not gated on lock state), making it the escape hatch from RULE-MPIN-006's client-side lockout.
