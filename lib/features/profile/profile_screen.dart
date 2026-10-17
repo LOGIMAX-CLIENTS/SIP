@@ -651,14 +651,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ),
                                 SizedBox(width: 4.w),
                                 Flexible(
-                                  child: Text(
-                                    'Last login: ${_formatLoginDate(user.lastLoginAt!)}',
-                                    style: GoogleFonts.playfairDisplay(
-                                      fontSize: 11.sp,
-                                      color: Colors.white.withOpacity(0.6),
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                                  child: _buildLoginLine(
+                                    'Last login: ',
+                                    _formatLoginDate(user.lastLoginAt!),
+                                    Colors.white.withOpacity(0.6),
                                   ),
                                 ),
                               ],
@@ -678,14 +674,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ),
                                 SizedBox(width: 4.w),
                                 Flexible(
-                                  child: Text(
-                                    'Last failed login: ${_formatLoginDate(user.lastFailedLoginAt!)}',
-                                    style: GoogleFonts.playfairDisplay(
-                                      fontSize: 11.sp,
-                                      color: const Color(0xFFFBBF24).withOpacity(0.8),
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                                  child: _buildLoginLine(
+                                    'Last failed login: ',
+                                    _formatLoginDate(user.lastFailedLoginAt!),
+                                    const Color(0xFFFBBF24).withOpacity(0.8),
                                   ),
                                 ),
                               ],
@@ -747,7 +739,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           SizedBox(width: 4.w),
           Text(
             label,
-            style: GoogleFonts.playfairDisplay(
+            // Counts ("6/6") use Lora like the app's other figures; the
+            // "Verified" fallback stays in Playfair.
+            style: (RegExp(r'\d').hasMatch(label)
+                ? GoogleFonts.lora
+                : GoogleFonts.playfairDisplay)(
               fontSize: 10.sp,
               fontWeight: FontWeight.w900,
               color: color,
@@ -756,6 +752,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// "Last login: <date>" — label in Playfair, the date/time in Lora.
+  Widget _buildLoginLine(String label, String date, Color color) {
+    return Text.rich(
+      TextSpan(
+        text: label,
+        style: GoogleFonts.playfairDisplay(
+          fontSize: 11.sp,
+          color: color,
+          fontWeight: FontWeight.w400,
+        ),
+        children: [
+          TextSpan(
+            text: date,
+            style: GoogleFonts.lora(
+              fontSize: 11.sp,
+              color: color,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+      overflow: TextOverflow.ellipsis,
     );
   }
 
