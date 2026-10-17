@@ -82,14 +82,16 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
   }
 
   /// Max INR the user can withdraw right now (withdrawable grams × live buy
-  /// rate), or null while balance/market data hasn't loaded.
+  /// rate, rounded down to the paisa), or null while balance/market data
+  /// hasn't loaded. Entering exactly this amount withdraws the full balance —
+  /// the server debits every withdrawable gram for it.
   double? _maxWithdrawableInr(CommodityType type,
       AsyncValue<MarketRates> market, AsyncValue<WithdrawalBalance> balanceAsync) {
     final withdrawableQty = balanceAsync.valueOrNull?.withdrawable ?? 0.0;
     final liveRate = type == CommodityType.gold
         ? market.valueOrNull?.goldBuy ?? 0.0
         : market.valueOrNull?.silverBuy ?? 0.0;
-    final maxInr = withdrawableQty * liveRate;
+    final maxInr = _floorToPaisa(withdrawableQty * liveRate);
     return (balanceAsync.hasValue && market.hasValue && maxInr > 0)
         ? maxInr
         : null;
@@ -117,6 +119,11 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
     }
     return _policyError;
   }
+
+  /// Rounds down to 2 decimals, matching the server's ROUND_DOWN on
+  /// max_withdrawable_inr. The epsilon absorbs float error (462.58 * 100 is
+  /// 46257.999…), which would otherwise drop a paisa.
+  static double _floorToPaisa(double v) => (v * 100 + 1e-6).floorToDouble() / 100;
 
   String _formatInr(double v) =>
       v == v.truncateToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
@@ -678,7 +685,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                 final rate = type == CommodityType.gold
                     ? market.valueOrNull?.goldBuy ?? 0
                     : market.valueOrNull?.silverBuy ?? 0;
-                final inrValue = withdrawable * rate;
+                final inrValue = _floorToPaisa(withdrawable * rate);
                 // Small label under each figure: the weight held, and what
                 // that weight is worth at the live price.
                 Widget figure(String value, String label) => Column(
@@ -816,8 +823,16 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                               final price = type == CommodityType.gold
                                   ? rates.goldBuy
                                   : rates.silverBuy;
-                              final grams =
-                                  price > 0 ? state.amount / price : 0.0;
+                              // The max amount sells the whole balance, so
+                              // show the full withdrawable weight for it.
+                              final maxInr = _maxWithdrawableInr(
+                                  type, market, balanceAsync);
+                              final grams = maxInr != null &&
+                                      state.amount >= maxInr
+                                  ? balanceAsync.value!.withdrawable
+                                  : price > 0
+                                      ? state.amount / price
+                                      : 0.0;
                               return Text('${grams.toStringAsFixed(6)}gm',
                                   style: GoogleFonts.lora(
                                       fontSize: 12.sp,
@@ -846,13 +861,11 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                         size: 14.sp, color: const Color(0xFFE53935)),
                     SizedBox(width: 8.w),
                     Expanded(
-                      child: Text(
+                      child: NumericStyledText(
                         errorMsg,
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 12.sp,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFFE53935),
-                        ),
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFE53935),
                       ),
                     ),
                   ],
