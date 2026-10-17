@@ -11,7 +11,7 @@ ProfileScreen "Nominee Details" menu tap                            profile_scre
 NomineeScreen.initState()                                           nominee_screen.dart:64-77
   └─ WidgetsBinding.addPostFrameCallback
        ├─ ref.invalidate(nomineeDetailsProvider)
-       └─ ref.invalidate(nomineeRelationshipsProvider)
+       └─ ref.invalidate(nomineeFormOptionsProvider)
 
 nomineeDetailsProvider rebuilds (FutureProvider)                    nominee_controller.dart:11-14
   └─ NomineeService.getNomineeDetails()                              nominee_service.dart:13
@@ -114,7 +114,7 @@ _buildRelationshipDropdown()                                         nominee_scr
        onChanged → sets both _selectedRelationship (name string, sent as 'relationship') AND
                    _selectedRelationshipId (matched by name lookup, sent as 'relationship_id')
 ```
-Underlying fetch: `nomineeRelationshipsProvider` → `NomineeService.fetchRelationships()` →
+Underlying fetch: `nomineeRelationshipsProvider` → `NomineeService.fetchFormOptions()` →
 `POST users/nominee/relationships` → on ANY exception, returns `null`, and the provider itself
 falls back to `nomineeRelationships` (`nominee_controller.dart:32`) — so there are actually TWO
 layers of fallback to the same hardcoded list (provider-level AND widget-level `.when` loading/error

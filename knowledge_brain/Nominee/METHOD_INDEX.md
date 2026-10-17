@@ -17,7 +17,7 @@ Alphabetical by class.
 
 | Method | File:Line | Purpose | Callers |
 |---|---|---|---|
-| `NomineeRelationship.fromJson(Map)` | `nominee_model.dart:135` | Deserialize one item from `users/nominee/relationships` | `NomineeService.fetchRelationships` |
+| `NomineeRelationship.fromJson(Map)` | `nominee_model.dart:135` | Deserialize one item from `users/nominee/relationships` | `NomineeService.fetchFormOptions` |
 
 ## `NomineeService` — `lib/features/nominee/services/nominee_service.dart`
 
@@ -25,7 +25,7 @@ Alphabetical by class.
 |---|---|---|---|---|
 | `getNomineeDetails()` | `nominee_service.dart:13` | `POST users/nominee/details` | Fetch nominee; returns `null` if API reports success but data is empty/name+relationship both null | `nomineeDetailsProvider` (`nominee_controller.dart:13`) |
 | `updateNominee(NomineeDetails)` | `nominee_service.dart:31` | `POST users/nominee/update` | Create/update; returns the raw `response.data` map (caller inspects `success`/`error`/`message`) | `_handleSubmit` (`nominee_screen.dart:1111`) |
-| `fetchRelationships()` | `nominee_service.dart:45` | `POST users/nominee/relationships` | Fetch dynamic relationship list; returns `null` on any exception or empty result | `nomineeRelationshipsProvider` (`nominee_controller.dart:31`) |
+| `fetchFormOptions()` | `nominee_service.dart:45` | `POST users/nominee/relationships` | Fetch relationship list + `email_mandatory` as `NomineeFormOptions`; falls back to the hardcoded list / mandatory e-mail on any exception or empty result | `nomineeFormOptionsProvider` (`nominee_controller.dart`) |
 
 ## Providers — `lib/features/nominee/controller/nominee_controller.dart`
 
@@ -34,7 +34,9 @@ Alphabetical by class.
 | `nomineeServiceProvider` | `nominee_controller.dart:6` | `Provider<NomineeService>` | DI |
 | `nomineeDetailsProvider` | `nominee_controller.dart:11` | `FutureProvider<NomineeDetails?>` | Fetches nominee on first watch; doc comment claims session-lifetime cache, but `NomineeScreen` invalidates it on every open (see `MODULE_BRAIN.md` §7) |
 | `hasNomineeProvider` | `nominee_controller.dart:17` | `Provider<bool>` | `nomineeAsync.maybeWhen(data: nominee != null && nominee.isValid, orElse: false)` — not observed to be watched anywhere in the screen (screen computes its own `hasNominee` locally); `unconfirmed`/possibly unused outside this module, could be intended for e.g. a Profile-screen "nominee added" indicator |
-| `nomineeRelationshipsProvider` | `nominee_controller.dart:28` | `FutureProvider<List<NomineeRelationship>>` | Server list with fallback to hardcoded `nomineeRelationships` on `null` result |
+| `nomineeFormOptionsProvider` | `nominee_controller.dart` | `FutureProvider<NomineeFormOptions>` | One call to `users/nominee/relationships`; source for the two providers below |
+| `nomineeRelationshipsProvider` | `nominee_controller.dart` | `FutureProvider<List<NomineeRelationship>>` | Relationship list from `nomineeFormOptionsProvider` (hardcoded fallback on failure) |
+| `nomineeEmailMandatoryProvider` | `nominee_controller.dart` | `Provider<bool>` | NOMINEE_FORM_VALIDATION.email_mandatory; `true` while loading/on error (RULE-NOMINEE-010) |
 
 ## `NomineeScreen` / `_NomineeScreenState` — `lib/features/nominee/screens/nominee_screen.dart`
 
@@ -57,7 +59,7 @@ Alphabetical by class.
 | `_buildErrorState()` | `nominee_screen.dart:1152` | Error card + Retry (invalidates `nomineeDetailsProvider`) |
 | `_formatDisplayDate(String)` | `nominee_screen.dart:1190` | DOB display formatting via `_parseDob` |
 | `_parseDob(String)` | `nominee_screen.dart:1200` | Parses `dd-MM-yyyy` (server) first, falls back to `yyyy-MM-dd` |
-| `_isMobileConfirmed` / `_isEmailConfirmed` / `_isPincodeConfirmed` (getters) | `nominee_screen.dart:83` / `:97` / `:68` | Save gates — value must equal the OTP-verified / Check-confirmed value (see RULE-NOMINEE-005/009/010) |
+| `_isMobileConfirmed` / `_isEmailConfirmed` / `_isPincodeConfirmed` (getters) | `nominee_screen.dart:83` / `:97` / `:68` | Save gates — value must equal the OTP-verified / Check-confirmed value (see RULE-NOMINEE-005/009/010). E-mail gates Save through `_isEmailSatisfied` (= `_isEmailConfirmed` when mandatory; blank or valid format when optional) |
 | `_showSaveBlockedReason()` | `nominee_screen.dart:1309` | Toasts the first unmet gate when the disabled Save button is tapped |
 | `_handleMobileVerify()` | `nominee_screen.dart:1328` | Sends nominee SMS OTP (`AuthService.sendOtp`, `type: NOMINEE_MOBILE`) → `showNomineeMobileOtpSheet` → sets `_verifiedMobile` |
 | `_handleEmailVerify()` | `nominee_screen.dart:1385` | Sends nominee e-mail OTP (`AuthService.sendEmailOtp`) → `showNomineeEmailOtpSheet` → sets `_verifiedEmail` |

@@ -92,11 +92,23 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
   // verification. Empty = nothing verified.
   String _verifiedEmail = '';
 
-  /// Email ID is mandatory and must be OTP-verified before the nominee can
-  /// be saved.
+  /// The e-mail has been OTP-verified (and not edited since).
   bool get _isEmailConfirmed {
     final email = _emailCtrl.text.trim().toLowerCase();
     return email.isNotEmpty && email == _verifiedEmail;
+  }
+
+  /// NOMINEE_FORM_VALIDATION.email_mandatory — mandatory until the server
+  /// says otherwise.
+  bool get _emailMandatory => ref.read(nomineeEmailMandatoryProvider);
+
+  /// Email ID check that gates Save/Update:
+  ///  - mandatory: entered AND OTP-verified
+  ///  - optional:  blank, or a valid address — verifying is the user's choice
+  bool get _isEmailSatisfied {
+    if (_emailMandatory) return _isEmailConfirmed;
+    final email = _emailCtrl.text.trim();
+    return email.isEmpty || Validators.validateEmail(email) == null;
   }
 
   // Location IDs from pincode check or existing data
@@ -118,7 +130,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     // Force fresh API calls every time the screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.invalidate(nomineeDetailsProvider);
-      ref.invalidate(nomineeRelationshipsProvider);
+      ref.invalidate(nomineeFormOptionsProvider);
     });
   }
 
@@ -193,6 +205,8 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
   @override
   Widget build(BuildContext context) {
     final nomineeAsync = ref.watch(nomineeDetailsProvider);
+    // Rebuild when NOMINEE_FORM_VALIDATION arrives — read via _emailMandatory.
+    ref.watch(nomineeEmailMandatoryProvider);
 
     // Seed form once when data loads
     ref.listen<AsyncValue<NomineeDetails?>>(nomineeDetailsProvider,
@@ -541,12 +555,16 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
 
               _buildTextField(
                 controller: _emailCtrl,
-                label: 'Email ID *',
+                label: _emailMandatory ? 'Email ID *' : 'Email ID',
+                isOptional: !_emailMandatory,
                 hint: 'Enter email address',
                 icon: Icons.email_rounded,
                 keyboardType: TextInputType.emailAddress,
                 inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
-                validator: Validators.validateEmail,
+                validator: (v) =>
+                    !_emailMandatory && (v ?? '').trim().isEmpty
+                        ? null
+                        : Validators.validateEmail(v),
                 onChanged: (_) => setState(() {}),
                 actionLabel: _isEmailConfirmed ? 'Verified' : 'Verify',
                 onAction: _isEmailConfirmed ? null : _handleEmailVerify,
@@ -626,7 +644,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
               Builder(builder: (context) {
                 final canSubmit = !_isSaving &&
                     _isMobileConfirmed &&
-                    _isEmailConfirmed &&
+                    _isEmailSatisfied &&
                     _isPincodeConfirmed;
                 return Stack(
                   children: [
@@ -1148,13 +1166,17 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
       return;
     }
 
+    // Mandatory: must be given and OTP-verified. Optional: may be blank; a
+    // given address only needs a valid format — verifying is up to the user.
     final email = _emailCtrl.text.trim();
-    final emailError = Validators.validateEmail(email);
-    if (emailError != null) {
-      AppToast.show(context, emailError, type: ToastType.error);
-      return;
+    if (_emailMandatory || email.isNotEmpty) {
+      final emailError = Validators.validateEmail(email);
+      if (emailError != null) {
+        AppToast.show(context, emailError, type: ToastType.error);
+        return;
+      }
     }
-    if (!_isEmailConfirmed) {
+    if (_emailMandatory && !_isEmailConfirmed) {
       AppToast.show(context, 'Please verify the email ID via OTP',
           type: ToastType.error);
       return;
@@ -1185,7 +1207,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
         relationshipId: _selectedRelationshipId,
         dob: DateFormat('yyyy-MM-dd').format(_selectedDob!),
         mobile: _mobileCtrl.text.trim(),
-        email: email,
+        email: email.isEmpty ? null : email,
         idType: _selectedIdType,
         idNumber: _idNumberCtrl.text.trim().isNotEmpty
             ? _idNumberCtrl.text.trim()
@@ -1312,8 +1334,12 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
           type: ToastType.error);
       return;
     }
-    if (!_isEmailConfirmed) {
-      AppToast.show(context, 'Please verify the email ID via OTP',
+    if (!_isEmailSatisfied) {
+      AppToast.show(
+          context,
+          _emailMandatory
+              ? 'Please verify the email ID via OTP'
+              : 'Enter a valid email ID',
           type: ToastType.error);
       return;
     }

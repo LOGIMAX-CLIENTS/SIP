@@ -139,6 +139,24 @@ class NomineeRelationship {
       );
 }
 
+/// Server-driven nominee form settings, from `users/nominee/relationships`.
+class NomineeFormOptions {
+  final List<NomineeRelationship> relationships;
+
+  /// NOMINEE_FORM_VALIDATION.email_mandatory — true: Email ID is required and
+  /// must be OTP-verified; false: optional, verifying is the user's choice.
+  final bool emailMandatory;
+
+  const NomineeFormOptions({
+    required this.relationships,
+    this.emailMandatory = true,
+  });
+
+  /// Used when the API call fails — keeps today's strict behaviour.
+  static const fallback =
+      NomineeFormOptions(relationships: nomineeRelationships);
+}
+
 /// Pre-defined nominee relationships (fallback when API fails).
 const List<NomineeRelationship> nomineeRelationships = [
   NomineeRelationship(id: 1, name: 'Father'),

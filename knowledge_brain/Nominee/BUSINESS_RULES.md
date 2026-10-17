@@ -30,8 +30,9 @@ nominee ID proof is an Aadhaar number entered under the generic `id_number` key.
   `lib/core/security/encryption_service.dart:108-126`.
 
 ### RULE-NOMINEE-004: Relationship list is server-driven with a hardcoded fallback, doubled
-`nomineeRelationshipsProvider` fetches from `POST users/nominee/relationships`; on any failure
-`NomineeService.fetchRelationships()` returns `null`, and the provider substitutes the hardcoded
+`nomineeRelationshipsProvider` reads `nomineeFormOptionsProvider`, which fetches from
+`POST users/nominee/relationships`; on any failure or empty list `NomineeService.fetchFormOptions()`
+substitutes the hardcoded
 `nomineeRelationships` const list (8 entries: Father/Mother/Spouse/Son/Daughter/Brother/Sister/Other).
 The dropdown widget's own `.when(loading/error)` branches ALSO fall back to the same hardcoded list —
 redundant double-fallback, not a bug, but worth simplifying.
@@ -81,18 +82,27 @@ Client-side gate only — the backend's `nominee/update` does not check verifica
 - Code: `nominee_screen.dart` — `_isMobileConfirmed`, `_handleMobileVerify`;
   `widgets/nominee_otp_sheet.dart` — `showNomineeMobileOtpSheet`.
 
-### RULE-NOMINEE-010: Nominee e-mail is mandatory and must be OTP-verified
-Added 2026-09-21. The Email ID field (label "Email ID *") has a "Verify" action that sends an e-mail
-OTP via `users/auth/generate-email-otp` (nominee's name passed as `first_name` for the greeting) and
-verifies via `users/auth/verify-email-otp` — the same endpoints registration and Account Details
-use. Save/Update is disabled until `_isEmailConfirmed` (trimmed, lower-cased value equals
-`_verifiedEmail`). Resend cooldown comes from the send response's `resend_cooldown_seconds` (backend
-`EMAIL_OTP_SECURITY` config; client fallback 60s). Server-side rules that surface as send/save errors:
+### RULE-NOMINEE-010: Nominee e-mail is mandatory or optional per NOMINEE_FORM_VALIDATION
+Added 2026-09-21; made config-driven 2026-10-17. Backend config row `NOMINEE_FORM_VALIDATION`
+(`{"email_mandatory": 1|0}`, read by `ConfigRepository.is_nominee_email_mandatory()`) is returned as
+`data.email_mandatory` by `users/nominee/relationships`. A missing/inactive/unreadable row, a failed
+fetch, or the value still loading all count as MANDATORY.
+- `email_mandatory = 1`: label "Email ID *"; Save/Update is disabled until `_isEmailConfirmed`
+  (trimmed, lower-cased value equals `_verifiedEmail`). `nominee/update` also rejects a blank e-mail
+  ("Email ID is required.").
+- `email_mandatory = 0`: label "Email ID (Optional)"; the field may be left blank (sent as absent →
+  saved NULL). A given address only needs a valid format — verifying it is the user's choice.
+The "Verify" action is shown in BOTH modes. It sends an e-mail OTP via `users/auth/generate-email-otp`
+(nominee's name passed as `first_name` for the greeting) and verifies via `users/auth/verify-email-otp`
+— the same endpoints registration and Account Details use. Resend cooldown comes from the send
+response's `resend_cooldown_seconds` (backend `EMAIL_OTP_SECURITY` config; client fallback 60s).
+Server-side rules that surface as send/save errors:
 - `generate-email-otp` rejects an address registered to a DIFFERENT customer ("This Email ID is
   already registered…").
 - `nominee/update` rejects an address registered to ANY customer (including the caller) or used by
-  another nominee.
-Client-side gate only — `nominee/update` still treats `email` as optional and does not check that it
-was verified.
-- Code: `nominee_screen.dart` — `_isEmailConfirmed`, `_handleEmailVerify`, `_handleSubmit`,
-  `_showSaveBlockedReason`; `widgets/nominee_otp_sheet.dart` — `showNomineeEmailOtpSheet`.
+  another nominee, and a blank one while mandatory. It never checks that the address was verified.
+Independent of `REGISTER_FORM_VALIDATION` (registration form).
+- Code: `nominee_screen.dart` — `_emailMandatory`, `_isEmailSatisfied`, `_isEmailConfirmed`,
+  `_handleEmailVerify`, `_handleSubmit`, `_showSaveBlockedReason`; `nominee_controller.dart` —
+  `nomineeFormOptionsProvider`, `nomineeEmailMandatoryProvider`; `widgets/nominee_otp_sheet.dart` —
+  `showNomineeEmailOtpSheet`.
