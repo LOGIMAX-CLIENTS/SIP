@@ -85,7 +85,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           _buildMenuItem(
                             'KYC Status',
                             'assets/sidemenu/kyc.svg',
-                            subtitle: 'PAN and Aadhaar verification',
+                            subtitle: 'PAN, Aadhaar, BAV verification',
                             onTap: () async {
                               // Always open the KYC screen — even when already
                               // verified, so the user can view their masked
