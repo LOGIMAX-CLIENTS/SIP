@@ -115,7 +115,7 @@ is time-sensitive and always requires a live fetch).
 
 3-layer `Stack`: full-bleed background image `assets/resources/splash_bg.png` (gradient fallback
 on load error), a centered animated GIF `assets/resources/Splashscreen.gif` (static
-`splash.png` fallback), and a footer SVG `assets/resources/splash_footer.svg`. Fade-in via
+`splash.png` fallback), and a bottom trust-badges card PNG `assets/resources/splash_trust_badges.png` (MMTC-PAMP / SEQUEL / ISO 27001 / BIS; full width minus 12.w margins, 16.h above the system inset; the older `splash_footer.svg` strip is still used by the Home screen). Fade-in via
 `AnimationController` (800ms, `Curves.easeIn`, `:34-46`).
 
 ## 3. Business Rules
