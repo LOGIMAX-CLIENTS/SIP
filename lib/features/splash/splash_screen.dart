@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/security/session_manager.dart';
 import '../../core/security/secure_storage_service.dart';
@@ -274,17 +273,15 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
 
-                // ── Layer 3: Footer SVG fixed at bottom ──
+                // ── Layer 3: Trust-badges card fixed at bottom ──
                 Positioned(
-                  left: 32.w,
-                  right: 32.w,
-                  bottom: MediaQuery.of(context).padding.bottom + 20.h,
-                  child: SvgPicture.asset(
-                    'assets/resources/splash_footer.svg',
-                    height: 28.h,
-                    fit: BoxFit.contain,
-                    // ignore: deprecated_member_use
-                    placeholderBuilder: (_) => const SizedBox.shrink(),
+                  left: 12.w,
+                  right: 12.w,
+                  bottom: MediaQuery.of(context).padding.bottom + 16.h,
+                  child: Image.asset(
+                    'assets/resources/splash_trust_badges.png',
+                    fit: BoxFit.fitWidth,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
               ],
