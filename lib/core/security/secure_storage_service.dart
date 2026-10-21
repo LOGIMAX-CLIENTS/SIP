@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../config/app_config.dart';
 
 class SecureStorageService {
@@ -153,7 +154,33 @@ class SecureStorageService {
     'persistent_device_id',
     'persistent_device_type',
     AppConfig.keyHasSeenOnboarding,
+    _installStampKey,
   ];
+
+  /// When this install of the app happened — see [clearIfReinstalled].
+  static const _installStampKey = 'app_install_stamp';
+
+  /// Logs out a session left behind by a PREVIOUS install of the app.
+  ///
+  /// Uninstalling should take the stored token with it, but secure storage
+  /// can outlive the app: the iOS Keychain always does, and on some Android
+  /// devices the data comes back too. The reinstalled app then opened
+  /// straight on the MPIN screen instead of Login. The install time
+  /// (Android `firstInstallTime`; iOS: creation of the app's Documents
+  /// folder) changes on every reinstall but not on updates, so a saved stamp
+  /// that doesn't match means this data belongs to an earlier install.
+  /// No saved stamp (first run, or users updating from before this check)
+  /// just records it. Web has no install time and is skipped.
+  /// Call once at startup, before reading the session.
+  static Future<void> clearIfReinstalled() async {
+    final installTime = (await PackageInfo.fromPlatform()).installTime;
+    if (installTime == null) return;
+    final stamp = installTime.millisecondsSinceEpoch.toString();
+    final saved = await _storage.read(key: _installStampKey);
+    if (saved == stamp) return;
+    if (saved != null) await logout();
+    await _storage.write(key: _installStampKey, value: stamp);
+  }
 
   /// This device's app-lock choices — kept by [endExpiredSession].
   static const _appLockPrefKeys = [
