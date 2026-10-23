@@ -48,7 +48,7 @@ class _SipFailureScreenState extends State<SipFailureScreen> {
                 child: Column(
                   children: [
                     Text(
-                      'Payment Failed',
+                      'Autopay Failed',
                       style: GoogleFonts.playfairDisplay(
                         fontSize: 24.sp,
                         fontWeight: FontWeight.w800,
