@@ -1326,18 +1326,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     final isPositive = returns >= 0;
+    final growthColor =
+        isPositive ? const Color(0xFF1BD010) : const Color(0xFFFF1A1A);
     // ── End recalculation ──
 
+    // Withdrawable amount rides on the gram line — dropped when the backend
+    // sends none (market closed, or an older backend without the field).
+    final withdrawable = data.summary.withdrawableInr;
+    final balanceLine = withdrawable != null
+        ? '${data.summary.balance.toStringAsFixed(6)}gm | ${_formatInr(withdrawable)}'
+        : '${data.summary.balance.toStringAsFixed(6)}gm';
+
     return Container(
+      // Full width even though every row inside is content-sized.
+      width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFF1E5631).withValues(alpha: 0.4),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(24.r),
         border: Border.all(
           color: Colors.white.withValues(alpha: 0.05),
           width: 1.0,
         ),
       ),
-      padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 24.w),
+      padding: EdgeInsets.fromLTRB(24.w, 22.h, 24.w, 21.h),
       child: Column(
         children: [
           // ── Animated content swap when commodity changes ──
@@ -1354,160 +1365,130 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   selected == CommodityType.gold
                       ? 'Total Gold Savings'
                       : 'Total Silver Savings',
-                  style: GoogleFonts.playfairDisplay(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: 15.sp,
-                    letterSpacing: 0.5,
+                  style: GoogleFonts.lora(
+                    color: Colors.white,
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.8,
                   ),
                 ),
-                SizedBox(height: 16.h),
-                // ── Balance + Growth pill — always centered as a stable unit ──
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Gradient gm text — Flexible + FittedBox auto-scales long balances
-                    Flexible(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: ShaderMask(
-                          shaderCallback: (bounds) => LinearGradient(
-                            begin: const Alignment(-0.87, -0.5),
-                            end: const Alignment(0.87, 0.5),
-                            colors: selected == CommodityType.gold
-                                ? const [Color(0xFFFFB500), Color(0xFFFFCA49)]
-                                : const [Color(0xFFB6B6B6), Color(0xFFE5E5E5)],
-                          ).createShader(bounds),
-                          blendMode: BlendMode.srcIn,
-                          child: Text(
-                            '${data.summary.balance.toStringAsFixed(6)} gm',
-                            style: GoogleFonts.lora(
-                              fontSize: 28.sp,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ],
-                            ),
-                          ),
-                        ),
+                SizedBox(height: 10.h),
+                // ── "0.320496gm | ₹4,591.11" — FittedBox shrinks long balances ──
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: ShaderMask(
+                    shaderCallback: (bounds) => LinearGradient(
+                      colors: selected == CommodityType.gold
+                          ? const [
+                              Color(0xFFFFEA76),
+                              Color(0xFFF6D449),
+                              Color(0xFFE6BB34),
+                            ]
+                          : const [
+                              Color(0xFFF2F2F2),
+                              Color(0xFFD9D9D9),
+                              Color(0xFFB6B6B6),
+                            ],
+                      stops: const [0.0, 0.6, 1.0],
+                    ).createShader(bounds),
+                    blendMode: BlendMode.srcIn,
+                    child: Text(
+                      balanceLine,
+                      maxLines: 1,
+                      style: GoogleFonts.lora(
+                        fontSize: 22.sp,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.7,
+                        color: Colors.white,
                       ),
                     ),
-                    SizedBox(width: 10.w),
-                    // Growth pill
-                    Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF023A17),
-                        borderRadius: BorderRadius.circular(20.r),
-                        border: Border.all(
-                          color: const Color(0xFF0B7F03),
-                          width: 0.6,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isPositive
-                                ? Icons.arrow_upward
-                                : Icons.arrow_downward,
-                            size: 13.sp,
-                            color: isPositive
-                                ? const Color(0xFF0ED500)
-                                : const Color(0xFFFF1A1A),
-                          ),
-                          SizedBox(width: 3.w),
-                          Text(
-                            '${returnsPct.toStringAsFixed(1)}%',
-                            style: GoogleFonts.lora(
-                              fontSize: 12.sp,
-                              fontWeight: FontWeight.bold,
-                              color: isPositive
-                                  ? const Color(0xFF0ED500)
-                                  : const Color(0xFFFF1A1A),
-                            ),
-                          ),
-                        ],
+                  ),
+                ),
+                SizedBox(height: 9.h),
+                // ── Growth: "↑ 60.1% Today" ──
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isPositive ? Icons.arrow_upward : Icons.arrow_downward,
+                      size: 15.sp,
+                      color: growthColor,
+                    ),
+                    SizedBox(width: 2.w),
+                    Text(
+                      '${returnsPct.toStringAsFixed(1)}% Today',
+                      style: GoogleFonts.lora(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                        color: growthColor,
                       ),
                     ),
                   ],
                 ),
-                // Withdrawable amount — hidden when the backend sends none
-                if (data.summary.withdrawableInr != null) ...[
-                  SizedBox(height: 8.h),
-                  Text(
-                    _formatInr(data.summary.withdrawableInr!),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.lora(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ],
-                SizedBox(height: 16.h),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
+                SizedBox(height: 23.h),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildPortfolioActionButton(
+                        label: 'Withdrawal',
+                        background: Colors.white.withValues(alpha: 0.2),
+                        foreground: Colors.white,
                         onPressed: () =>
                             Navigator.pushNamed(context, AppRouter.withdrawal),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF335C41),
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(vertical: 15.h),
-                          minimumSize: Size(0, 36.h),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(100.r),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Text(
-                          'Withdrawal',
-                          style: GoogleFonts.playfairDisplay(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.sp,
-                          ),
-                        ),
                       ),
-                    ),
-                    SizedBox(width: 16.w),
-                    Expanded(
-                      child: ElevatedButton(
+                      SizedBox(width: 16.w),
+                      _buildPortfolioActionButton(
+                        label: 'Buy more',
+                        background: Colors.white,
+                        foreground: const Color(0xFF032A11),
                         onPressed: () =>
                             ref.read(selectedTabProvider.notifier).state = 1,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF064E3B),
-                          padding: EdgeInsets.symmetric(vertical: 15.h),
-                          minimumSize: Size(0, 36.h),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(100.r),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Text(
-                          'Save More',
-                          style: GoogleFonts.playfairDisplay(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.sp,
-                          ),
-                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          SizedBox(height: 12.h),
+          SizedBox(height: 19.h),
           _buildCommodityToggle(selected, isCurrentMarketClosed),
         ],
+      ),
+    );
+  }
+
+  /// Content-width pill under the savings balance (Withdrawal / Buy more).
+  Widget _buildPortfolioActionButton({
+    required String label,
+    required Color background,
+    required Color foreground,
+    required VoidCallback onPressed,
+  }) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        padding: EdgeInsets.symmetric(horizontal: 23.w),
+        minimumSize: Size(0, 36.h),
+        fixedSize: Size.fromHeight(36.h),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(100.r),
+        ),
+        elevation: 0,
+        shadowColor: Colors.transparent,
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.lora(
+          fontWeight: FontWeight.bold,
+          fontSize: 13.sp,
+          letterSpacing: 0.3,
+        ),
       ),
     );
   }
@@ -1519,11 +1500,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // ── Gold / Silver pill toggle (matches Instant Saving page style) ──
+        // ── Gold / Silver pill toggle — active tab fills the track edge to edge ──
         Container(
-          padding: EdgeInsets.all(4.w),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.12),
+            color: Colors.white.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(100.r),
           ),
           child: Row(
@@ -1626,8 +1606,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// Individual pill tab for the Gold/Silver commodity toggle.
-  /// Uses the same gradient style as the Instant Saving page tabs.
+  /// Individual pill tab for the Gold/Silver commodity toggle. The active tab
+  /// carries a left-to-right metal gradient; the inactive one shows the track.
   Widget _buildCommodityPillTab({
     required String label,
     required bool isActive,
@@ -1638,56 +1618,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.symmetric(horizontal: 28.w, vertical: 10.h),
+        padding: EdgeInsets.symmetric(horizontal: 17.w, vertical: 7.h),
         decoration: BoxDecoration(
           gradient: isActive
               ? LinearGradient(
-                  begin: const Alignment(-0.87, -0.5),
-                  end: const Alignment(0.87, 0.5),
                   colors: isGoldTab
                       ? const [
-                          Color(0xFFEF9B00),
-                          Color(0xFFF5AC03),
-                          Color(0xFFF9D522),
-                          Color(0xFFF8C30D),
-                          Color(0xFFF5A702),
-                          Color(0xFFE78400),
+                          Color(0xFFBB8627),
+                          Color(0xFFFFFE8A),
+                          Color(0xFFFFF170),
                         ]
                       : const [
-                          Color(0xFFABABAB),
-                          Color(0xFFC2C3C5),
-                          Color(0xFFDFDFDF),
-                          Color(0xFFEEEEEE),
-                          Color(0xFFDEDDDD),
-                          Color(0xFFBDBDBD),
-                          Color(0xFFAFB1AE),
+                          Color(0xFF9A9A9A),
+                          Color(0xFFF4F4F4),
+                          Color(0xFFE2E2E2),
                         ],
+                  stops: const [0.0, 0.6, 1.0],
                 )
               : null,
-          borderRadius: BorderRadius.circular(50.r),
-          boxShadow: isActive
-              ? [
-                  BoxShadow(
-                    color: isGoldTab
-                        ? const Color(0xFFEF9B00).withOpacity(0.35)
-                        : const Color(0xFFBDBDBD).withOpacity(0.35),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  )
-                ]
-              : null,
+          borderRadius: BorderRadius.circular(100.r),
         ),
         child: Center(
           child: Text(
             label,
-            style: GoogleFonts.playfairDisplay(
+            style: GoogleFonts.lora(
               fontSize: 14.sp,
-              fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-              color: isActive
-                  ? (isGoldTab
-                      ? const Color(0xFF5C3300)
-                      : const Color(0xFF3D3D3D))
-                  : Colors.white.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
             ),
           ),
         ),
@@ -1698,54 +1655,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildPortfolioSkeleton(bool isDark) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E5631).withValues(alpha: 0.4),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(24.r),
         border: Border.all(
           color: Colors.white.withValues(alpha: 0.05),
           width: 1.0,
         ),
       ),
-      padding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 24.w),
+      padding: EdgeInsets.fromLTRB(24.w, 22.h, 24.w, 21.h),
       child: Column(
         children: [
           // ── "Total Gold Savings" label placeholder ──
           Center(
             child: AppLoaders.headerShimmerBlock(
-                height: 14.h, width: 130.w, borderRadius: 6),
+                height: 14.h, width: 150.w, borderRadius: 6),
           ),
-          SizedBox(height: 16.h),
+          SizedBox(height: 18.h),
 
-          // ── Balance grams + growth pill row ──
+          // ── "0.320496gm | ₹4,591.11" placeholder ──
+          Center(
+            child: AppLoaders.headerShimmerBlock(
+                height: 22.h, width: 250.w, borderRadius: 8),
+          ),
+          SizedBox(height: 14.h),
+
+          // ── Growth percentage placeholder ──
+          Center(
+            child: AppLoaders.headerShimmerBlock(
+                height: 14.h, width: 95.w, borderRadius: 6),
+          ),
+          SizedBox(height: 24.h),
+
+          // ── Two action buttons (Withdrawal / Buy more) ──
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AppLoaders.headerShimmerBlock(
-                  height: 28.h, width: 150.w, borderRadius: 8),
-              SizedBox(width: 10.w),
-              AppLoaders.headerShimmerPill(height: 24.h, width: 56.w),
-            ],
-          ),
-          SizedBox(height: 16.h),
-
-          // ── Two action buttons (Withdrawal / Invest More) ──
-          Row(
-            children: [
-              Expanded(
-                child: AppLoaders.headerShimmerPill(
-                    height: 44.h, width: double.infinity),
-              ),
+              AppLoaders.headerShimmerPill(height: 36.h, width: 122.w),
               SizedBox(width: 16.w),
-              Expanded(
-                child: AppLoaders.headerShimmerPill(
-                    height: 44.h, width: double.infinity),
-              ),
+              AppLoaders.headerShimmerPill(height: 36.h, width: 108.w),
             ],
           ),
-          SizedBox(height: 12.h),
+          SizedBox(height: 18.h),
 
           // ── Commodity toggle pill placeholder ──
           Center(
-            child: AppLoaders.headerShimmerPill(height: 40.h, width: 180.w),
+            child: AppLoaders.headerShimmerPill(height: 34.h, width: 140.w),
           ),
         ],
       ),
