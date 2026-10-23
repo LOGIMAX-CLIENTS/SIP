@@ -276,7 +276,7 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
 
-                // ── Layer 3: Trust-badges card fixed at bottom ──
+                // ── Layer 3: Trust-badges strip fixed at bottom ──
                 Positioned(
                   left: 12.w,
                   right: 12.w,
