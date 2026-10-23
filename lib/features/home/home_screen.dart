@@ -515,15 +515,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
         ),
-        // Footer Info
+        // Footer Info — ends the page and keeps itself clear of the floating
+        // nav bar, so there is no blank spacer under it
         if (dashboard.footerInfo != null)
           Container(
             transform: dashboard.rateHistory != null
                 ? Matrix4.translationValues(0, -32.h, 0)
                 : null,
-            child: _buildFooterInfo(isDark, dashboard.footerInfo!),
-          ),
-        SizedBox(height: 120.h),
+            child: _buildFooterInfo(isDark,
+                shiftedUpBy: dashboard.rateHistory != null ? 32.h : 0),
+          )
+        else
+          SizedBox(height: 120.h),
       ],
     );
   }
@@ -984,7 +987,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildFooterInfo(bool isDark, FooterInfo info) {
+  Widget _buildFooterInfo(bool isDark, {double shiftedUpBy = 0}) {
+    // The floating bottom nav sits 16.h above the system inset and is ~66.h
+    // tall; leave 24.h between it and the address. Layout space a shifted-up
+    // footer leaves below itself already counts towards that.
+    final bottomPadding = MediaQuery.of(context).viewPadding.bottom +
+        82.h +
+        24.h -
+        shiftedUpBy;
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -996,77 +1006,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
         color: isDark ? Colors.white.withValues(alpha: 0.06) : null,
       ),
-      padding: EdgeInsets.fromLTRB(24.w, 40.h, 24.w, 48.h),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title
-          NumericStyledText(
-            info.title,
-            fontSize: 26.sp,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
-            height: 36 / 26,
-          ),
-          SizedBox(height: 16.h),
-          // Subtitle
-          Text(
-            info.subtitle,
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 13.sp,
-              fontWeight: FontWeight.w500,
-              color: isDark ? Colors.white70 : const Color(0xFF4B4B4B),
-              height: 20 / 13,
-              letterSpacing: 0,
-            ),
-          ),
-          SizedBox(height: 28.h),
-          // Compliance badges
-          Center(
-            child: SvgPicture.asset(
-              'assets/resources/splash_footer.svg',
-              height: 40.h,
-              fit: BoxFit.contain,
-            ),
-          ),
-          SizedBox(height: 32.h),
-          // CIN row
-          if (info.cin.isNotEmpty) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'CIN: ',
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white70 : const Color(0xFF1A1A1A),
-                    height: 1.4,
-                  ),
-                ),
-                Expanded(
-                  child: NumericStyledText(
-                    info.cin,
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white54 : const Color(0xFF4B4B4B),
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 10.h),
-          ],
-          // Copyright
-          if (info.copyright.isNotEmpty)
-            NumericStyledText(
-              info.copyright,
-              fontSize: 11.sp,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white38 : const Color(0xFF888888),
-              height: 1.4,
-            ),
-        ],
+      padding: EdgeInsets.fromLTRB(20.w, 40.h, 20.w, bottomPadding),
+      // Title, subtitle, trust badges and company address, as one image
+      child: Image.asset(
+        'assets/home/footer_trust_info.png',
+        width: double.infinity,
+        fit: BoxFit.fitWidth,
       ),
     );
   }

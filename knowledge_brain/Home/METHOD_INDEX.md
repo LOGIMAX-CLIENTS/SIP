@@ -69,7 +69,7 @@ only (cross-module callers noted where known).
 - `_buildSectionHeader(title, isDark)` — `:830`
 - `_buildDiscoverSection(isDark)` — `:843` — 3 static tiles: Cash Withdrawal → `AppRouter.withdrawal`, Refer & Earn → `AppRouter.referral`, Auto Saving → `AppRouter.autoSavings`
 - `_buildSupportSection(isDark)` — `:913` — "Contact Us" → `AppRouter.contact`
-- `_buildFooterInfo(isDark, info)` — `:983`
+- `_buildFooterInfo(isDark, {shiftedUpBy})` — `:990` — footerinfobg.png card holding one static image, `assets/home/footer_trust_info.png` (title, subtitle, MMTC-PAMP/SEQUEL/ISO/BIS badges, company address). Still gated on `dashboard.footerInfo != null`, but the API's title/subtitle/CIN/copyright are no longer rendered. It is the last item on the page: its bottom padding (system inset + 82.h nav + 24.h gap − `shiftedUpBy`) replaces the 120.h trailing spacer, which now only renders when there is no footer
 - `_buildPremiumHeader(...)` — `:1070` — computes displayed rate (locked vs. live), builds `SliverPersistentHeader` with `PremiumHomeHeader`
 - `_formatIndianRate(rate)` — `:1122` — Indian digit grouping (has dead/unused `buffer` loop at `:1132-1136`, real output built by second loop `:1138-1144`)
 - `_buildGrowthStreakCard(isDark, history)` — `:1150` — "Invest Now" button sets `selectedTabProvider.notifier.state = 1`
