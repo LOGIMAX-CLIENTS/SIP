@@ -995,6 +995,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         82.h +
         24.h -
         shiftedUpBy;
+    // The design sets this text in black at 60% / 80% opacity
+    final softText =
+        isDark ? Colors.white70 : Colors.black.withValues(alpha: 0.6);
+    final strongText =
+        isDark ? Colors.white : Colors.black.withValues(alpha: 0.8);
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1007,11 +1012,75 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         color: isDark ? Colors.white.withValues(alpha: 0.06) : null,
       ),
       padding: EdgeInsets.fromLTRB(20.w, 40.h, 20.w, bottomPadding),
-      // Title, subtitle, trust badges and company address, as one image
-      child: Image.asset(
-        'assets/home/footer_trust_info.png',
-        width: double.infinity,
-        fit: BoxFit.fitWidth,
+      child: Column(
+        children: [
+          // Title
+          RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 22.sp,
+                fontWeight: FontWeight.w400,
+                color: softText,
+                height: 1.35,
+              ),
+              children: [
+                const TextSpan(text: 'Your savings are\n'),
+                TextSpan(
+                  text: '100%',
+                  style: GoogleFonts.lora(fontWeight: FontWeight.w700),
+                ),
+                TextSpan(
+                  text: ' secure',
+                  style:
+                      GoogleFonts.playfairDisplay(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: ' with startGOLD!'),
+              ],
+            ),
+          ),
+          SizedBox(height: 16.h),
+          // Subtitle
+          Text(
+            'Your hard-earned precious metal is securely stored in vaults '
+            'and can be withdrawn at any time.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w500,
+              color: strongText,
+              height: 19 / 12,
+            ),
+          ),
+          SizedBox(height: 32.h),
+          // MMTC PAMP / SEQUEL / ISO 27001 / BIS badges
+          Image.asset(
+            'assets/home/footer_trust_badges.png',
+            width: double.infinity,
+            fit: BoxFit.fitWidth,
+          ),
+          SizedBox(height: 28.h),
+          // Company name and address
+          Text(
+            'startGOLD Capital Solutions Private Limited',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w600,
+              color: strongText,
+            ),
+          ),
+          SizedBox(height: 8.h),
+          NumericStyledText(
+            '477-482, Anna Salai, 1st Floor, Khivraj Complex-2,\n'
+            'Chennai 600 035, Tamil Nadu, India',
+            fontSize: 12.sp,
+            fontWeight: FontWeight.w400,
+            color: softText,
+            height: 18 / 12,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
