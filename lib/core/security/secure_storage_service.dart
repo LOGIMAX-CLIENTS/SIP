@@ -194,9 +194,10 @@ class SecureStorageService {
   /// Unlike [logout] (customer tapped Logout / deleted the account) and the
   /// 409 force-logout (signed in elsewhere), this keeps the customer's
   /// Biometric Login and Auto-Lock choices, so logging back in doesn't make
-  /// them set those up again. The backend's refresh token only lasts a day
-  /// from its last use, so any customer who skips a day lands here, very
-  /// often on the first open after a Play Store update.
+  /// them set those up again. The backend's refresh token lasts
+  /// `refresh_token_lifetime_days` (30 since 2026-10-23, 1 before) from its
+  /// last use, so a customer who doesn't open the app for that long lands
+  /// here.
   /// The choices stay tagged with the customer who made them;
   /// [keepAppLockPrefsOnlyFor] drops them if a different customer logs in
   /// next. MPIN needs nothing kept here: verify-otp's `mpin_enabled` sets

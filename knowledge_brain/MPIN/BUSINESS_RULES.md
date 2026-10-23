@@ -68,11 +68,13 @@ screen auto-prompts biometric again (RULE-MPIN-008). A refresh that gets no answ
 throttle (HTTP 200 with `TOO_MANY_REQUESTS`) no longer ends the session at all
 (`ApiSecurityInterceptor.isTransientRefreshFailure`, RULE-CORE-003).
 
-Why the session lapses so often: backend `SIMPLE_JWT` gives a 15-minute access token and a 1-day refresh token,
-and each refresh resets that day (`fintect_application` `config/settings.py`; `TokenRefreshView` calls
-`set_exp()` without the `CUSTOMER_LOGIN_SECURITY` override). Anyone who doesn't open the app for a day must log
-in with OTP again, and the first open after a Play Store update is usually such a case. Before this rule, that
-re-login also wiped biometric/auto-lock, which is what PM-STG-0452 reported. The backend never resets an MPIN
+Why the session lapsed so often: until 2026-10-23 the backend gave a 15-minute access token and a 1-day
+refresh token, and each refresh reset that day (`TokenRefreshView` called `set_exp()` without the
+`CUSTOMER_LOGIN_SECURITY` override). Anyone who didn't open the app for a day had to log in with OTP again, and
+the first open after a Play Store update was usually such a case. Before this rule, that re-login also wiped
+biometric/auto-lock, which is what PM-STG-0452 reported. The backend fix (`fintect_application` branch
+`fix/mpin-session-survives-idle-days`) makes the refresh token last `refresh_token_lifetime_days` — 30 — from
+login and from every refresh, so MPIN/biometric unlock now keeps working unless the app goes unopened that long. The backend never resets an MPIN
 or ends a session because of `appVersion`/`device_id`. Its only "MPIN off" state is the 5-wrong-attempts lock
 (`ccr_status=2`), and verify-otp reports that as `mpin_enabled=false`, so the app routes to `setup`.
 
