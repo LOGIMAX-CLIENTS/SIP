@@ -1439,7 +1439,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       '${returnsPct.toStringAsFixed(1)}% Today',
                       style: GoogleFonts.lora(
                         fontSize: 14.sp,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.bold,
                         letterSpacing: 0.3,
                         color: growthColor,
                       ),
