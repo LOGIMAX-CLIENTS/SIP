@@ -59,16 +59,31 @@ void main() {
     }
   });
 
-  group('Secure base URL per environment', () {
+  group('Secure base URL', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});
     });
 
-    test('Production uses the secure host', () async {
+    test('The bastion API host sends secure routes to the secure host at /api/v1/', () {
+      expect(
+        EnvironmentService.secureBaseUrlFor(EnvironmentService.bastionBaseUrl),
+        'https://secure.endpoint.payapi.startgold.com/api/v1/',
+      );
+    });
+
+    test('The old production host keeps every route, because it has no secure server', () {
+      const oldProduction = 'https://api.startgold.com/api/api/v1/';
+      expect(EnvironmentService.secureBaseUrlFor(oldProduction), oldProduction);
+    });
+
+    test('Production follows its base URL', () async {
       await EnvironmentService.setEnvironment(EnvironmentService.envProduction);
 
-      expect(AppConfig.secureBaseUrl, EnvironmentService.productionSecureBaseUrl);
-      expect(AppConfig.secureBaseUrl, isNot(AppConfig.baseUrl));
+      expect(AppConfig.baseUrl, EnvironmentService.productionBaseUrl);
+      expect(
+        AppConfig.secureBaseUrl,
+        EnvironmentService.secureBaseUrlFor(EnvironmentService.productionBaseUrl),
+      );
     });
 
     test('Staging and VAPT, which have no secure server, use their base URL', () async {
@@ -84,7 +99,10 @@ void main() {
       AppConfig.secureBaseUrl = 'https://stale.example/';
       await EnvironmentService.initialize();
 
-      expect(AppConfig.secureBaseUrl, EnvironmentService.productionSecureBaseUrl);
+      expect(
+        AppConfig.secureBaseUrl,
+        EnvironmentService.secureBaseUrlFor(EnvironmentService.productionBaseUrl),
+      );
     });
   });
 }
