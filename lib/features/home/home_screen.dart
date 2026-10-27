@@ -27,6 +27,18 @@ import '../../core/services/notification_service.dart';
 import '../../core/providers/timer_provider.dart';
 import '../instant_saving/controller/saving_controller.dart';
 
+// Green behind the pinned header and the savings section under it. They are
+// separate slivers of different heights, so a diagonal gradient sized to each
+// box ended on a different shade than the next one started — a visible step
+// under the live-rate pill. Left-to-right only, both halves match at any
+// scroll position.
+const _kHeaderGreenGradient = LinearGradient(
+  begin: Alignment(-0.87, 0),
+  end: Alignment(0.87, 0),
+  colors: [Color(0xFF003716), Color(0xFF167525)],
+  stops: [0.0223, 0.9399],
+);
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -200,7 +212,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 isCurrentMarketClosed),
             SliverToBoxAdapter(
               child: Stack(
+                clipBehavior: Clip.none,
                 children: [
+                  // Reaches 2px up under the pinned header so the fractional
+                  // pixel seam between the two slivers doesn't let the cream
+                  // scaffold show through as a light line.
+                  const Positioned(
+                    top: -2,
+                    left: 0,
+                    right: 0,
+                    height: 4,
+                    child: DecoratedBox(
+                      decoration:
+                          BoxDecoration(gradient: _kHeaderGreenGradient),
+                    ),
+                  ),
                   // Color visible behind green section's rounded corners
                   // Uses offer card color when offer is active, otherwise rate-history gradient
                   Builder(builder: (context) {
@@ -243,13 +269,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   }),
                   Container(
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        // same 120deg gradient as the header
-                        begin: Alignment(-0.87, -0.5),
-                        end: Alignment(0.87, 0.5),
-                        colors: [Color(0xFF003716), Color(0xFF167525)],
-                        stops: [0.0223, 0.9399],
-                      ),
+                      gradient: _kHeaderGreenGradient,
                       borderRadius: BorderRadius.only(
                         bottomLeft: Radius.circular(32),
                         bottomRight: Radius.circular(32),
@@ -1419,7 +1439,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       '${returnsPct.toStringAsFixed(1)}% Today',
                       style: GoogleFonts.lora(
                         fontSize: 14.sp,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.bold,
                         letterSpacing: 0.3,
                         color: growthColor,
                       ),
@@ -1858,15 +1878,7 @@ class PremiumHomeHeader extends SliverPersistentHeaderDelegate {
   Widget build(
       BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          // CSS: linear-gradient(120deg, #003716 2.23%, #167525 93.99%)
-          begin: Alignment(-0.87, -0.5), // top-left → dark
-          end: Alignment(0.87, 0.5), // bottom-right → light
-          colors: [Color(0xFF003716), Color(0xFF167525)],
-          stops: [0.0223, 0.9399],
-        ),
-      ),
+      decoration: const BoxDecoration(gradient: _kHeaderGreenGradient),
       child: SafeArea(
         bottom: false,
         child: Padding(
