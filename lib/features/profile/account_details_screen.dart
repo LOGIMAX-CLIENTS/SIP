@@ -53,6 +53,27 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   String _verifiedPincode = '';
   String _verifiedEmail = '';
 
+  // Area = one of the pincode's taluks, picked from the list check-pincode
+  // returns (never typed). The list is kept with the pincode it belongs to,
+  // so editing the pincode makes it stale until the next Check.
+  String _area = '';
+  List<String>? _areaOptions;
+  String _areaOptionsPincode = '';
+  bool _isAreaLoading = false;
+
+  /// The areas for the pincode in the box, or null when not fetched yet.
+  List<String>? get _currentAreaOptions =>
+      _areaOptionsPincode == _pincodeController.text.trim() ? _areaOptions : null;
+
+  /// An area is required only once we know the pincode has some. Not knowing
+  /// (lookup failed, or a server from before the Area field) never blocks
+  /// Save.
+  bool get _isAreaConfirmed {
+    final options = _currentAreaOptions;
+    if (options == null || options.isEmpty) return true;
+    return options.any((a) => a.toLowerCase() == _area.toLowerCase());
+  }
+
   /// True only when the pincode in the box is 6 digits AND confirmed.
   bool get _isPincodeConfirmed {
     final pincode = _pincodeController.text.trim();
@@ -74,10 +95,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
   }
 
   // Save needs every mandatory field filled AND both the pincode and the
-  // e-mail confirmed.
+  // e-mail confirmed, plus an area when the pincode has any.
   bool get _canSave {
     final firstName = _firstNameController.text.trim();
-    return firstName.isNotEmpty && _isEmailConfirmed && _isPincodeConfirmed;
+    return firstName.isNotEmpty && _isEmailConfirmed && _isPincodeConfirmed && _isAreaConfirmed;
   }
 
   @override
@@ -96,6 +117,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
     _stateController = TextEditingController(text: user.state);
     _cityController = TextEditingController(text: user.city);
     _addressController = TextEditingController(text: user.address);
+    _area = user.area;
     _syncVerifiedBaseline(user);
 
     // Rebuild whenever mandatory fields change so Save button reacts live
@@ -120,7 +142,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         _stateController.text = updated.state;
         _cityController.text = updated.city;
         _addressController.text = updated.address;
-        setState(() => _syncVerifiedBaseline(updated));
+        setState(() {
+          _area = updated.area;
+          _syncVerifiedBaseline(updated);
+        });
       });
     });
   }
@@ -155,6 +180,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       setState(() => _verifiedPincode = _pincodeController.text.trim());
       _stateController.text = data['state'] ?? '';
       _cityController.text = data['city'] ?? '';
+      _applyAreaOptions(_verifiedPincode, List<String>.from(data['areas'] ?? const []));
       ref.read(profileProvider.notifier).updateLocationInfo(
             stateVal: data['state'] ?? '',
             city: data['city'] ?? '',
@@ -167,9 +193,117 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         _verifiedPincode = '';
         _stateController.text = '';
         _cityController.text = '';
+        _area = '';
+        _areaOptions = null;
+        _areaOptionsPincode = '';
       });
       AppToast.show(context, result['message']?.toString() ?? 'Pincode not found.', type: ToastType.error);
     }
+  }
+
+  /// Keeps the current area if it is one of [options] (in the list's own
+  /// spelling); otherwise fills in the only option, or clears it so the
+  /// customer has to pick. A pincode with no areas keeps the stored one only
+  /// if it is the pincode on file — the server applies the same rule.
+  void _applyAreaOptions(String pincode, List<String> options) {
+    final current = _area.trim().toLowerCase();
+    final match = options.where((a) => a.toLowerCase() == current).toList();
+    final onFilePincode = ref.read(profileProvider).user.pincode.trim();
+    setState(() {
+      _areaOptionsPincode = pincode;
+      _areaOptions = options;
+      if (match.isNotEmpty) {
+        _area = match.first;
+      } else if (options.length == 1) {
+        _area = options.first;
+      } else if (options.isNotEmpty || pincode != onFilePincode) {
+        _area = '';
+      }
+    });
+  }
+
+  /// Fetches the areas for the pincode already on file when editing starts,
+  /// so the customer can pick one without tapping Check again. Silent on
+  /// failure: Save then simply doesn't ask for an area.
+  Future<void> _prefetchAreaOptions() async {
+    final pincode = _pincodeController.text.trim();
+    if (!_isPincodeConfirmed || _currentAreaOptions != null) return;
+    setState(() => _isAreaLoading = true);
+    final result = await ref.read(profileProvider.notifier).checkPincode(pincode);
+    if (!mounted) return;
+    setState(() => _isAreaLoading = false);
+    if (result['success'] == true && _pincodeController.text.trim() == pincode) {
+      final data = result['data'] as Map<String, dynamic>;
+      _applyAreaOptions(pincode, List<String>.from(data['areas'] ?? const []));
+    }
+  }
+
+  Future<void> _showAreaSheet(List<String> options, bool isDark) async {
+    final ink = isDark ? Colors.white : const Color(0xFF333333);
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      // Some pincodes have a dozen or more areas.
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+      ),
+      builder: (sheetContext) => ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.6),
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 12.h),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40.w,
+                    height: 4.h,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(100.r),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                Text('Select Area', style: GoogleFonts.playfairDisplay(fontSize: 17.sp, fontWeight: FontWeight.w700, color: ink)),
+                SizedBox(height: 8.h),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: options.map((area) {
+                      final isSelected = area.toLowerCase() == _area.toLowerCase();
+                      return InkWell(
+                        onTap: () => Navigator.pop(sheetContext, area),
+                        borderRadius: BorderRadius.circular(12.r),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14.h),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(area, style: GoogleFonts.playfairDisplay(fontSize: 15.sp, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: ink)),
+                              ),
+                              Icon(
+                                isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                                size: 22.sp,
+                                color: isSelected ? AppTheme.primaryGreen : (isDark ? Colors.white38 : Colors.black26),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (selected != null && mounted) setState(() => _area = selected);
   }
 
   /// Verifies the customer's on-file e-mail — same OTP sheet as onboarding
@@ -287,6 +421,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       AppToast.show(context, 'Please tap Check to verify your pincode', type: ToastType.error);
       return;
     }
+    if (!_isAreaConfirmed) {
+      AppToast.show(context, 'Please select your area', type: ToastType.error);
+      return;
+    }
 
     final success = await ref.read(profileProvider.notifier).updateProfile(
           firstName: firstName,
@@ -295,6 +433,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
           dob: _dobController.text,
           pincode: pincode,
           stateVal: _stateController.text,
+          // Sent only when there was a list to pick from.
+          area: (_currentAreaOptions?.isNotEmpty ?? false) ? _area : null,
           city: _cityController.text,
           address: _addressController.text,
         );
@@ -333,6 +473,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         _stateController.text = next.user.state;
         _cityController.text = next.user.city;
         _addressController.text = next.user.address;
+        _area = next.user.area;
         _syncVerifiedBaseline(next.user);
       }
     });
@@ -368,6 +509,7 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                   }
                 }
                 ref.read(profileProvider.notifier).setEditing(!profileState.isEditing);
+                if (!profileState.isEditing) _prefetchAreaOptions();
               },
               icon: Icon(
                 profileState.isEditing ? Icons.close_rounded : Icons.edit_rounded,
@@ -417,6 +559,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
                         _buildInputField(label: 'Pincode *', controller: _pincodeController, isEditable: profileState.isEditing, isDark: isDark, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)], actionLabel: 'Check', onAction: _handlePincodeCheck, isActionLoading: _isPincodeChecking, isNumeric: true),
                         if (_stateController.text.isNotEmpty)
                           _buildInputField(label: 'State', controller: _stateController, isEditable: false, isDark: isDark),
+                        if (_area.isNotEmpty || (profileState.isEditing && (_currentAreaOptions?.isNotEmpty ?? false)))
+                          _buildAreaField(isDark, profileState.isEditing),
                         if (_cityController.text.isNotEmpty)
                           _buildInputField(label: 'City', controller: _cityController, isEditable: false, isDark: isDark),
                         _buildInputField(label: 'Residential Address', controller: _addressController, isEditable: profileState.isEditing, isDark: isDark, maxLines: 4, textCapitalization: TextCapitalization.words, inputFormatters: [AddressInputFormatter()]),
@@ -565,6 +709,30 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
         SizedBox(width: 4.w),
         Text('Verified', style: GoogleFonts.playfairDisplay(fontSize: 13.sp, fontWeight: FontWeight.w600, color: const Color(0xFF1B882C))),
       ],
+    );
+  }
+
+  /// Area, between State and City. Picked from the pincode's areas, never
+  /// typed; with only one area it is filled in and there is nothing to pick.
+  Widget _buildAreaField(bool isDark, bool isEditing) {
+    final options = _currentAreaOptions ?? const <String>[];
+    final canPick = isEditing && _isPincodeConfirmed && options.length > 1;
+    Widget? trailing;
+    if (isEditing && _isAreaLoading) {
+      trailing = SizedBox(height: 16.h, width: 16.h, child: const CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0E5723)));
+    } else if (canPick) {
+      trailing = Icon(Icons.keyboard_arrow_down_rounded, size: 24.sp, color: const Color(0xFF0E5723));
+    }
+    return GestureDetector(
+      onTap: canPick ? () => _showAreaSheet(options, isDark) : null,
+      behavior: HitTestBehavior.opaque,
+      child: _buildInputField(
+        label: 'Area',
+        hint: _area.isNotEmpty ? _area : 'Select your area',
+        isEditable: false,
+        isDark: isDark,
+        actionWidget: trailing,
+      ),
     );
   }
 
