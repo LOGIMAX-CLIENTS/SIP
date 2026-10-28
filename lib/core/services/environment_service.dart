@@ -19,6 +19,23 @@ class EnvironmentService {
   static const String vaptBaseUrl = 'https://vaptapi.startgold.com/api/api/v1/';
   static const String vaptWsUrl = 'wss://vaptbackoffice.startgold.com/ws/';
 
+  // Only the bastion production API host has a separate secure server. Every
+  // other host (staging, VAPT, the old production host) serves every route
+  // itself, so its secure URL is its base URL. Keying this on the base URL,
+  // not the environment, keeps an app that still points production at the old
+  // host from sending KYC and payment calls to the bastion side, which is a
+  // different database.
+  static const String bastionBaseUrl =
+      'https://endpoint.generic.api.startgold.com/api/api/v1/';
+  // The secure host's nginx serves the API at /api/v1/, without the extra
+  // /api prefix the other hosts strip.
+  static const String bastionSecureBaseUrl =
+      'https://secure.endpoint.payapi.startgold.com/api/v1/';
+
+  /// Where AppConfig.secureServerRoutes go when the base URL is [baseUrl].
+  static String secureBaseUrlFor(String baseUrl) =>
+      baseUrl == bastionBaseUrl ? bastionSecureBaseUrl : baseUrl;
+
   static String _currentEnv = envStaging;
   static String _baseUrl = stagingBaseUrl;
   static String _wsUrl = stagingWsUrl;
@@ -33,6 +50,7 @@ class EnvironmentService {
 
   static String get currentEnv => _currentEnv;
   static String get baseUrl => _baseUrl;
+  static String get secureBaseUrl => secureBaseUrlFor(_baseUrl);
   static String get wsUrl => _wsUrl;
 
   /// Loads the saved environment from SharedPreferences on startup.
@@ -48,6 +66,7 @@ class EnvironmentService {
       // launch regardless of what was hardcoded here).
       AppConfig.environment = _currentEnv;
       AppConfig.baseUrl = _baseUrl;
+      AppConfig.secureBaseUrl = secureBaseUrlFor(_baseUrl);
     }
   }
 
@@ -69,6 +88,7 @@ class EnvironmentService {
 
     AppConfig.environment = _currentEnv;
     AppConfig.baseUrl = _baseUrl;
+    AppConfig.secureBaseUrl = secureBaseUrlFor(_baseUrl);
 
     // Update the ApiClient base URL dynamically
     ApiClient().updateBaseUrl(_baseUrl);
