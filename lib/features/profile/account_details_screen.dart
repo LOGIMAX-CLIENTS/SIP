@@ -18,6 +18,7 @@ import '../../core/utils/validators.dart';
 import '../auth/controller/auth_controller.dart';
 import '../../core/services/auth_service.dart';
 import '../auth/registration/email_otp_sheet.dart';
+import '../kyc/controllers/kyc_controller.dart';
 import 'package:startgold/shared/utils/dob_input_formatter.dart';
 import 'package:startgold/shared/widgets/dob_date_picker.dart';
 
@@ -217,6 +218,10 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
       // Record it locally first: the customer may have just verified a NEW
       // address, so do not make Save wait on what the refetch reports.
       setState(() => _verifiedEmail = email.toLowerCase());
+      // The Profile page keeps kycDocumentsProvider('profile') alive under
+      // this screen (its KYC Status badge), so without this the badge and
+      // the checklist opened from it keep showing the e-mail as Pending.
+      ref.invalidate(kycDocumentsProvider);
       await ref.read(profileProvider.notifier).fetchProfileDetails();
       if (mounted) {
         AppToast.show(context, 'E-mail verified successfully', type: ToastType.success);
@@ -299,6 +304,8 @@ class _AccountDetailsScreenState extends ConsumerState<AccountDetailsScreen> {
           address: _addressController.text,
         );
     if (success && mounted) {
+      // A new address is stamped verified on save — see _verifyEmail.
+      ref.invalidate(kycDocumentsProvider);
       AppToast.show(context, 'Profile updated successfully', type: ToastType.success);
     } else if (mounted) {
       final errorMsg = ref.read(profileProvider).error ?? 'Failed to update profile. Please try again.';

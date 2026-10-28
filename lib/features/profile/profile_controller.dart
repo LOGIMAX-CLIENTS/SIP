@@ -355,6 +355,19 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     }
   }
 
+  /// Saves an address the customer has just verified by OTP somewhere other
+  /// than Account Details (the KYC checklist's e-mail step), then re-fetches
+  /// so the saved address and its verified stamp show everywhere. Returns
+  /// null on success, else the message to show.
+  Future<String?> saveEmail(String email) async {
+    final result = await _profileService.updateEmail(customerId: _customerId, email: email);
+    if (result['success'] != true) {
+      return result['message']?.toString() ?? 'Failed to save your e-mail. Please try again.';
+    }
+    await fetchProfileDetails();
+    return null;
+  }
+
   Future<bool> updateProfilePhoto(File photo) async {
     state = state.copyWith(isPhotoLoading: true, error: null);
 

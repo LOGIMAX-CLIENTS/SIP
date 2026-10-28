@@ -10,6 +10,7 @@ import 'package:startgold/features/kyc/controllers/kyc_verification_flow_mixin.d
 import 'package:startgold/features/kyc/models/kyc_document.dart';
 import 'package:startgold/features/kyc/repositories/kyc_repository.dart';
 import 'package:startgold/features/kyc/utils/kyc_step_status.dart';
+import 'package:startgold/features/kyc/widgets/kyc_add_email_sheet.dart';
 import 'package:startgold/features/kyc/widgets/kyc_progress_header.dart';
 import 'package:startgold/features/kyc/widgets/kyc_step_row.dart';
 import 'package:startgold/features/profile/models/bank_account.dart';
@@ -381,7 +382,7 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
                       subtitle: emailVerified
                           ? (email.isEmpty ? 'E-mail verified' : email)
                           : email.isEmpty
-                              ? 'Add your e-mail in Account Details'
+                              ? 'Add and verify your e-mail'
                               : '$email · tap to verify',
                       status: statuses.emailStatus,
                       pillLabel: statuses.emailPill,
@@ -895,34 +896,38 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
   }
 
   /// Step 1 (RULE-KYC-022) — same OTP sheet and endpoints as Account
-  /// Details' Verify (`AccountDetailsScreen._verifyEmail`). The backend
-  /// stamps cus_email_verified_on because the address is the one on file,
-  /// so on success the checklist is simply re-fetched. With no address on
-  /// file there is nothing to send a code to: Account Details is where one
-  /// is added.
-  Future<void> _verifyEmail(String email) async {
-    if (email.isEmpty) {
-      await Navigator.pushNamed(context, AppRouter.accountDetails);
-      if (mounted) ref.invalidate(kycDocumentsProvider);
-      return;
+  /// Details' Verify (`AccountDetailsScreen._verifyEmail`), finished on this
+  /// page either way:
+  /// - Address on file: the code goes straight to it, and the backend stamps
+  ///   cus_email_verified_on because it's the address on file.
+  /// - No address (registered without one): [showKycAddEmailSheet] asks for
+  ///   it first, and once its code is verified profile/update saves it —
+  ///   the server stamps a new address verified on save.
+  Future<void> _verifyEmail(String onFileEmail) async {
+    final firstName = ref.read(pc.profileProvider).user.firstName;
+    final isNewAddress = onFileEmail.isEmpty;
+    var email = onFileEmail;
+
+    if (isNewAddress) {
+      final added = await showKycAddEmailSheet(
+        context,
+        onSend: (address) => _sendEmailOtp(address, firstName),
+      );
+      if (added == null || !mounted) return;
+      email = added;
+    } else {
+      setState(() => _sendingEmailOtp = true);
+      final sent = await _sendEmailOtp(email, firstName);
+      if (!mounted) return;
+      setState(() => _sendingEmailOtp = false);
+      if (!sent) return;
     }
 
-    final firstName = ref.read(pc.profileProvider).user.firstName;
-    setState(() => _sendingEmailOtp = true);
-    final auth = ref.read(authControllerProvider.notifier);
-    final sent = await auth.sendEmailOtp(
-      email,
-      firstName: firstName.isNotEmpty ? firstName : null,
-      purpose: 'account',
-    );
-    if (!mounted) return;
-    setState(() => _sendingEmailOtp = false);
-
-    // A failure has already been toasted by the authControllerProvider
+    // A send failure has already been toasted by the authControllerProvider
     // listener in build().
     final otpData = ref.read(authControllerProvider).data;
     final otpReferenceId = otpData?['otp_reference_id'] as String?;
-    if (!sent || otpReferenceId == null) return;
+    if (otpReferenceId == null) return;
 
     final verified = await showEmailOtpSheet(
       context,
@@ -934,10 +939,32 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen>
     );
     if (verified != true || !mounted) return;
 
+    if (isNewAddress) {
+      setState(() => _sendingEmailOtp = true);
+      final error = await ref.read(pc.profileProvider.notifier).saveEmail(email);
+      if (!mounted) return;
+      setState(() => _sendingEmailOtp = false);
+      if (error != null) {
+        AppToast.show(context, error, type: ToastType.error);
+        return;
+      }
+    } else {
+      // Account Details and the Profile page read the same stamp
+      // (saveEmail above already re-fetches).
+      ref.read(pc.profileProvider.notifier).fetchProfileDetails();
+    }
+
     ref.invalidate(kycDocumentsProvider);
-    // Account Details and the Profile page read the same stamp.
-    ref.read(pc.profileProvider.notifier).fetchProfileDetails();
     AppToast.show(context, 'E-mail verified', type: ToastType.success);
+  }
+
+  /// Sends the e-mail step's code with the existing-customer copy.
+  Future<bool> _sendEmailOtp(String email, String firstName) {
+    return ref.read(authControllerProvider.notifier).sendEmailOtp(
+          email,
+          firstName: firstName.isNotEmpty ? firstName : null,
+          purpose: 'account',
+        );
   }
 
   /// PAN/Aadhaar data entry lives on its own page now — tapping the row or
