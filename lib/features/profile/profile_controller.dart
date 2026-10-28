@@ -18,6 +18,8 @@ class UserProfile {
   final String dob;
   final String pincode;
   final String state;
+  /// One of the pincode's taluks — see check-pincode's `areas`.
+  final String area;
   final String city;
   final String address;
   final String idCountry;
@@ -42,6 +44,7 @@ class UserProfile {
     required this.dob,
     required this.pincode,
     required this.state,
+    this.area = '',
     required this.city,
     required this.address,
     required this.idCountry,
@@ -66,6 +69,7 @@ class UserProfile {
     String? dob,
     String? pincode,
     String? state,
+    String? area,
     String? city,
     String? address,
     String? idCountry,
@@ -90,6 +94,7 @@ class UserProfile {
       dob: dob ?? this.dob,
       pincode: pincode ?? this.pincode,
       state: state ?? this.state,
+      area: area ?? this.area,
       city: city ?? this.city,
       address: address ?? this.address,
       idCountry: idCountry ?? this.idCountry,
@@ -210,6 +215,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
             dob: data['dob'] ?? '',
             pincode: data['pincode'] ?? '',
             state: data['state'] ?? data['state_name'] ?? '',
+            area: data['area']?.toString() ?? '',
             city: data['city'] ?? data['city_name'] ?? '',
             address: data['address'] ?? '',
             idCountry: data['id_country']?.toString() ?? '101',
@@ -250,6 +256,12 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
           'data': {
             'state': data['state']?.toString() ?? '',
             'city': data['city']?.toString() ?? '',
+            // Distinct taluks of the pincode; empty when none are on record
+            // (or the server predates the Area field).
+            'areas': (data['areas'] as List? ?? const [])
+                .map((a) => a.toString())
+                .where((a) => a.trim().isNotEmpty)
+                .toList(),
             'id_country': data['id_country']?.toString() ?? '101',
             'id_state': data['id_state']?.toString() ?? '',
             'id_city': data['id_city']?.toString() ?? '',
@@ -291,6 +303,9 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     required String dob,
     required String pincode,
     required String stateVal,
+    /// Null when the pincode has no areas to pick from — then it is left out
+    /// of the request and the server keeps or drops the stored one itself.
+    String? area,
     required String city,
     required String address,
   }) async {
@@ -305,6 +320,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         dob: dob,
         pincode: pincode,
         state: stateVal,
+        area: area,
         city: city,
         address: address,
         idCountry: state.user.idCountry,
@@ -328,6 +344,10 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
           dob: dob,
           pincode: pincode,
           state: stateVal,
+          // Same rule as the server: without an area, a new pincode drops
+          // the old one.
+          area: area ??
+              (pincode.trim() == state.user.pincode.trim() ? state.user.area : ''),
           city: city,
           address: address,
         );
