@@ -18,6 +18,11 @@ class NativeSocketService {
   final _statusController = StreamController<SocketStatus>.broadcast();
   final _marketStatusController =
       StreamController<Map<String, bool>>.broadcast();
+  final _endedSessionController = StreamController<String>.broadcast();
+
+  /// sha256 hex of each session_id that a login ended (`9|` frames). Every
+  /// connected app receives them — see SessionEndedListener.
+  Stream<String> get endedSessionStream => _endedSessionController.stream;
 
   Stream<MarketRates> get ratesStream async* {
     if (_lastRate != null) {
@@ -139,6 +144,21 @@ class NativeSocketService {
         return; // Ignore unknown payloads
       }
 
+      // ── Step 0: Sessions ended by a login (parts[0] == '9') ───────
+      // Format: 9|<sha256 of session_id>, one per line. The server sends
+      // them as a frame of their own, never mixed with rate rows.
+      if (rawData.startsWith('9|')) {
+        for (final line in rawData.split('\n')) {
+          final parts = line.split('|');
+          if (parts.length >= 2 &&
+              parts[0] == '9' &&
+              !_endedSessionController.isClosed) {
+            _endedSessionController.add(parts[1].trim());
+          }
+        }
+        return;
+      }
+
       // ── Step 1: Parse market status (parts[0] == '5') ─────────────
       // Format: 5|commodity_id|commodity_name|market_status
       // market_status: 0 = closed, 1 = open
@@ -258,5 +278,6 @@ class NativeSocketService {
     _ratesController.close();
     _statusController.close();
     _marketStatusController.close();
+    _endedSessionController.close();
   }
 }

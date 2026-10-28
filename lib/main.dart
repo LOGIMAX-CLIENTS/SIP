@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/security/app_lifecycle_observer.dart';
+import 'core/security/session_ended_listener.dart';
 import 'core/security/root_detection_service.dart';
 import 'core/security/certificate_pinning.dart';
 import 'shared/widgets/compromised_device_screen.dart';
@@ -91,6 +92,8 @@ class MyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Register Lifecycle Observer
     ref.watch(lifecycleObserverProvider(navigatorKey));
+    // Log out at once when a login on another device ends this session
+    ref.watch(sessionEndedListenerProvider);
 
     return ScreenUtilInit(
       designSize: const Size(390, 844),

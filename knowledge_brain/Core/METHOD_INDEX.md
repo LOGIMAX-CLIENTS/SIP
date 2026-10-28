@@ -101,7 +101,7 @@ understanding.
 | Member | Location | Callers |
 |---|---|---|
 | `sendOtp` | `:24` | `AuthNotifier.sendOtp` |
-| `verifyOtp` | `:47` | `AuthNotifier.verifyOtp` — also persists tokens, resets force-logout flag (`SessionManager.resetForceLogout()`, `:75`) |
+| `verifyOtp` | `:47` | `AuthNotifier.verifyOtp` — also persists tokens, resets force-logout flag (`SessionManager.resetForceLogout()`, `:93`); `SessionManager.isLoggingIn` is set until it returns |
 | `sendEmailOtp` / `verifyEmailOtp` | `:98,112` | `AuthNotifier` counterparts |
 | `register` | `:128` | `AuthNotifier.register` |
 | `registerCheck` | `:178` | pre-validation before PIN-creation navigation (feature screen, not re-verified) |
@@ -278,7 +278,8 @@ understanding.
 | Member | Location | Callers |
 |---|---|---|
 | `updateCommodityConfig` | `:56` | `marketRatesStreamProvider` (`providers/market_provider.dart:39`), whenever `commoditiesProvider` resolves |
-| `connect` | `:74` | `marketRatesStreamProvider` (auto-connect on first watch, `:44`); `AppLifecycleObserver` on resume (`:70`) |
+| `connect` | `:74` | `marketRatesStreamProvider` (auto-connect on first watch, `:44`); `AppLifecycleObserver` on resume (`:70`); `sessionEndedListenerProvider` at app start |
+| `endedSessionStream` | `:25` | `sessionEndedListenerProvider` (`security/session_ended_listener.dart`) |
 | `disconnect` | `:213` | `AppLifecycleObserver` on pause (`:62`); internally by `_scheduleReconnect` |
 | `dispose` | `:255` | `socketIOServiceProvider`'s `ref.onDispose` (`:11`) |
 
@@ -363,9 +364,19 @@ understanding.
 | `isAuthenticated` | `:18` | `AppLifecycleObserver._preCacheSecurityState`, `NavigationUtils._navigateToFallback` |
 | `logout` | `:25` | `SessionInvalidatedDialog.show` (409, idempotent second wipe) |
 | `endExpiredSession` | `:32` | `ApiSecurityInterceptor.onError` (refresh token rejected), `MpinScreen` `SESSION_EXPIRED` listener |
-| `forceLogout` | `:39` | `ApiSecurityInterceptor.onError` (409 path, deduplicated) |
-| `resetForceLogout` | `:48` | `AuthService.verifyOtp` (`:75`, fresh-login clears force-logout) |
+| `isLoggingIn` / `beginLogin` / `endLogin` | `:25-29` | set around `AuthService.verifyOtp`; read by `SessionEndedListener.isThisSession` |
+| `forceLogout` | `:39` | `ApiSecurityInterceptor.onError` (409 path, deduplicated); `SessionEndedListener.onSessionEnded` (socket push) |
+| `resetForceLogout` | `:48` | `AuthService.verifyOtp` (`:93`, fresh-login clears force-logout) |
 | `hasSeenOnboarding` / `setOnboardingSeen` | `:45,50` | splash routing / onboarding-complete action |
+
+## SessionEndedListener
+`core/security/session_ended_listener.dart`
+| Member | Location | Callers |
+|---|---|---|
+| `isThisSession` | `:23` | `onSessionEnded`; `test/session_ended_listener_test.dart` |
+| `onSessionEnded` | `:32` | `sessionEndedListenerProvider` (subscribed to `NativeSocketService.endedSessionStream`) |
+| `sessionIdOf` | `:43` | `isThisSession` — reads the `session_id` claim of the stored access token |
+| `sessionEndedListenerProvider` | `:59` | `MyApp.build` (`main.dart`) |
 
 ## SharedService
 `core/services/shared_service.dart`

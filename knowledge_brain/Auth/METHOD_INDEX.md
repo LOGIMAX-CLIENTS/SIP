@@ -41,7 +41,7 @@ appears unused by this module (possibly used elsewhere — unconfirmed, not grep
 | Method | Signature | Line | Endpoint | Side effects |
 |---|---|---|---|---|
 | `sendOtp` | `Future<Map> sendOtp({required mobile, countryCode, idCountry, type})` | 24-45 | `POST users/auth/generate-otp` | none |
-| `verifyOtp` | `Future<Map> verifyOtp({required mobile, otp, otpReferenceId})` | 47-96 | `POST users/auth/verify-otp` | on success: saves access/refresh token, resets force-logout flag, saves `mpin_enabled`, `customer_id`, `customer_name`, `customer_photo`, `mobile` to SecureStorage (lines 60-93) |
+| `verifyOtp` | `Future<Map> verifyOtp({required mobile, otp, otpReferenceId})` | 47-117 | `POST users/auth/verify-otp` | sets `SessionManager.isLoggingIn` until it returns (see Core RULE-CORE-003); on success: saves access/refresh token, resets force-logout flag, saves `mpin_enabled`, `customer_id`, `customer_name`, `customer_photo`, `mobile` to SecureStorage (lines 60-93) |
 | `sendEmailOtp` | `Future<Map> sendEmailOtp({required email, fullName})` | 98-110 | `POST users/auth/generate-email-otp` | none |
 | `verifyEmailOtp` | `Future<Map> verifyEmailOtp({required email, otp, otpReferenceId})` | 112-126 | `POST users/auth/verify-email-otp` | none |
 | `register` | `Future<Map> register({required mobile, fullName, email, tempToken, dob, referralCode})` | 128-174 | `POST users/auth/register` | on success: saves access/refresh token, `customer_id`, `customer_name`, `mobile` (lines 149-171) |

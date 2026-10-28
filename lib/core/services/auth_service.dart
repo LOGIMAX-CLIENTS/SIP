@@ -49,6 +49,24 @@ class AuthService {
     required String otp,
     required String otpReferenceId,
   }) async {
+    // Until the new tokens are saved, see SessionManager.isLoggingIn.
+    SessionManager.beginLogin();
+    try {
+      return await _verifyOtpAndSaveTokens(
+        mobile: mobile,
+        otp: otp,
+        otpReferenceId: otpReferenceId,
+      );
+    } finally {
+      SessionManager.endLogin();
+    }
+  }
+
+  Future<Map<String, dynamic>> _verifyOtpAndSaveTokens({
+    required String mobile,
+    required String otp,
+    required String otpReferenceId,
+  }) async {
     final response = await _apiClient.post(
       'users/auth/verify-otp',
       data: {

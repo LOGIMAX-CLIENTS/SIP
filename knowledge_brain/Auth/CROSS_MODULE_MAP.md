@@ -133,7 +133,7 @@ graph TD
 | `core/security/api_interceptor.dart` | RSA field encryption gate, auth header injection, 401 refresh, 409 force-logout | every API call this module makes, transparently |
 | `core/security/encryption_service.dart` | RSA-OAEP-SHA256 encrypt of sensitive fields | invoked by the interceptor, not directly by auth screens |
 | `core/security/secure_storage_service.dart` | Token/refresh-token/mpin-flag/customer-id/name/photo/mobile/FCM-token persistence | `auth_service.dart` (post verify-otp, post register), `pin_creation_screen.dart:436`, `otp_screen.dart:208` (logout on forgot-pin edit) |
-| `core/security/session_manager.dart` | `isAuthenticated()`, `resetForceLogout()` | `auth_service.dart:75` (reset on fresh login), `navigation_utils.dart:37` (fallback routing) |
+| `core/security/session_manager.dart` | `isAuthenticated()`, `resetForceLogout()` | `auth_service.dart:93` (reset on fresh login), `navigation_utils.dart:37` (fallback routing) |
 | `core/security/screenshot_security_service.dart` | FLAG_SECURE / blur toggle | `otp_screen.dart:56-62` only |
 | `core/network/api_client.dart` | Single Dio instance, all HTTP | `auth_service.dart`, `mpin_service.dart`, `notification_service.dart`, `shared_service.dart` |
 | `core/utils/validators.dart` | Mobile/OTP/email format checks | `login_screen.dart:90`, `registration_screen.dart:299, 481` (email only — `validateOTP` defined but not called anywhere in this module; OTP completeness is checked via `.length == 6` directly, e.g. `otp_screen.dart:358`) |
