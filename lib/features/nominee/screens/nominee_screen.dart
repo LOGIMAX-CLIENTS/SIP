@@ -1350,12 +1350,41 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     }
   }
 
+  // ─── Customer's own contact details ─────────────────────────────────────
+  // A nominee's mobile/e-mail may be anyone's but the customer's own. The
+  // server refuses those too (at the OTP send and at save) with the same
+  // text; checking here first just spares sending an OTP to them. The
+  // profile is blank until it loads — the server's answer covers that case.
+  static const _ownMobileMessage =
+      'Your own mobile number cannot be the nominee\'s mobile number.';
+  static const _ownEmailMessage =
+      'Your own email ID cannot be the nominee\'s email ID.';
+
+  /// The profile's number can carry the 91 prefix — compare the last 10 digits.
+  bool _isOwnMobile(String mobile) {
+    final own = ref
+        .read(pc.profileProvider)
+        .user
+        .phone
+        .replaceAll(RegExp(r'\D'), '');
+    return own.length >= 10 && own.substring(own.length - 10) == mobile;
+  }
+
+  bool _isOwnEmail(String email) {
+    final own = ref.read(pc.profileProvider).user.email.trim().toLowerCase();
+    return own.isNotEmpty && own == email.trim().toLowerCase();
+  }
+
   // ─── Mobile OTP verification ────────────────────────────────────────────
   Future<void> _handleMobileVerify() async {
     final mobile = _mobileCtrl.text.trim();
     final mobileError = Validators.validateMobile(mobile);
     if (mobileError != null) {
       AppToast.show(context, mobileError, type: ToastType.error);
+      return;
+    }
+    if (_isOwnMobile(mobile)) {
+      AppToast.show(context, _ownMobileMessage, type: ToastType.error);
       return;
     }
 
@@ -1413,6 +1442,10 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     final emailError = Validators.validateEmail(email);
     if (emailError != null) {
       AppToast.show(context, emailError, type: ToastType.error);
+      return;
+    }
+    if (_isOwnEmail(email)) {
+      AppToast.show(context, _ownEmailMessage, type: ToastType.error);
       return;
     }
 

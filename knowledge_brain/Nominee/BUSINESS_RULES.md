@@ -97,12 +97,28 @@ The "Verify" action is shown in BOTH modes. It sends an e-mail OTP via `users/au
 — the same endpoints registration and Account Details use. Resend cooldown comes from the send
 response's `resend_cooldown_seconds` (backend `EMAIL_OTP_SECURITY` config; client fallback 60s).
 Server-side rules that surface as send/save errors:
-- `generate-email-otp` rejects an address registered to a DIFFERENT customer ("This Email ID is
-  already registered…").
-- `nominee/update` rejects an address registered to ANY customer (including the caller) or used by
-  another nominee, and a blank one while mandatory. It never checks that the address was verified.
+- `generate-email-otp` (`purpose: nominee`, logged in) rejects only the customer's own address —
+  see RULE-NOMINEE-011.
+- `nominee/update` rejects the customer's own address and a blank one while mandatory. It never
+  checks that the address was verified.
 Independent of `REGISTER_FORM_VALIDATION` (registration form).
 - Code: `nominee_screen.dart` — `_emailMandatory`, `_isEmailSatisfied`, `_isEmailConfirmed`,
   `_handleEmailVerify`, `_handleSubmit`, `_showSaveBlockedReason`; `nominee_controller.dart` —
   `nomineeFormOptionsProvider`, `nomineeEmailMandatoryProvider`; `widgets/nominee_otp_sheet.dart` —
   `showNomineeEmailOtpSheet`.
+
+### RULE-NOMINEE-011: The nominee's mobile/e-mail may be anyone's but the customer's own
+Added 2026-10-28. The only contact details refused are the logged-in customer's own (mobile
+compared on its last 10 digits, e-mail case-insensitively). Another customer's number/address, or
+one another customer's nominee already uses, is allowed. Before this, `nominee/update` refused any
+number/address on ANY customer account or ANY other nominee ("…already registered as a customer
+account." / "…already registered with another nominee.").
+- App: "Verify" checks against `profileProvider`'s `phone`/`email` first and toasts "Your own mobile
+  number cannot be the nominee's mobile number." / "Your own email ID cannot be the nominee's email
+  ID." without sending an OTP. Skipped while the profile is still blank.
+- Server, same texts: `generate-otp` (`type: NOMINEE_MOBILE`, with the JWT), `generate-email-otp`
+  (`purpose: nominee`, with the JWT) and `nominee/update`. So an older build gets the refusal at
+  Verify too, and a direct API call can't save it. `generate-otp` also no longer answers a deleted
+  account's number with "Your account has been deleted" for `NOMINEE_MOBILE`.
+- Code: `nominee_screen.dart` — `_isOwnMobile`, `_isOwnEmail`, `_handleMobileVerify`,
+  `_handleEmailVerify`; backend `AuthService.is_own_mobile` / `is_own_email`.
