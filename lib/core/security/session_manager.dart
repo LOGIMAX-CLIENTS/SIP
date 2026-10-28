@@ -15,6 +15,19 @@ class SessionManager {
   /// Check this in the request interceptor to block further API calls.
   static bool get isForceLoggedOut => _isForceLoggedOut;
 
+  /// ── OTP Login In Flight ──────────────────────────────────────────────────
+  /// An OTP login ends every other session of the customer, and this device's
+  /// previous one too if it still holds it. The server announces the ended
+  /// sessions on the live-rate socket, which can arrive before the new tokens
+  /// are saved; SessionEndedListener ignores announcements while this is set.
+  static bool _isLoggingIn = false;
+
+  static bool get isLoggingIn => _isLoggingIn;
+
+  static void beginLogin() => _isLoggingIn = true;
+
+  static void endLogin() => _isLoggingIn = false;
+
   static Future<bool> isAuthenticated() async {
     if (_isForceLoggedOut) return false;
     String? token = await SecureStorageService.getToken();

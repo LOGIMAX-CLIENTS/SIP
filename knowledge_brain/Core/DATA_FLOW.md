@@ -104,7 +104,14 @@ err.response.statusCode == 409
 Any concurrent in-flight request that also gets 409 hits the same branch; `forceLogout()`'s dedup means only
 the *first* one shows the dialog. From this point, `ApiSecurityInterceptor.onRequest`'s force-logout gate
 (flow 1, step 1) blocks every subsequent request with zero network I/O until a fresh login calls
-`SessionManager.resetForceLogout()` (`services/auth_service.dart:75`, inside `AuthService.verifyOtp`).
+`SessionManager.resetForceLogout()` (`services/auth_service.dart:93`, inside `AuthService.verifyOtp`).
+
+**Same logout, pushed over the socket** (no API call needed): another device's OTP login sends
+`9|<sha256 of session_id>` frames on the live-rate socket (flow 5) → `NativeSocketService.endedSessionStream`
+→ `SessionEndedListener.onSessionEnded` (`security/session_ended_listener.dart`) → if the hash matches the
+`session_id` claim of the stored access token (and no login is in flight here, `SessionManager.isLoggingIn`)
+→ `SessionManager.forceLogout()` → `SessionInvalidatedDialog.show()`. `sessionEndedListenerProvider` is
+watched in `MyApp.build` and connects the socket on every screen. See RULE-CORE-003.
 
 Downstream, `ApiClient.get/post`'s catch maps the `cancel`-type exception with the "Session invalidated"
 string to `SessionInvalidatedFailure` (`error/failures.dart:65`) so callers can swallow it silently instead
@@ -161,6 +168,8 @@ ref.watch(marketRatesStreamProvider)
       _channel.stream.listen(_handleRateUpdate, onError → reconnect, onDone → reconnect)                  :91-104
       1s grace-period timer: if no explicit "5|" status frame arrives, infer CLOSED from zero rates        :108-111,223-253
   → _handleRateUpdate(rawData) per message, split on '\n', each line split on '|':                        :130-211
+      message starts with '9|' → session-ended frame(s): 9|<sha256 of session_id>, emitted on
+        endedSessionStream; nothing else is parsed (never mixed with rate rows) — see flow 3
       parts[0] == '5' → market-status frame: 5|commodity_id|commodity_name|status(0/1)                    :148
         status change → update _commodityOpenStatus map, emit on marketStatusController
         commodity just closed → zero out only that commodity's rates (other metal's rates preserved)      :162-183

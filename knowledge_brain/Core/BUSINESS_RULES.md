@@ -39,12 +39,21 @@ still a live field name before removing it.
   concurrent 409 shows the dialog, `session_manager.dart:32-37`) and sets a persistent
   `isForceLoggedOut` flag that the *request* interceptor checks on every subsequent call
   (`security/api_interceptor.dart:103`) — blocking them before any network I/O until a fresh login resets the
-  flag (`SessionManager.resetForceLogout()`, called from `AuthService.verifyOtp:75`). **Never** treat a 409 as
+  flag (`SessionManager.resetForceLogout()`, called from `AuthService.verifyOtp:93`). **Never** treat a 409 as
   a normal error to catch-and-retry — `error/failures.dart`'s `SessionInvalidatedFailure` exists specifically
   so callers can swallow it without showing a duplicate error UI on top of the interceptor's own dialog.
 - A refreshed token can still carry an already-invalidated `session_id` (the refresh endpoint doesn't check
   session validity) — every retry path after a successful refresh re-checks for 409 and routes to the same
   force-logout dialog instead of surfacing a confusing 401/generic error (`:322,356,438`).
+- **Pushed, not only on the next call**: an OTP login also announces each session it ended on the live-rate
+  socket as `9|<sha256 of session_id>` (backend `shared/services/ended_session_push.py`, only when the
+  server has `WEBSOCKET_PUSH_URL`). `SessionEndedListener` (`security/session_ended_listener.dart`) hashes
+  the `session_id` claim of this device's access token and, on a match, takes the same
+  `forceLogout()` + `SessionInvalidatedDialog` path as a 409 — so an open app logs out the moment the other
+  device logs in. It ignores announcements while `SessionManager.isLoggingIn` (set by `AuthService.verifyOtp`
+  until the new tokens are saved): the login may be ending this device's own previous session. A backgrounded
+  phone has no socket (disconnected on `paused`), so it still finds out by 409; Flutter web reports a hidden
+  tab as `hidden`, not `paused`, so a browser keeps its socket.
 
 ## RULE-CORE-004: Client-side response decryption does not exist — despite the code path implying it does
 `ApiSecurityInterceptor.onResponse` (`security/api_interceptor.dart:189`) runs `EncryptionService.decryptJson`

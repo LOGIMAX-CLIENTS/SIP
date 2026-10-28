@@ -53,7 +53,8 @@ OtpScreen (otp/otp_screen.dart) — receives mobile/countryCode/idCountry/otpRef
       (picks up a fresher ref id if a resend happened after the screen was pushed)
   → ref.read(authControllerProvider.notifier).verifyOtp(mobile, otp, latestRefId) (line 405-409)
   → AuthNotifier.verifyOtp() (core/services/auth_service.dart:341-403)
-      → AuthService.verifyOtp() (auth_service.dart:47-96)
+      → AuthService.verifyOtp() (auth_service.dart:47-63) — SessionManager.isLoggingIn set until it returns
+        → _verifyOtpAndSaveTokens() (auth_service.dart:65-117)
           POST users/auth/verify-otp
           body: {mobile, otp, otp_reference_id}
           → interceptor encrypts 'mobile' + 'otp' (both in sensitiveFields); otp_reference_id sent plain

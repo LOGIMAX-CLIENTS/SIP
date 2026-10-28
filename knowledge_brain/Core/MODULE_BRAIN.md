@@ -71,8 +71,9 @@ Full request lifecycle with file:line references is in `DATA_FLOW.md`.
 - **Session**: `security/session_manager.dart` (static flags) + `security/secure_storage_service.dart`
   (`flutter_secure_storage`, `encryptedSharedPreferences` on Android, `first_unlock` Keychain on iOS). 401 →
   silent refresh with a `Completer`-based concurrency lock so N simultaneous 401s trigger exactly one refresh
-  call; 409 → `SessionManager.forceLogout()` (deduplicated) + `SessionInvalidatedDialog`. Full contract in
-  BUSINESS_RULES RULE-CORE-002/003.
+  call; 409 → `SessionManager.forceLogout()` (deduplicated) + `SessionInvalidatedDialog`. The same logout is
+  also pushed over the live-rate socket the moment another device logs in (`security/session_ended_listener.dart`,
+  `9|` frames). Full contract in BUSINESS_RULES RULE-CORE-002/003.
 - **App-lock**: `security/app_lifecycle_observer.dart` — pre-caches auth/MPIN/biometric flags on `paused` so
   the `resumed` check is fully synchronous (zero-await lock screen). `suppressAppLock` static flag is the
   documented escape hatch for payment SDK flows.
