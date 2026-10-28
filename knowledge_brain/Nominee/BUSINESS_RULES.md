@@ -62,9 +62,10 @@ flow); the current form cannot originate one.
 The server returns DOB as `dd-MM-yyyy` (parsed first in `_parseDob`, with `yyyy-MM-dd` as fallback),
 but the app always SENDS `yyyy-MM-dd` on submit (`DateFormat('yyyy-MM-dd').format(_selectedDob!)`).
 The DOB picker itself clamps the selectable range to `[DateTime(1900), yesterday]` — no future dates,
-no exact-today DOB.
+no exact-today DOB. On screen (the form's Date of Birth field and the saved-nominee card) it is
+shown as `dd/MM/yyyy`, e.g. `01/01/2001`.
 - Code: `lib/features/nominee/screens/nominee_screen.dart:1011-1023` (picker clamp),
-  `:1088` (outgoing format), `:1200-1207` (`_parseDob`).
+  `:1088` (outgoing format), `:1200-1207` (`_parseDob`), `:1037`, `:1312` (display format).
 
 ### RULE-NOMINEE-008: Cross-feature dependency on `profile` for pincode lookup
 Nominee's pincode-to-location lookup delegates to `profile/profile_controller.dart`'s
