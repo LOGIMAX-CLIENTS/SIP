@@ -77,6 +77,9 @@ Screen behavior:
   address doesn't force re-verification).
 - Save/Update is enabled only when `_isMobileConfirmed && _isEmailSatisfied && _isPincodeConfirmed`;
   tapping it while disabled toasts the first blocking reason (`_showSaveBlockedReason`).
+- **OTP sheet fonts (2026-10-28)**: the "We sent an OTP to …" subtitle uses `NumericStyledText`, so the
+  masked number (`XXXXXX4899`) renders in Lora and the words in Playfair Display — it was all Playfair.
+  The OTP boxes and the resend countdown were already Lora.
 - Client-side validation before submit (`_handleSubmit`): name non-empty & ≥2 chars, relationship
   selected, DOB selected, mobile valid + verified, email valid + verified, pincode (optional) 6 digits
   + Check-confirmed if entered. ID type/number and address are optional.

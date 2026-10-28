@@ -8,6 +8,7 @@ import 'package:pinput/pinput.dart';
 import '../../../shared/theme/app_text_styles.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/numeric_styled_text.dart';
 import '../../../shared/widgets/secure_clipboard.dart';
 import '../../../core/error/failures.dart';
 import '../../../core/services/auth_service.dart';
@@ -264,12 +265,11 @@ class _NomineeOtpSheetState extends State<NomineeOtpSheet> {
               ),
             ),
             SizedBox(height: 8.h),
-            Text(
+            NumericStyledText(
               'We sent an OTP to ${widget.maskedDestination}',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 14.sp,
-                color: secondaryTextColor,
-              ),
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w400,
+              color: secondaryTextColor,
             ),
             SizedBox(height: 24.h),
             Center(
