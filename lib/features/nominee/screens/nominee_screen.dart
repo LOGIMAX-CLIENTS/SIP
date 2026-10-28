@@ -1034,7 +1034,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
 
   Widget _buildDateField() {
     final dateText = _selectedDob != null
-        ? DateFormat('dd MMM yyyy').format(_selectedDob!)
+        ? DateFormat('dd/MM/yyyy').format(_selectedDob!)
         : '';
 
     return Padding(
@@ -1309,7 +1309,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
   String _formatDisplayDate(String dob) {
     try {
       final date = _parseDob(dob);
-      return DateFormat('dd MMM yyyy').format(date);
+      return DateFormat('dd/MM/yyyy').format(date);
     } catch (_) {
       return dob;
     }
