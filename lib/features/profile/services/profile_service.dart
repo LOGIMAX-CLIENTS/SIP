@@ -24,6 +24,32 @@ class ProfileService {
     }
   }
 
+  /// Saves just the e-mail — profile/update takes a partial payload. For a
+  /// new address the server needs a code verified for it in the last few
+  /// minutes (EMAIL_NOT_VERIFIED otherwise) and stamps it verified on save.
+  /// Returns `{'success': true}` or `{'success': false, 'message': '...'}`.
+  Future<Map<String, dynamic>> updateEmail({
+    required String customerId,
+    required String email,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        'profile/update',
+        data: {'id_customer': customerId, 'email': email},
+      );
+      if (response.data['success'] == true) {
+        return {'success': true};
+      }
+      final data = response.data;
+      final msg = data['message']?.toString()
+          ?? (data['error'] as Map<String, dynamic>?)?['message']?.toString()
+          ?? 'Failed to save your e-mail.';
+      return {'success': false, 'message': msg};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   /// Returns `{'success': true}` or `{'success': false, 'message': '...'}`.
   Future<Map<String, dynamic>> updateProfile({
     required String customerId,

@@ -430,7 +430,7 @@ a rule added to one verification path and not the others. When adding ANY gate o
 
 **Why.** Registration can now skip verifying the e-mail, or skip the e-mail altogether (admin
 `REGISTER_FORM_VALIDATION.email_mandatory = 0`, see Auth RULE-AUTH-006 — `email` then comes back `""` and the
-step points the customer to Account Details), and accounts registered before 2026-07-23 were never stamped
+step asks for one in place), and accounts registered before 2026-07-23 were never stamped
 (`cus_email_verified_on` NULL). KYC requires a verified e-mail regardless.
 
 **Order on `/kyc-verification`:** E-mail → PAN → Aadhaar → Name & DOB Match → PAN-Aadhaar Link → Add Bank
@@ -445,7 +445,16 @@ verified**: the first cut defaulted to true, and a customer who skipped verifica
 **Client rules** (`computeKycStepStatuses`):
 - E-mail: `verified`/'Verified', else `actionable`/'Pending'. Tapping it (or the footer "Verify E-mail")
   runs `_verifyEmail()` — same `sendEmailOtp(purpose: 'account')` + `showEmailOtpSheet` flow as Account
-  Details. No address on file → opens Account Details.
+  Details, and it **never leaves the checklist** (QA, PM-STG-0582, 2026-10-09; raised again 2026-10-28):
+  - Address on file → the code goes to it; `verify-email-otp` stamps it because it's the on-file address.
+  - No address on file → `showKycAddEmailSheet` asks for one and sends the code (the sheet stays open if
+    sending fails, e.g. an address another account uses). Once the code is verified,
+    `ProfileNotifier.saveEmail` posts `profile/update {email}`, which saves the new address already stamped.
+    Until 2026-10-28 this case opened Account Details instead.
+- **Both pages stay in step.** Account Details invalidates `kycDocumentsProvider` after a verify and after a
+  save: the Profile page's KYC Status badge (`kycProgressProvider`) keeps `kycDocumentsProvider('profile')`
+  alive underneath it, so without that the badge and the checklist opened from it kept showing 'Pending'
+  until a pull-to-refresh.
 - While unverified, PAN/Aadhaar that are `actionable` or `failed` (Retry) become `locked` ("Unlocks once your
   e-mail is verified"). **Verified, Under Review and In Progress are kept** — existing progress is never
   re-locked.
