@@ -16,6 +16,10 @@ class NomineeDetails {
   final String? city;
   final String? state;
   final String? pincode;
+  /// One of the pincode's taluks, as on Personal Details — see check-pincode's
+  /// `areas`. Null when saving means "not picked here": the server keeps the
+  /// stored one if the pincode is unchanged and drops it otherwise.
+  final String? area;
   final int? idCity;
   final int? idState;
   final int? idCountry;
@@ -34,6 +38,7 @@ class NomineeDetails {
     this.city,
     this.state,
     this.pincode,
+    this.area,
     this.idCity,
     this.idState,
     this.idCountry,
@@ -54,6 +59,7 @@ class NomineeDetails {
       city: json['city']?.toString(),
       state: json['state']?.toString(),
       pincode: json['pincode']?.toString(),
+      area: json['area']?.toString(),
       idCity: json['id_city'] as int?,
       idState: json['id_state'] as int?,
       idCountry: json['id_country'] as int?,
@@ -77,6 +83,7 @@ class NomineeDetails {
     if (city != null && city!.isNotEmpty) map['city'] = city;
     if (state != null && state!.isNotEmpty) map['state'] = state;
     if (pincode != null && pincode!.isNotEmpty) map['pincode'] = pincode;
+    if (area != null) map['area'] = area;
     if (idCity != null) map['id_city'] = idCity;
     if (idState != null) map['id_state'] = idState;
     return map;
@@ -100,6 +107,7 @@ class NomineeDetails {
     String? city,
     String? state,
     String? pincode,
+    String? area,
     int? idCity,
     int? idState,
     int? idCountry,
@@ -118,6 +126,7 @@ class NomineeDetails {
       city: city ?? this.city,
       state: state ?? this.state,
       pincode: pincode ?? this.pincode,
+      area: area ?? this.area,
       idCity: idCity ?? this.idCity,
       idState: idState ?? this.idState,
       idCountry: idCountry ?? this.idCountry,
