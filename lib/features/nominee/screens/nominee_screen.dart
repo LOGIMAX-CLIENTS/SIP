@@ -71,6 +71,32 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     return pincode.length == 6 && pincode == _verifiedPincode;
   }
 
+  // Area = one of the pincode's taluks, as on Personal Details: picked from
+  // the list check-pincode returns, never typed. The list is kept with the
+  // pincode it belongs to, so editing the pincode makes it stale until the
+  // next Check.
+  String _area = '';
+  List<String>? _areaOptions;
+  String _areaOptionsPincode = '';
+  bool _isAreaLoading = false;
+
+  // The pincode saved with the nominee being edited ('' for a new one). Its
+  // area is kept when that pincode has no areas to pick from.
+  String _onFilePincode = '';
+
+  /// The areas for the pincode in the box, or null when not fetched yet.
+  List<String>? get _currentAreaOptions =>
+      _areaOptionsPincode == _pincodeCtrl.text.trim() ? _areaOptions : null;
+
+  /// An area is required only once we know the pincode has some. Not knowing
+  /// (lookup failed, or a server from before the Area field) never blocks
+  /// Save.
+  bool get _isAreaConfirmed {
+    final options = _currentAreaOptions;
+    if (options == null || options.isEmpty) return true;
+    return options.any((a) => a.toLowerCase() == _area.toLowerCase());
+  }
+
   bool _isMobileVerifying = false;
 
   // The mobile value confirmed via OTP — or the one already on file for an
@@ -162,6 +188,10 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _stateCtrl.text = nominee.state ?? '';
     _pincodeCtrl.text = nominee.pincode ?? '';
     _verifiedPincode = (nominee.pincode ?? '').trim();
+    _onFilePincode = _verifiedPincode;
+    _area = nominee.area ?? '';
+    _areaOptions = null;
+    _areaOptionsPincode = '';
     _selectedRelationship =
         nominee.relationship.isNotEmpty ? nominee.relationship : null;
     _selectedRelationshipId = nominee.relationshipId;
@@ -192,6 +222,10 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     _stateCtrl.clear();
     _pincodeCtrl.clear();
     _verifiedPincode = '';
+    _onFilePincode = '';
+    _area = '';
+    _areaOptions = null;
+    _areaOptionsPincode = '';
     _selectedRelationship = null;
     _selectedRelationshipId = null;
     _selectedIdType = null;
@@ -371,18 +405,12 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                         Icons.email_rounded, 'Email', nominee.email!,
                         fullWidth: true),
                   ],
-                  if (nominee.address != null &&
-                      nominee.address!.isNotEmpty) ...[
+                  if (_addressLine(nominee).isNotEmpty) ...[
                     _divider(),
                     _buildDetailRow(
                       Icons.location_on_rounded,
                       'Address',
-                      [
-                        nominee.address,
-                        nominee.city,
-                        nominee.state,
-                        nominee.pincode,
-                      ].where((e) => e != null && e.isNotEmpty).join(', '),
+                      _addressLine(nominee),
                       fullWidth: true,
                     ),
                   ],
@@ -399,6 +427,7 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
               onPressed: () {
                 _populateFields(nominee);
                 setState(() => _isEditing = true);
+                _prefetchAreaOptions();
               },
               gradient: const LinearGradient(
                 colors: [Color(0xFF003716), Color(0xFF167525)],
@@ -490,6 +519,16 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
             ),
     );
   }
+
+  /// Shown whenever any part is on file — an area or pincode given without a
+  /// street address is still worth showing.
+  String _addressLine(NomineeDetails nominee) => [
+        nominee.address,
+        nominee.area,
+        nominee.city,
+        nominee.state,
+        nominee.pincode,
+      ].where((e) => e != null && e.isNotEmpty).join(', ');
 
   Widget _divider() => Divider(
         height: 1,
@@ -621,6 +660,11 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                   ],
                 ),
 
+              if (_pincodeCtrl.text.trim().isNotEmpty &&
+                  (_area.isNotEmpty ||
+                      (_currentAreaOptions?.isNotEmpty ?? false)))
+                _buildAreaField(),
+
               _buildTextField(
                 controller: _addressCtrl,
                 label: 'Residential Address',
@@ -645,7 +689,8 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
                 final canSubmit = !_isSaving &&
                     _isMobileConfirmed &&
                     _isEmailSatisfied &&
-                    _isPincodeConfirmed;
+                    _isPincodeConfirmed &&
+                    _isAreaConfirmed;
                 return Stack(
                   children: [
                     CustomButton(
@@ -1196,6 +1241,11 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
           type: ToastType.error);
       return;
     }
+    if (!_isAreaConfirmed) {
+      AppToast.show(context, "Please select the nominee's area",
+          type: ToastType.error);
+      return;
+    }
 
     setState(() => _isSaving = true);
 
@@ -1221,6 +1271,8 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
         pincode: _pincodeCtrl.text.trim().isNotEmpty
             ? _pincodeCtrl.text.trim()
             : null,
+        // Sent only when there was a list to pick from.
+        area: (_currentAreaOptions?.isNotEmpty ?? false) ? _area : null,
         idCity: _idCity,
         idState: _idState,
         idCountry: _idCountry ?? 101,
@@ -1345,6 +1397,11 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     }
     if (!_isPincodeConfirmed) {
       AppToast.show(context, 'Please tap Check to verify the pincode',
+          type: ToastType.error);
+      return;
+    }
+    if (!_isAreaConfirmed) {
+      AppToast.show(context, "Please select the nominee's area",
           type: ToastType.error);
       return;
     }
@@ -1539,15 +1596,182 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
         _idState = int.tryParse(data['id_state'] ?? '');
         _idCountry = int.tryParse(data['id_country'] ?? '') ?? 101;
       });
+      _applyAreaOptions(pincode, List<String>.from(data['areas'] ?? const []));
     } else {
       setState(() {
         _verifiedPincode = '';
         _stateCtrl.text = '';
         _cityCtrl.text = '';
+        _area = '';
+        _areaOptions = null;
+        _areaOptionsPincode = '';
       });
       AppToast.show(context, result['message']?.toString() ?? 'Pincode not found.',
           type: ToastType.error);
     }
+  }
+
+  // ─── Area (same pattern as account details) ────────────────────────────
+
+  /// Keeps the current area if it is one of [options] (in the list's own
+  /// spelling); otherwise fills in the only option, or clears it so the
+  /// customer has to pick. A pincode with no areas keeps the stored one only
+  /// if it is the pincode on file — the server applies the same rule.
+  void _applyAreaOptions(String pincode, List<String> options) {
+    final current = _area.trim().toLowerCase();
+    final match = options.where((a) => a.toLowerCase() == current).toList();
+    setState(() {
+      _areaOptionsPincode = pincode;
+      _areaOptions = options;
+      if (match.isNotEmpty) {
+        _area = match.first;
+      } else if (options.length == 1) {
+        _area = options.first;
+      } else if (options.isNotEmpty || pincode != _onFilePincode) {
+        _area = '';
+      }
+    });
+  }
+
+  /// Fetches the areas for the pincode already on file when editing starts,
+  /// so the customer can pick one without tapping Check again. The nominee
+  /// record carries no state/city names, so those are filled in from the
+  /// same lookup. Silent on failure: Save then simply doesn't ask for an
+  /// area.
+  Future<void> _prefetchAreaOptions() async {
+    final pincode = _pincodeCtrl.text.trim();
+    if (pincode.length != 6 || !_isPincodeConfirmed || _currentAreaOptions != null) {
+      return;
+    }
+    setState(() => _isAreaLoading = true);
+    final result =
+        await ref.read(pc.profileProvider.notifier).checkPincode(pincode);
+    if (!mounted) return;
+    setState(() => _isAreaLoading = false);
+    if (result['success'] == true && _pincodeCtrl.text.trim() == pincode) {
+      final data = result['data'] as Map<String, dynamic>;
+      if (_stateCtrl.text.isEmpty) _stateCtrl.text = data['state'] ?? '';
+      if (_cityCtrl.text.isEmpty) _cityCtrl.text = data['city'] ?? '';
+      _applyAreaOptions(pincode, List<String>.from(data['areas'] ?? const []));
+    }
+  }
+
+  Future<void> _showAreaSheet(List<String> options) async {
+    const ink = Color(0xFF333333);
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      // Some pincodes have a dozen or more areas.
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+      ),
+      builder: (sheetContext) => ConstrainedBox(
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.6),
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 12.h),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40.w,
+                    height: 4.h,
+                    decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(100.r),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                Text(
+                  'Select Area',
+                  style: GoogleFonts.playfairDisplay(
+                      fontSize: 17.sp, fontWeight: FontWeight.w700, color: ink),
+                ),
+                SizedBox(height: 8.h),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: options.map((area) {
+                      final isSelected =
+                          area.toLowerCase() == _area.toLowerCase();
+                      return InkWell(
+                        onTap: () => Navigator.pop(sheetContext, area),
+                        borderRadius: BorderRadius.circular(12.r),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14.h),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  area,
+                                  style: GoogleFonts.playfairDisplay(
+                                    fontSize: 15.sp,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: ink,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_off_rounded,
+                                size: 22.sp,
+                                color: isSelected
+                                    ? AppTheme.primaryGreen
+                                    : Colors.black26,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (selected != null && mounted) setState(() => _area = selected);
+  }
+
+  /// Area, under State and City. Picked from the pincode's areas, never
+  /// typed; with only one area it is filled in and there is nothing to pick.
+  Widget _buildAreaField() {
+    final options = _currentAreaOptions ?? const <String>[];
+    final canPick = _isPincodeConfirmed && options.length > 1;
+    Widget? trailing;
+    if (_isAreaLoading) {
+      trailing = SizedBox(
+        height: 16.h,
+        width: 16.h,
+        child: const CircularProgressIndicator(
+            strokeWidth: 2, color: Color(0xFF0E5723)),
+      );
+    } else if (canPick) {
+      trailing = Icon(Icons.keyboard_arrow_down_rounded,
+          size: 24.sp, color: const Color(0xFF0E5723));
+    }
+    return GestureDetector(
+      onTap: canPick ? () => _showAreaSheet(options) : null,
+      behavior: HitTestBehavior.opaque,
+      child: _buildReadOnlyField(
+        label: 'Area',
+        value: _area,
+        icon: Icons.place_rounded,
+        placeholder: 'Select area',
+        trailing: trailing,
+        isPickable: canPick,
+      ),
+    );
   }
 
   // â”€â”€â”€ Read-only field (auto-filled from pincode check) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1555,6 +1779,10 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
     required String label,
     required String value,
     required IconData icon,
+    String placeholder = '—',
+    Widget? trailing,
+    // Not typed into, but tapping opens a picker — styled like an input.
+    bool isPickable = false,
   }) {
     return Padding(
       padding: EdgeInsets.only(bottom: 16.h),
@@ -1574,17 +1802,28 @@ class _NomineeScreenState extends ConsumerState<NomineeScreen>
             width: double.infinity,
             padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
             decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
+              color: isPickable ? Colors.white : const Color(0xFFF5F5F5),
               borderRadius: BorderRadius.circular(15.r),
-              border: Border.all(color: Colors.black.withOpacity(0.06)),
+              border: Border.all(
+                  color: Colors.black.withOpacity(isPickable ? 0.1 : 0.06)),
             ),
-            child: Text(
-              value.isNotEmpty ? value : '—',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 16.sp,
-                fontWeight: FontWeight.w500,
-                color: value.isNotEmpty ? const Color(0xFF333333) : Colors.grey,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    value.isNotEmpty ? value : placeholder,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w500,
+                      color: value.isNotEmpty ? const Color(0xFF333333) : Colors.grey,
+                    ),
+                  ),
+                ),
+                if (trailing != null) ...[
+                  SizedBox(width: 12.w),
+                  trailing,
+                ],
+              ],
             ),
           ),
         ],
