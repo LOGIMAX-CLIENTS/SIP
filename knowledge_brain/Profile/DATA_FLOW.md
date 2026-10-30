@@ -35,9 +35,9 @@ last_updated: 2026-08-19
    `ProfileNotifier.updateProfile(...)` → `ProfileService.updateProfile(...)` →
    `POST profile/update` with `id_customer` + all 10 profile fields (`profile_service.dart:27-70`).
 8. On success, `ProfileNotifier` optimistically merges the edited fields into local state
-   (`profile_controller.dart:265-286`) rather than refetching — **and resets `isEmailVerified` to `false`
-   locally if the saved email differs from the previously-verified one**
-   (`profile_controller.dart:266-274`, "a verification stamp belongs to the mailbox it verified").
+   (`profile_controller.dart:265-286`) rather than refetching — **and sets `isEmailVerified` to `true`
+   locally if the saved email differs from the previous one**: the server only accepts a new address that
+   was just verified by OTP and stamps it verified (BUSINESS_RULES RULE-PROFILE-003).
    `isEditing` flips back to `false`.
 9. Photo update is a separate sub-flow: `ProfilePhotoWidget` → `_handlePhotoUpdate` →
    `ProfileNotifier.updateProfilePhoto(File)` → `ProfileService.updateProfilePhoto` →

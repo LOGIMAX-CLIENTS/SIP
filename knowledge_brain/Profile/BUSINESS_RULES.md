@@ -21,19 +21,21 @@ editable `TextField` regardless of `isEditing` state.
 **Code**: `account_details_screen.dart:42-47`. Server-side re-validation on `profile/update` is
 **unconfirmed** (not visible from client code).
 
-## RULE-PROFILE-003 — Editing an already-verified e-mail address resets its verified badge locally
+## RULE-PROFILE-003 — A verified e-mail stays editable, but only for another verified address
 
-If the saved value differs from the previously on-file (and verified) e-mail, `isEmailVerified` is reset to
-`false` client-side immediately on successful save — a verification stamp belongs to the mailbox it
-verified, not the account. **Code**: `profile_controller.dart:266-274` — comment cites backend
-`identity.py` doing the equivalent reset server-side, so this is mirroring, not inventing, server behavior.
+PM-STG-0603 (2026-10-30) reopened the E-Mail field for customers whose address is already verified (it had
+been locked since 3ea82ca). Typing a different address turns the badge back to "Verify", and Save stays
+disabled until that address passes the OTP sheet. The backend refuses an unverified new address
+(`EMAIL_NOT_VERIFIED`) and stamps the new mailbox verified, so on a successful save with a changed e-mail
+`isEmailVerified` is set to `true` locally. **Code**: `account_details_screen.dart` (`_isEmailConfirmed`,
+`_canSave`), `profile_controller.dart` (`updateProfile`).
 
-## RULE-PROFILE-004 — E-mail re-verification only offered when the input field exactly matches the on-file value
+## RULE-PROFILE-004 — E-mail "Verify" is offered for whatever address is typed
 
-The "Verify" / "Verified" badge next to the E-Mail field is hidden entirely if the field currently holds an
-unsaved edit (`currentInput != onFileEmail`) — verifying a not-yet-saved address would check against a
-value the backend doesn't have yet.
-**Code**: `account_details_screen.dart:404-410`.
+The badge next to the E-Mail field says "Verified" only when the typed address is the verified on-file one
+or one verified in this session (`_isEmailConfirmed`, the same check that gates Save); any other well-formed
+address gets a "Verify" link that sends the OTP to the typed address. It is hidden while the field is empty
+or malformed. **Code**: `account_details_screen.dart` (`_buildEmailVerifyBadge`).
 
 The OTP is sent with `purpose: 'account'` (e-mail copy "confirm this email address for your startGOLD
 account", not the registration copy). The KYC checklist's E-mail step uses the same flow — KYC

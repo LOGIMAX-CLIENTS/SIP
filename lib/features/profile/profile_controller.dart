@@ -330,9 +330,9 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       if (!mounted) return result['success'] == true;
 
       if (result['success'] == true) {
-        // A verification stamp belongs to the mailbox it verified — mirrors
-        // the backend's identity.py reset so a changed-but-unsaved-refetch
-        // email doesn't keep showing "Verified" locally.
+        // A changed address is saved verified: profile/update refuses one
+        // that was not just verified by OTP and stamps the new mailbox
+        // (identity.py), so it must not fall back to "Verify" locally.
         final emailChanged =
             email.trim().toLowerCase() != state.user.email.trim().toLowerCase();
         final updatedUser = state.user.copyWith(
@@ -340,7 +340,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
           firstName: firstName,
           lastName: lastName ?? '',
           email: email,
-          isEmailVerified: emailChanged ? false : state.user.isEmailVerified,
+          isEmailVerified: emailChanged ? true : state.user.isEmailVerified,
           dob: dob,
           pincode: pincode,
           state: stateVal,
