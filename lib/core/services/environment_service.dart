@@ -13,8 +13,10 @@ class EnvironmentService {
   static const String stagingBaseUrl = 'https://startgoldapi.logimaxindia.com/api/api/v1/';
   static const String stagingWsUrl = 'wss://startgoldapp.logimaxindia.com/ws/';
 
-  static const String productionBaseUrl = 'https://api.startgold.com/api/api/v1/';
-  static const String productionWsUrl = 'wss://sgbackoffice.startgold.com/ws/';
+  static const String productionBaseUrl = bastionBaseUrl;
+  // The live-price socket runs on the Admin server, not the mobile API host
+  // (whose /ws/ is the notification service and refuses the rate feed).
+  static const String productionWsUrl = 'wss://endpoint.backoffice.api.startgold.com/ws/';
 
   static const String vaptBaseUrl = 'https://vaptapi.startgold.com/api/api/v1/';
   static const String vaptWsUrl = 'wss://vaptbackoffice.startgold.com/ws/';
@@ -36,13 +38,13 @@ class EnvironmentService {
   static String secureBaseUrlFor(String baseUrl) =>
       baseUrl == bastionBaseUrl ? bastionSecureBaseUrl : baseUrl;
 
-  static String _currentEnv = envStaging;
-  static String _baseUrl = stagingBaseUrl;
-  static String _wsUrl = stagingWsUrl;
+  // static String _currentEnv = envStaging;
+  // static String _baseUrl = stagingBaseUrl;
+  // static String _wsUrl = stagingWsUrl;
 
-  // static String _currentEnv = envProduction;
-  // static String _baseUrl = productionBaseUrl;
-  // static String _wsUrl = productionWsUrl;
+  static String _currentEnv = envProduction;
+  static String _baseUrl = productionBaseUrl;
+  static String _wsUrl = productionWsUrl;
 
   // static String _currentEnv = envVapt;
   // static String _baseUrl = vaptBaseUrl;
