@@ -88,14 +88,17 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
   double? _maxWithdrawableInr(CommodityType type,
       AsyncValue<MarketRates> market, AsyncValue<WithdrawalBalance> balanceAsync) {
     final withdrawableQty = balanceAsync.valueOrNull?.withdrawable ?? 0.0;
-    final liveRate = type == CommodityType.gold
-        ? market.valueOrNull?.goldBuy ?? 0.0
-        : market.valueOrNull?.silverBuy ?? 0.0;
-    final maxInr = _floorToPaisa(withdrawableQty * liveRate);
+    final maxInr = _floorToPaisa(withdrawableQty * _liveRate(type, market));
     return (balanceAsync.hasValue && market.hasValue && maxInr > 0)
         ? maxInr
         : null;
   }
+
+  /// Live withdrawal (buy) rate per gram, 0 until market data has loaded.
+  double _liveRate(CommodityType type, AsyncValue<MarketRates> market) =>
+      type == CommodityType.gold
+          ? market.valueOrNull?.goldBuy ?? 0.0
+          : market.valueOrNull?.silverBuy ?? 0.0;
 
   /// Inline amount error, checked in order: min limit, max limit, then
   /// withdrawable balance. Falls back to the last server policy error.
@@ -659,7 +662,8 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                         fontWeight: FontWeight.w600)),
                 balanceAsync.maybeWhen(
                   data: (balance) => GestureDetector(
-                    onTap: () => _showHoldingInfoSheet(context, balance, type),
+                    onTap: () => _showHoldingInfoSheet(
+                        context, balance, type, _liveRate(type, market)),
                     child: Container(
                       padding: EdgeInsets.all(5.r),
                       decoration: BoxDecoration(
@@ -682,9 +686,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
             balanceAsync.when(
               data: (balance) {
                 final withdrawable = balance.withdrawable;
-                final rate = type == CommodityType.gold
-                    ? market.valueOrNull?.goldBuy ?? 0
-                    : market.valueOrNull?.silverBuy ?? 0;
+                final rate = _liveRate(type, market);
                 final inrValue = _floorToPaisa(withdrawable * rate);
                 // Small label under each figure: the weight held, and what
                 // that weight is worth at the live price.
@@ -702,15 +704,57 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                                 fontWeight: FontWeight.w600)),
                       ],
                     );
-                return Row(
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    figure('${withdrawable.toStringAsFixed(6)} gm', 'Weight'),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12.w),
-                      child: Container(
-                          width: 1.5, height: 32.h, color: Colors.black12),
+                    Row(
+                      children: [
+                        figure('${withdrawable.toStringAsFixed(6)} gm', 'Weight'),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12.w),
+                          child: Container(
+                              width: 1.5, height: 32.h, color: Colors.black12),
+                        ),
+                        figure('\u20b9 ${inrValue.toStringAsFixed(2)}', 'Value'),
+                      ],
                     ),
-                    figure('\u20b9 ${inrValue.toStringAsFixed(2)}', 'Value'),
+                    // On-hold metal (e.g. offer reward silver until the offer
+                    // releases it) is part of the holding the home page shows
+                    // but can't be withdrawn yet \u2014 say so here, not only in
+                    // the \u24d8 sheet, so the gap between the two isn't a mystery.
+                    if (balance.onHold > 0) ...[
+                      SizedBox(height: 12.h),
+                      GestureDetector(
+                        onTap: () =>
+                            _showHoldingInfoSheet(context, balance, type, rate),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 12.w, vertical: 10.h),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12.r),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock_clock_outlined,
+                                  size: 16.sp, color: const Color(0xFFD97706)),
+                              SizedBox(width: 8.w),
+                              Expanded(
+                                child: Text(
+                                  'On hold: ${balance.onHold.toStringAsFixed(6)} gm '
+                                  '(\u20b9 ${_floorToPaisa(balance.onHold * rate).toStringAsFixed(2)}) '
+                                  '\u00b7 not withdrawable yet',
+                                  style: GoogleFonts.playfairDisplay(
+                                      fontSize: 11.sp,
+                                      color: const Color(0xFFB45309),
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 );
               },
@@ -993,8 +1037,8 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
     );
   }
 
-  void _showHoldingInfoSheet(
-      BuildContext context, WithdrawalBalance balance, CommodityType type) {
+  void _showHoldingInfoSheet(BuildContext context, WithdrawalBalance balance,
+      CommodityType type, double rate) {
     final withdrawable = balance.withdrawable;
     final totalHolding = balance.totalHolding;
     final onHold = balance.onHold;
@@ -1101,6 +1145,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       bgColor: const Color(0xFF1B882C).withOpacity(0.08),
                       label: 'Withdrawable',
                       value: '${withdrawable.toStringAsFixed(6)} gm',
+                      inrValue: _floorToPaisa(withdrawable * rate),
                       valueColor: const Color(0xFF1B882C),
                     ),
                     // Requested only shows once the customer actually has an
@@ -1114,6 +1159,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                         bgColor: const Color(0xFF1D4ED8).withOpacity(0.08),
                         label: 'Requested',
                         value: '${requested.toStringAsFixed(6)} gm',
+                      inrValue: _floorToPaisa(requested * rate),
                         valueColor: const Color(0xFF1D4ED8),
                       ),
                     ],
@@ -1124,6 +1170,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       bgColor: const Color(0xFFD97706).withOpacity(0.08),
                       label: 'On Hold',
                       value: '${onHold.toStringAsFixed(6)} gm',
+                      inrValue: _floorToPaisa(onHold * rate),
                       valueColor: const Color(0xFFD97706),
                     ),
                     Divider(height: 1, color: Colors.black.withOpacity(0.05)),
@@ -1133,6 +1180,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                       bgColor: const Color(0xFFEF9B00).withOpacity(0.10),
                       label: 'Total Holding',
                       value: '${totalHolding.toStringAsFixed(6)} gm',
+                      inrValue: _floorToPaisa(totalHolding * rate),
                       valueColor: Colors.black87,
                     ),
                   ],
@@ -1150,7 +1198,8 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                   SizedBox(width: 6.w),
                   Expanded(
                     child: Text(
-                      'On-hold qty reflects pending orders or locks',
+                      'On-hold metal (offer rewards, pending orders or locks) '
+                      "can't be withdrawn until it's released",
                       style: GoogleFonts.playfairDisplay(
                         fontSize: 11.sp,
                         color: Colors.black38,
@@ -1176,6 +1225,7 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
     required String label,
     required String value,
     required Color valueColor,
+    double? inrValue,
   }) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
@@ -1201,13 +1251,28 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
               ),
             ),
           ),
-          Text(
-            value,
-            style: GoogleFonts.lora(
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w800,
-              color: valueColor,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.lora(
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w800,
+                  color: valueColor,
+                ),
+              ),
+              // What those grams are worth at the live withdrawal price.
+              if (inrValue != null)
+                Text(
+                  '₹ ${inrValue.toStringAsFixed(2)}',
+                  style: GoogleFonts.lora(
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.w600,
+                    color: valueColor.withOpacity(0.7),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
