@@ -740,14 +740,13 @@ class _WithdrawalScreenState extends ConsumerState<WithdrawalScreen> {
                                   size: 16.sp, color: const Color(0xFFD97706)),
                               SizedBox(width: 8.w),
                               Expanded(
-                                child: Text(
+                                child: NumericStyledText(
                                   'On hold: ${balance.onHold.toStringAsFixed(6)} gm '
                                   '(\u20b9 ${_floorToPaisa(balance.onHold * rate).toStringAsFixed(2)}) '
                                   '\u00b7 not withdrawable yet',
-                                  style: GoogleFonts.playfairDisplay(
-                                      fontSize: 11.sp,
-                                      color: const Color(0xFFB45309),
-                                      fontWeight: FontWeight.w600),
+                                  fontSize: 11.sp,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFFB45309),
                                 ),
                               ),
                             ],
