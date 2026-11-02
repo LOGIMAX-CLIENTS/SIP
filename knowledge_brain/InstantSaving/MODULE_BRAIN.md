@@ -99,6 +99,9 @@ per the build request.
   rate-lock durations, payment-method→gateway map.
 - `amountDenominationsProvider` / `weightDenominationsProvider` — `POST users/shared/amount-denominations` /
   `weight-denominations` (note: NOT `savings/denominations/*` as the hand-written doc claims — see Drift).
+  Since 2026-11-02 `SharedService` serves these from a `TimedListCache` (`core/utils/timed_list_cache.dart`):
+  a non-empty list per `id_metal` is reused for 60 s and concurrent requests share one call, so the
+  screen's `ref.invalidate(...)` on every entry no longer hits the backend each time.
 - `sellRateTimerProvider` (`core/providers/timer_provider.dart`) — shared rate-lock timer, used for the
   "sell" side (platform sells to customer, i.e. the price the customer pays). Duration comes from
   `config.sellRateLockSeconds`, itself from `savings/config` — exact seconds value is server-driven and not

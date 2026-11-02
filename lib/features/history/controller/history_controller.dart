@@ -69,6 +69,24 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
   TransactionFilter _filter = TransactionFilter.empty;
   TransactionFilter get currentFilter => _filter;
 
+  /// How long a loaded page 1 counts as fresh for [refreshIfStale] — the
+  /// automatic re-fetch on entering History. Switching tabs back and forth
+  /// within this window reuses the list instead of re-calling the backend,
+  /// which throttles `transactions/history` after a handful of calls.
+  static const Duration staleAfter = Duration(seconds: 15);
+
+  /// How long [refresh] stays a no-op after the backend answers
+  /// TOO_MANY_REQUESTS. Retrying during the throttle only extends it.
+  static const Duration rateLimitCooldown = Duration(seconds: 30);
+
+  /// The page-1 fetch currently in flight and the filter it was sent with.
+  /// A second request for the same filter joins it instead of firing again.
+  Future<void>? _firstPageInFlight;
+  TransactionFilter? _inFlightFilter;
+
+  DateTime? _loadedAt;
+  DateTime? _rateLimitedUntil;
+
   HistoryNotifier(this._service, this._customerId)
       : super(const HistoryPageState()) {
     _fetchFirstPage();
@@ -87,7 +105,21 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
     return _fetchFirstPage();
   }
 
-  Future<void> _fetchFirstPage() async {
+  Future<void> _fetchFirstPage() {
+    final inFlight = _firstPageInFlight;
+    if (inFlight != null && identical(_inFlightFilter, _filter)) {
+      return inFlight;
+    }
+    late final Future<void> fetch;
+    fetch = _loadFirstPage().whenComplete(() {
+      if (identical(_firstPageInFlight, fetch)) _firstPageInFlight = null;
+    });
+    _firstPageInFlight = fetch;
+    _inFlightFilter = _filter;
+    return fetch;
+  }
+
+  Future<void> _loadFirstPage() async {
     if (_customerId == null) {
       state = const HistoryPageState(error: 'User not logged in');
       return;
@@ -114,7 +146,11 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
         hasMore: response.hasMore,
         page: 1,
       );
+      _loadedAt = DateTime.now();
     } catch (e) {
+      if (e is HistoryRateLimitedException) {
+        _rateLimitedUntil = DateTime.now().add(rateLimitCooldown);
+      }
       final msg = e.toString().replaceFirst('Exception: ', '');
       state = state.copyWith(
         isLoading: false,
@@ -167,7 +203,23 @@ class HistoryNotifier extends StateNotifier<HistoryPageState> {
     }
   }
 
-  Future<void> refresh() => _fetchFirstPage();
+  /// Re-fetches page 1 — pull-to-refresh and the header icon. A no-op for
+  /// [rateLimitCooldown] after the backend throttled this endpoint.
+  Future<void> refresh() {
+    final until = _rateLimitedUntil;
+    if (until != null && DateTime.now().isBefore(until)) return Future.value();
+    return _fetchFirstPage();
+  }
+
+  /// [refresh], unless page 1 was loaded within [staleAfter]. Used by the
+  /// automatic re-fetches on entering History (tab switch, pushed route).
+  Future<void> refreshIfStale() {
+    final loadedAt = _loadedAt;
+    if (loadedAt != null && DateTime.now().difference(loadedAt) < staleAfter) {
+      return Future.value();
+    }
+    return refresh();
+  }
 }
 
 /// Not autoDispose — state (and therefore loaded pages + effective scroll

@@ -9,9 +9,11 @@ Alphabetical by class. All line numbers verified against the current source (202
 | `HistoryNotifier(service, customerId)` (constructor) | 72 | Calls `_fetchFirstPage()` immediately on creation | `historyProvider` factory (line 175) |
 | `loadInitial()` | 77 | Public wrapper for `_fetchFirstPage()` | Not directly called by any screen found — screens rely on the constructor's auto-fetch or `refresh()`; **unconfirmed external caller** |
 | `applyFilter(filter)` | 85 | Stores the filter, then re-fetches page 1 (replaces all loaded pages) | `TransactionHistoryScreen._applyFilter` (`transaction_history_screen.dart:89`) |
-| `_fetchFirstPage()` | 90 | `POST transactions/history` page 1, replaces state entirely; guards `_customerId == null` | `applyFilter`, `refresh`, constructor |
+| `_fetchFirstPage()` | — | Returns the in-flight page-1 fetch if one exists for the same filter, else starts `_loadFirstPage()` | `applyFilter`, `refresh`, `loadInitial`, constructor |
+| `_loadFirstPage()` | — | `POST transactions/history` page 1, replaces state entirely; guards `_customerId == null`; records `_loadedAt` / `_rateLimitedUntil` | `_fetchFirstPage` |
 | `loadMore()` | 126 | Fetches `page + 1`, merges into existing `groupedData`/`transactions`; no-ops if already loading or `!hasMore` | `TransactionHistoryScreen._onScroll` (`transaction_history_screen.dart:58`) |
-| `refresh()` | 166 | Alias for `_fetchFirstPage()` | Header refresh button (`transaction_history_screen.dart:178`), `RefreshIndicator.onRefresh` (`transaction_history_screen.dart:459`), `MainScreen` tab re-entry (`main_screen.dart:107`) |
+| `refresh()` | — | `_fetchFirstPage()`, except a no-op for `rateLimitCooldown` after `HistoryRateLimitedException` | Header refresh button, `RefreshIndicator.onRefresh` (`transaction_history_screen.dart`) |
+| `refreshIfStale()` | — | `refresh()` unless page 1 loaded within `staleAfter` | `MainScreen._onTabTapped` (History tab re-entry), `TransactionHistoryScreen.initState` (pushed route) |
 
 ## Top-level providers — `history_controller.dart`
 

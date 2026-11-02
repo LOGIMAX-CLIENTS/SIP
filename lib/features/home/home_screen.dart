@@ -50,15 +50,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
-  void initState() {
-    super.initState();
-    // Fetch fresh notification badge count on home load
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(notificationProvider.notifier).refreshUnreadCount();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final selectedCommodity = ref.watch(commodityProvider);
@@ -193,7 +184,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ref.invalidate(homeDashboardProvider);
           ref.invalidate(countdownOfferProvider);
           ref.invalidate(profileProvider);
-          ref.read(notificationProvider.notifier).refreshUnreadCount();
+          ref
+              .read(notificationProvider.notifier)
+              .refreshUnreadCount(force: true);
         },
         color: AppTheme.arcticBlue,
         backgroundColor: Colors.transparent,

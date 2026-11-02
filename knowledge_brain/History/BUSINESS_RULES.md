@@ -57,6 +57,13 @@ Pull-to-refresh and the header refresh icon are the other two triggers.
 - Gaps: tapping History while already on it is a no-op (`main_screen.dart:102`), and popping back
   to the History tab from a pushed route (e.g. "Save Again" → Instant Saving → back) does not
   re-fetch — a transaction made that way needs a pull-to-refresh.
+- Throttle-safe (2026-11-02): the two automatic triggers call `refreshIfStale()`, which skips
+  the fetch while page 1 is younger than `HistoryNotifier.staleAfter` (15 s). Any page-1 request
+  made while one for the same filter is in flight joins it. After the backend answers
+  `TOO_MANY_REQUESTS` (HTTP 200, `error.code`; `HistoryService` throws
+  `HistoryRateLimitedException`), `refresh()` — manual triggers included — is a no-op for
+  `rateLimitCooldown` (30 s), so retries don't extend the throttle. Both durations are
+  client-side choices, not the backend's limit. Test: `test/history_refresh_throttle_test.dart`.
 - Date groups come only from the backend's `grouped_transactions` keys
   (`history_models.dart:20-34`): a day with no transactions returned has no header at all — the
   app never inserts empty days.

@@ -83,9 +83,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       ref.invalidate(profileProvider);
 
       // Fetch notification badge count AFTER auth is ready so the API
-      // has a valid token. HomeScreen.initState fires in parallel and
-      // may race ahead of rehydration, so this is the authoritative call.
-      ref.read(notificationProvider.notifier).refreshUnreadCount();
+      // has a valid token. Forced: this is the authoritative call on mount.
+      ref.read(notificationProvider.notifier).refreshUnreadCount(force: true);
 
       // Ensure FCM push notification token is registered with backend
       FcmService.getToken().then((token) {
@@ -133,9 +132,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         // own build() is about to create the notifier for the first time via
         // ref.watch(historyProvider), and that creation already triggers its
         // own initial fetch; calling refresh() here too would just fire a
-        // redundant duplicate request.
+        // redundant duplicate request. refreshIfStale() also skips it when
+        // page 1 is only a few seconds old, so quick tab switching doesn't
+        // trip the backend's throttle on transactions/history.
         if (_visitedTabs.contains(2)) {
-          ref.read(historyProvider.notifier).refresh();
+          ref.read(historyProvider.notifier).refreshIfStale();
         }
         ref.invalidate(portfolioProvider);
         break;
