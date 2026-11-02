@@ -73,9 +73,10 @@ fetched so far, merged, never replaced** (except on a fresh filter/refresh). Key
   survives) on every visit after the first, and a pushed `/transaction-history` refreshes in
   `initState` (`main_screen.dart:121-137`, `transaction_history_screen.dart:62-67`). Not covered:
   re-tapping History while on it, or popping back to it from a pushed route — those need
-  pull-to-refresh / the header refresh icon. See RULE-HISTORY-007. The header refresh button's
-  doc comment (`transaction_history_screen.dart:193-200`) still describes the old manual-only
-  behavior and is stale.
+  pull-to-refresh / the header refresh icon. See RULE-HISTORY-007. Since 2026-11-02 the
+  automatic triggers use `refreshIfStale()` (skip if page 1 < 15 s old), concurrent page-1
+  requests share one call, and `refresh()` backs off 30 s after a `TOO_MANY_REQUESTS` — the
+  backend throttles `transactions/history` after ~5 calls, which normal tab switching hit.
 - **Error/empty/loading semantics**: full-page spinner/error only shown on the true first load
   (`hasData == false`); once any data has loaded, a failed refresh/filter re-fetch keeps the
   existing list on screen (`history_controller.dart:117-119`, `transaction_history_screen.dart:

@@ -2,6 +2,18 @@ import '../../../core/network/api_client.dart';
 import '../models/history_models.dart';
 import '../models/history_filter_options_model.dart';
 
+/// The backend throttled `transactions/history` — it answers HTTP 200 with
+/// `error.code: TOO_MANY_REQUESTS`, so ApiClient's 429 handling never sees it.
+/// [HistoryNotifier] backs off on this instead of letting retries extend the
+/// throttle window.
+class HistoryRateLimitedException implements Exception {
+  final String message;
+  const HistoryRateLimitedException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class HistoryService {
   final ApiClient _apiClient = ApiClient();
 
@@ -61,6 +73,9 @@ class HistoryService {
     if (response.data != null) {
       if (response.data['success'] == false) {
         final errorMsg = response.data['error']?['message'] ?? response.data['error']?['internal_message'] ?? 'Failed to load transaction history';
+        if (response.data['error']?['code'] == 'TOO_MANY_REQUESTS') {
+          throw HistoryRateLimitedException(errorMsg);
+        }
         throw Exception(errorMsg);
       }
       if (response.data['data'] != null) {

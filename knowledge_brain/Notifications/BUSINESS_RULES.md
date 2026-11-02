@@ -25,6 +25,12 @@ a screen other than Home or Notifications will not update the badge until the ne
 `refreshUnreadCount()` call (Home `initState`, pull-to-refresh, or the post-purchase/withdrawal
 listener at `home_screen.dart:145,184`).
 - Code: `lib/core/services/notification_service.dart:190-254`.
+- Since 2026-11-02, `refreshUnreadCount()` joins a fetch already in flight and skips one if the
+  count is younger than `unreadCountMaxAge` (10 s); `force: true` (MainScreen mount after auth
+  rehydration, Home pull-to-refresh) always fetches. Home's own `initState` call was removed —
+  MainScreen's mount call is the authoritative one. Entering Home had been asking up to three
+  times in one second, which the backend throttles (`TOO_MANY_REQUESTS`). Test:
+  `test/api_call_dedupe_test.dart`.
 
 ### RULE-NOTIFICATIONS-004: FCM token registration is deduplicated and fire-and-forget
 `registerFcmToken(token)` compares against the token cached via `SecureStorageService.getFcmToken()`

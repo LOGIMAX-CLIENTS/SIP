@@ -384,7 +384,7 @@ understanding.
 |---|---|---|
 | `getCountryCodes` | `:88` | `countryCodesProvider` (`:172`), auth mobile-entry screen |
 | `getCommodities` | `:115` | `commoditiesProvider` (`:179`) — feeds `selectedMetalIdProvider`, `marketRatesStreamProvider` |
-| `getAmountDenominations` / `getWeightDenominations` | `:134,151` | `amountDenominationsProvider`/`weightDenominationsProvider` (`:184,191`) |
+| `getAmountDenominations` / `getWeightDenominations` | — | Served via `TimedListCache` (60 s per `id_metal`, shared in-flight); fetch in `_fetchAmountDenominations`/`_fetchWeightDenominations` | `amountDenominationsProvider`/`weightDenominationsProvider` |
 
 ## Validators
 `core/utils/validators.dart`

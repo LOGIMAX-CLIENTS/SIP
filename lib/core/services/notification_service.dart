@@ -244,10 +244,39 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     }
   }
 
-  Future<void> refreshUnreadCount() async {
+  /// How long a fetched badge count is reused by [refreshUnreadCount].
+  /// Entering Home asked for it up to three times in the same second, and
+  /// the backend throttles `users/notifications/unread-count`.
+  static const Duration unreadCountMaxAge = Duration(seconds: 10);
+
+  Future<void>? _unreadInFlight;
+  DateTime? _unreadFetchedAt;
+
+  /// Fetches the badge count. Unless [force] is set, joins a fetch already
+  /// in flight and skips one if the count is younger than [unreadCountMaxAge].
+  Future<void> refreshUnreadCount({bool force = false}) {
+    if (!force) {
+      final inFlight = _unreadInFlight;
+      if (inFlight != null) return inFlight;
+      final fetchedAt = _unreadFetchedAt;
+      if (fetchedAt != null &&
+          DateTime.now().difference(fetchedAt) < unreadCountMaxAge) {
+        return Future.value();
+      }
+    }
+    late final Future<void> fetch;
+    fetch = _fetchUnreadCount().whenComplete(() {
+      if (identical(_unreadInFlight, fetch)) _unreadInFlight = null;
+    });
+    _unreadInFlight = fetch;
+    return fetch;
+  }
+
+  Future<void> _fetchUnreadCount() async {
     try {
       final count = await _service.fetchUnreadCount();
       if (kDebugMode) debugPrint('[Notification] badge count updated: $count');
+      _unreadFetchedAt = DateTime.now();
       state = state.copyWith(unreadCount: count);
     } catch (e) {
       if (kDebugMode) debugPrint('[Notification] refreshUnreadCount failed: $e');

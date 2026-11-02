@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../network/api_client.dart';
+import '../utils/timed_list_cache.dart';
 import 'package:startgold/core/providers/commodity_provider.dart';
 
 class CountryCode {
@@ -131,7 +132,26 @@ class SharedService {
     }
   }
 
-  Future<List<AmountDenomination>> getAmountDenominations(
+  /// Denominations are admin config, but Instant Saving re-requests them on
+  /// every entry and the backend throttles these endpoints. A non-empty list
+  /// is reused for [denominationsMaxAge], and concurrent requests for the
+  /// same metal share one call.
+  static const Duration denominationsMaxAge = Duration(seconds: 60);
+
+  final _amountDenominations =
+      TimedListCache<List<AmountDenomination>>(denominationsMaxAge);
+  final _weightDenominations =
+      TimedListCache<List<WeightDenomination>>(denominationsMaxAge);
+
+  Future<List<AmountDenomination>> getAmountDenominations(String idMetal) =>
+      _amountDenominations.get(
+          idMetal, () => _fetchAmountDenominations(idMetal));
+
+  Future<List<WeightDenomination>> getWeightDenominations(String idMetal) =>
+      _weightDenominations.get(
+          idMetal, () => _fetchWeightDenominations(idMetal));
+
+  Future<List<AmountDenomination>> _fetchAmountDenominations(
       String idMetal) async {
     try {
       final response =
@@ -148,7 +168,7 @@ class SharedService {
     }
   }
 
-  Future<List<WeightDenomination>> getWeightDenominations(
+  Future<List<WeightDenomination>> _fetchWeightDenominations(
       String idMetal) async {
     try {
       final response =

@@ -62,7 +62,7 @@ class _TransactionHistoryScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (ref.read(historyProvider).page > 0) {
-        ref.read(historyProvider.notifier).refresh();
+        ref.read(historyProvider.notifier).refreshIfStale();
       }
     });
   }
@@ -190,12 +190,10 @@ class _TransactionHistoryScreenState
   }
 
   // ── Header refresh button ──────────────────────────────────────────
-  /// Manual refresh — the History tab intentionally does NOT auto-refetch
-  /// on every tab switch (see MainScreen._onTabTapped's comment: the lazy
-  /// list preserves already-loaded pages and scroll position across tab
-  /// switches), so a transaction made elsewhere in the app while History
-  /// was last loaded won't appear until the customer either backs out and
-  /// re-enters the tab from scratch, or taps this. Always visible (unlike
+  /// Manual refresh — entering History only re-fetches once page 1 is older
+  /// than HistoryNotifier.staleAfter, and popping back to an open History
+  /// tab doesn't re-fetch at all, so this is how the customer pulls in a
+  /// transaction made since. Always visible (unlike
   /// the filter button, which hides during the very first load/error) so
   /// there's always a way to pull fresh data on demand.
   Widget _buildRefreshButton(bool isLoading) {
