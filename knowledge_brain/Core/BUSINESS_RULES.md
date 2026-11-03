@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-10-27
+last_updated: 2026-11-03
 ---
 
 # Core — Business Rules
@@ -156,3 +156,6 @@ including `users/auth/*` and `crypto/public-key` (served by both servers), stays
 `EnvironmentService` sets both URLs per environment. Staging and VAPT have no secure server, so their secure
 URL equals their base URL. The route list must stay in step with the backend's — a route missing here would
 404 on the customer server once the backend split is on. Tests: `test/secure_server_route_test.dart`.
+A build can pin the hosts with `--dart-define=BASE_URL` (and optionally `SECURE_BASE_URL`): they override the
+built-in default and any saved environment at startup. Without `SECURE_BASE_URL` the secure host still comes
+from `EnvironmentService.secureBaseUrlFor`. The live-price socket URL isn't pinned. Without the defines nothing changes.

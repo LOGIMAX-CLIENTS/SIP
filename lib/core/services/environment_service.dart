@@ -35,8 +35,12 @@ class EnvironmentService {
       'https://secure.endpoint.payapi.startgold.com/api/v1/';
 
   /// Where AppConfig.secureServerRoutes go when the base URL is [baseUrl].
-  static String secureBaseUrlFor(String baseUrl) =>
-      baseUrl == bastionBaseUrl ? bastionSecureBaseUrl : baseUrl;
+  static String secureBaseUrlFor(String baseUrl) {
+    if (_secureBaseUrlOverride.isNotEmpty && baseUrl == _baseUrlOverride) {
+      return _secureBaseUrlOverride;
+    }
+    return baseUrl == bastionBaseUrl ? bastionSecureBaseUrl : baseUrl;
+  }
 
   // static String _currentEnv = envStaging;
   // static String _baseUrl = stagingBaseUrl;
@@ -49,6 +53,12 @@ class EnvironmentService {
   // static String _currentEnv = envVapt;
   // static String _baseUrl = vaptBaseUrl;
   // static String _wsUrl = vaptWsUrl;
+
+  // --dart-define=BASE_URL (and optionally SECURE_BASE_URL) pin the API hosts
+  // for this build, over both the default above and any saved environment.
+  static const String _baseUrlOverride = String.fromEnvironment('BASE_URL');
+  static const String _secureBaseUrlOverride =
+      String.fromEnvironment('SECURE_BASE_URL');
 
   static String get currentEnv => _currentEnv;
   static String get baseUrl => _baseUrl;
@@ -69,6 +79,14 @@ class EnvironmentService {
       AppConfig.environment = _currentEnv;
       AppConfig.baseUrl = _baseUrl;
       AppConfig.secureBaseUrl = secureBaseUrlFor(_baseUrl);
+    }
+
+    if (_baseUrlOverride.isNotEmpty) {
+      _baseUrl = _baseUrlOverride;
+      AppConfig.baseUrl = _baseUrl;
+      AppConfig.secureBaseUrl = secureBaseUrlFor(_baseUrl);
+      // setEnvironment above has already built ApiClient with its own URL.
+      if (savedEnv != null) ApiClient().updateBaseUrl(_baseUrl);
     }
   }
 
