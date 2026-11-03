@@ -33,7 +33,9 @@ still a live field name before removing it.
   session is kept and only that request fails, with the refresh error rather than the 401. Any other failure
   (401 `TOKEN_REFRESH_FAILED`, 200 with no access token, no refresh token stored) ends the session with
   `SessionManager.endExpiredSession()`, which keeps biometric/auto-lock for the same customer
-  (`MPIN/BUSINESS_RULES.md` RULE-MPIN-015). Backend lifetimes: access 15 min, refresh 1 day sliding.
+  (`MPIN/BUSINESS_RULES.md` RULE-MPIN-015). Backend lifetimes: access 15 min, refresh 30 days sliding (1 day before 2026-10-23).
+  The backend also accepts only the session's last 3 refresh tokens; an older one gets 401
+  `TOKEN_REFRESH_FAILED`, so always store the `refresh_token` a refresh returns.
 - **409**: checked *before* 401 in the same `onError` (`:214`, comment at `:212` explains the ordering is
   deliberate) and never attempts a refresh. `SessionManager.forceLogout()` is deduplicated (only the first
   concurrent 409 shows the dialog, `session_manager.dart:32-37`) and sets a persistent

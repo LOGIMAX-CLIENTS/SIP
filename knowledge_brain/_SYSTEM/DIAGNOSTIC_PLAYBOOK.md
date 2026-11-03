@@ -18,10 +18,12 @@ scratch (`AGENTS.md` §0 Step Zero for bug fixes).
    trigger — this is a re-auth prompt, not a true logout, but can look identical to a user.
 
 ## Rule 1a: "Biometric / MPIN got switched off" — typically reported right after a Play Store update
-1. Ask whether the customer had to log in with OTP again. The backend refresh token lasts 1 day from its
-   last use (access token 15 min), so a customer who skipped a day gets an expired refresh token on the
-   first open, and that is often the first open after an update. The session ending is expected. Losing
-   biometric/auto-lock with it is not: `endExpiredSession()` keeps them for the same customer
+1. Ask whether the customer had to log in with OTP again, and when they last opened the app. The backend
+   refresh token lasts `refresh_token_lifetime_days` from its last use — 30 days since 2026-10-23, 1 day
+   before (access token 15 min). Past that, the session ending is expected. Within it, check the
+   `CUSTOMER_LOGIN_SECURITY` config row and `customer_session.ses_refresh_jtis` on the backend (a refresh
+   with a token older than the session's last 3 gets 401). Losing biometric/auto-lock with an ended session
+   is never expected: `endExpiredSession()` keeps them for the same customer
    (`MPIN/BUSINESS_RULES.md` RULE-MPIN-015).
 2. If they were also asked to **set** a new MPIN (the `setup` screen, not verify), verify-otp returned
    `mpin_enabled=false`. On the backend that means the MPIN is locked after 5 wrong attempts
