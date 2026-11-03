@@ -1,6 +1,6 @@
 ---
 module: core/
-last_updated: 2026-10-12
+last_updated: 2026-11-03
 scope: every public class + public method/getter across all 47 files in lib/core/
 ---
 
@@ -192,8 +192,9 @@ understanding.
 `core/services/environment_service.dart`
 | Member | Location | Callers |
 |---|---|---|
-| `initialize` (static) | `:27` | `main.dart:25`, before `runApp` |
-| `setEnvironment` (static) | `:49` | environment-switcher (staging/production toggle, likely a dev/settings screen — `dynamic_switching`/`dynamic_switching_password` fields in `AppControlData` suggest server-gated access) |
+| `secureBaseUrlFor` (static) | `:38` | `initialize`, `setEnvironment`, the `secureBaseUrl` getter |
+| `initialize` (static) | `:69` | `main.dart:27`, before `runApp`; also applies the `--dart-define=BASE_URL`/`SECURE_BASE_URL` pin |
+| `setEnvironment` (static) | `:94` | environment-switcher (staging/production toggle, likely a dev/settings screen — `dynamic_switching`/`dynamic_switching_password` fields in `AppControlData` suggest server-gated access) |
 
 ## FcmService
 `core/services/fcm_service.dart`
