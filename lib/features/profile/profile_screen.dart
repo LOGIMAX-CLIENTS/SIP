@@ -16,7 +16,7 @@ import 'profile_controller.dart' as pc;
 // ── App version provider ───────────────────────────────────────────────────
 final appVersionProvider = FutureProvider<String>((ref) async {
   final info = await PackageInfo.fromPlatform();
-  return 'Version ${info.version} (${info.buildNumber})';
+  return 'Version ${info.version}';
 });
 
 class ProfileScreen extends ConsumerStatefulWidget {
