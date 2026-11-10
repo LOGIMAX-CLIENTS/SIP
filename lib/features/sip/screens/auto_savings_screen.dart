@@ -2089,7 +2089,10 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
         // next time the date picker opens, instead of still selectable.
         ref.invalidate(customSipSchemesProvider);
         if (mounted) {
-          if (response.sessionId != null && response.orderId != null) {
+          // Airpay (isUpiCollect): no session — SipPaymentScreen shows the
+          // approve-in-your-UPI-app wait instead of a checkout.
+          if (response.isUpiCollect ||
+              (response.sessionId != null && response.orderId != null)) {
             Navigator.pushNamed(
               context,
               AppRouter.sipPayment,
@@ -2109,6 +2112,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'enach_auth_link': response.enachAuthLink,
                 // Shown on the payment sheet; never sent to the gateway.
                 'upi_vpa': upi?.upiId,
+                // Airpay: the UPI ID the AutoPay request was sent to.
+                'approve_vpa': response.approveVpa,
               },
             );
           } else {
@@ -2331,8 +2336,11 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
       if (response.success) {
         if (mounted) {
           // Navigate to payment/success
-          if (response.sessionId != null && response.orderId != null) {
-            // Redirect to Cashfree payment
+          // Airpay (isUpiCollect): no session — SipPaymentScreen shows the
+          // approve-in-your-UPI-app wait instead of a checkout.
+          if (response.isUpiCollect ||
+              (response.sessionId != null && response.orderId != null)) {
+            // Redirect to the gateway's checkout (or the Airpay wait)
             Navigator.pushNamed(
               context,
               AppRouter.sipPayment,
@@ -2352,6 +2360,8 @@ class _AutoSavingsScreenState extends ConsumerState<AutoSavingsScreen>
                 'enach_auth_link': response.enachAuthLink,
                 // Shown on the payment sheet; never sent to the gateway.
                 'upi_vpa': upi?.upiId,
+                // Airpay: the UPI ID the AutoPay request was sent to.
+                'approve_vpa': response.approveVpa,
               },
             );
           } else {
