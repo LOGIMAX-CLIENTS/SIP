@@ -106,7 +106,8 @@ class SipCreateResponse {
   /// Full Cashfree subscription checkout URL.
   /// Backend obtains this from Cashfree's mandate creation response.
   final String? authorizationLink;
-  /// Which gateway/SDK the client should launch: 'cashfree' or 'razorpay'.
+  /// Which gateway/SDK the client should launch: 'cashfree', 'razorpay' or
+  /// 'airpay' (no SDK at all — see [isUpiCollect]).
   /// Defaults to 'cashfree' for backward compatibility with older backend
   /// responses that predate this field.
   final String paymentGateway;
@@ -120,6 +121,7 @@ class SipCreateResponse {
   /// recurring: '1' instead — see sip_payment_screen.dart). Defaults to
   /// 'subscriptions' to match the backend's own default when this field is
   /// absent (see shared/services/sip.py create_scheme).
+  /// 'upi_collect' with paymentGateway == 'airpay' — see [isUpiCollect].
   final String mode;
   /// Razorpay Recurring Payments mode only: the Razorpay Customer id
   /// (cust_xxx) the order/token was registered against. Must be passed to
@@ -148,6 +150,10 @@ class SipCreateResponse {
   /// from the AUTH the backend raised (POST /pg/subscriptions/pay). Opened
   /// in SipMandateAuthWebView. When set, enachDetails is null.
   final String? enachAuthLink;
+  /// Airpay only: the UPI ID the server sent the UPI AutoPay (collect)
+  /// request to, e.g. "priya@okaxis". Null for every other gateway and for
+  /// backends that predate the field.
+  final String? approveVpa;
 
   SipCreateResponse({
     required this.success,
@@ -166,7 +172,14 @@ class SipCreateResponse {
     this.paymentMethod = 'upi',
     this.enachDetails,
     this.enachAuthLink,
+    this.approveVpa,
   });
+
+  /// True when there is nothing to open: the server already sent a UPI
+  /// AutoPay request to [approveVpa] (Airpay), which the customer approves
+  /// in their UPI app while the app waits and polls `sip/confirm` — see
+  /// AirpayAutoPayWaitView. No session_id / authorization_link comes with it.
+  bool get isUpiCollect => paymentGateway == 'airpay' || mode == 'upi_collect';
 
   factory SipCreateResponse.fromJson(Map<String, dynamic> json) {
     final data = json['data'] as Map<String, dynamic>? ?? {};
@@ -199,6 +212,9 @@ class SipCreateResponse {
               (k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
           : null,
       enachAuthLink: data['enach_auth_link']?.toString(),
+      approveVpa: (data['approve_vpa']?.toString().trim() ?? '').isEmpty
+          ? null
+          : data['approve_vpa'].toString().trim(),
     );
   }
 }
