@@ -32,10 +32,18 @@ import '../../../core/providers/user_provider.dart';
 import '../../../routes/app_router.dart';
 import '../controller/sip_controller.dart';
 import '../utils/upi_handle_apps.dart';
+import '../widgets/airpay_autopay_wait_view.dart';
 import 'sip_mandate_auth_webview.dart';
 
 /// SIP Payment screen – opens the active gateway's mandate-authorization
-/// checkout, selected via `paymentData['payment_gateway']` ('cashfree' | 'razorpay').
+/// checkout, selected via `paymentData['payment_gateway']`
+/// ('cashfree' | 'razorpay' | 'airpay').
+///
+/// Airpay (`payment_gateway` 'airpay' / `mode` 'upi_collect') has no
+/// checkout: the server has already sent a UPI AutoPay request to
+/// `paymentData['approve_vpa']`. The screen shows AirpayAutoPayWaitView,
+/// which polls the same `sip/confirm` until the customer approves it in their
+/// UPI app, then takes the same success / failure routes as the others.
 ///
 /// Cashfree path uses the Cashfree Flutter SDK's **Subscription flow**:
 ///   • `CFSubscriptionSessionBuilder` — builds a subscription session
@@ -90,9 +98,14 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   bool _inBankWebView = false;
   String? _error;
 
-  /// Which checkout to launch: 'cashfree' (default) or 'razorpay'.
+  /// Which checkout to launch: 'cashfree' (default), 'razorpay', or
+  /// 'airpay' (none — wait for the approval in the customer's UPI app).
   String get _gateway {
     final gw = (widget.paymentData['payment_gateway'] as String?)?.toLowerCase().trim() ?? '';
+    final mode = widget.paymentData['mode']?.toString().toLowerCase().trim() ?? '';
+    if (gw.contains('airpay') || mode == 'upi_collect') {
+      return 'airpay';
+    }
     final subId = widget.paymentData['subscription_id']?.toString() ?? '';
     if (gw.contains('razorpay') || subId.startsWith('sub_')) {
       return 'razorpay';
@@ -108,7 +121,12 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    if (_gateway == 'razorpay') {
+    if (_gateway == 'airpay') {
+      // Nothing to launch — AirpayAutoPayWaitView (see build) waits for the
+      // approval. The customer leaves for their UPI app and comes back; an
+      // MPIN lock on return must not interrupt the wait.
+      AppLifecycleObserver.suppressAppLock = true;
+    } else if (_gateway == 'razorpay') {
       // Launch checkout after frame renders
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _launchRazorpayAutoPay();
@@ -143,6 +161,8 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
   /// the SDK may deliver its callback shortly after the app resumes.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Airpay: AirpayAutoPayWaitView polls on resume itself.
+    if (_gateway == 'airpay') return;
     SecureLogger.d('SIP PAYMENT: Lifecycle → $state '
         '(sdkCallback=$_sdkCallbackReceived, verifying=$_isVerifying)');
     if (state == AppLifecycleState.resumed &&
@@ -838,55 +858,109 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
         final status = response['data']?['status']?.toString().toUpperCase();
 
         if (status == 'ACTIVE' || status == 'BANK_APPROVAL_PENDING') {
-          Navigator.pushReplacementNamed(
-            context,
-            AppRouter.sipSuccess,
-            arguments: {
-              'subscription_id': response['data']?['subscription_id'] ??
-                  widget.paymentData['subscription_id'],
-              'message': response['message'] ??
-                  (status == 'BANK_APPROVAL_PENDING'
-                      ? 'Your mandate is pending bank approval. It will be activated within 2-3 business days.'
-                      : 'Your auto savings plan has been activated successfully!'),
-            },
-          );
+          _openSuccess(response, status);
         } else {
-          Navigator.pushReplacementNamed(
-            context,
-            AppRouter.sipFailure,
-            arguments: {
-              'message':
-                  response['message'] ?? 'Authorization status: $status',
-              'order_id': orderId,
-            },
-          );
+          _openFailure(response['message'] ?? 'Authorization status: $status');
         }
       } else {
-        Navigator.pushReplacementNamed(
-          context,
-          AppRouter.sipFailure,
-          arguments: {
-            'message': response['message'] ??
-                response['error']?['message'] ??
-                'Authorization could not be verified.',
-            'order_id': orderId,
-          },
-        );
+        _openFailure(response['message'] ??
+            response['error']?['message'] ??
+            'Authorization could not be verified.');
       }
     } catch (e) {
       if (!mounted) return;
       SecureLogger.e('SIP PAYMENT: Verify failed: $e');
-      Navigator.pushReplacementNamed(
-        context,
-        AppRouter.sipFailure,
-        arguments: {
-          'message': (e is Failure)
-              ? e.message
-              : 'Payment verification failed. Please try again.',
-          'order_id': orderId,
-        },
-      );
+      _openFailure((e is Failure)
+          ? e.message
+          : 'Payment verification failed. Please try again.');
     }
+  }
+
+  /// The mandate is authorised (or, for eNACH, with the bank): the success
+  /// screen every gateway ends on.
+  void _openSuccess(Map<String, dynamic> response, String? status) {
+    Navigator.pushReplacementNamed(
+      context,
+      AppRouter.sipSuccess,
+      arguments: {
+        'subscription_id': response['data']?['subscription_id'] ??
+            widget.paymentData['subscription_id'],
+        'message': response['message'] ??
+            (status == 'BANK_APPROVAL_PENDING'
+                ? 'Your mandate is pending bank approval. It will be activated within 2-3 business days.'
+                : 'Your auto savings plan has been activated successfully!'),
+      },
+    );
+  }
+
+  /// The failure screen every gateway ends on; its Retry goes back to the
+  /// plan screen.
+  void _openFailure(Object message) {
+    Navigator.pushReplacementNamed(
+      context,
+      AppRouter.sipFailure,
+      arguments: {
+        'message': message,
+        'order_id': widget.paymentData['order_id']?.toString() ?? '',
+      },
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AIRPAY — APPROVE IN THE UPI APP
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// One `sip/confirm` call for the Airpay wait. The server asks Airpay on
+  /// every call while the request is pending.
+  Future<Map<String, dynamic>> _confirmAirpay() {
+    final subscriptionId = widget.paymentData['subscription_id']?.toString() ?? '';
+    final orderId = widget.paymentData['order_id']?.toString() ?? '';
+    return ref.read(sipServiceProvider).confirmSip(
+          orderId: orderId.isNotEmpty ? orderId : subscriptionId,
+          subscriptionId: subscriptionId,
+        );
+  }
+
+  /// The UPI ID the request went to: the server's `approve_vpa`, else the
+  /// one picked in UpiIdSheet.
+  String get _airpayVpa {
+    final vpa = widget.paymentData['approve_vpa']?.toString().trim() ?? '';
+    return vpa.isNotEmpty ? vpa : _selectedVpa;
+  }
+
+  void _onAirpayApproved(Map<String, dynamic> response) {
+    SecureLogger.d('SIP PAYMENT: ✅ Airpay AutoPay approved');
+    AppLifecycleObserver.suppressAppLock = false;
+    ref.invalidate(sipDetailsProvider);
+    _openSuccess(response, 'ACTIVE');
+  }
+
+  void _onAirpayFailed(String message) {
+    SecureLogger.e('SIP PAYMENT: ❌ Airpay AutoPay not approved → $message');
+    AppLifecycleObserver.suppressAppLock = false;
+    ref.invalidate(sipDetailsProvider);
+    _openFailure(message);
+  }
+
+  /// Time ran out without an answer. The note is on screen; the server's
+  /// pending-auth cron still activates the plan if it was approved.
+  void _onAirpayTimedOut() {
+    SecureLogger.d('SIP PAYMENT: Airpay AutoPay wait timed out');
+    AppLifecycleObserver.suppressAppLock = false;
+    ref.invalidate(sipDetailsProvider);
+  }
+
+  /// "Back to Home" under the timed-out note — the success screen's exit.
+  void _leaveAirpayWait() {
+    Navigator.pushNamedAndRemoveUntil(context, AppRouter.main, (route) => false);
+  }
+
+  /// Cancel / back while waiting: stop polling (the view's dispose does) and
+  /// return to the plan screen.
+  void _cancelAirpayWait() {
+    AppLifecycleObserver.suppressAppLock = false;
+    ref.invalidate(sipDetailsProvider);
+    Navigator.pop(context);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -895,6 +969,7 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_gateway == 'airpay') return _buildAirpayWait();
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
@@ -911,6 +986,29 @@ class _SipPaymentScreenState extends ConsumerState<SipPaymentScreen>
                 : _error != null
                     ? _buildErrorState()
                     : _buildProcessingState(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Airpay: approve-in-your-UPI-app wait (polls sip/confirm itself).
+  Widget _buildAirpayWait() {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          GradientHeader(title: 'Secure Payment', onBack: _cancelAirpayWait),
+          Expanded(
+            child: AirpayAutoPayWaitView(
+              approveVpa: _airpayVpa,
+              confirm: _confirmAirpay,
+              onApproved: _onAirpayApproved,
+              onFailed: _onAirpayFailed,
+              onTimedOut: _onAirpayTimedOut,
+              onTimedOutExit: _leaveAirpayWait,
+              onCancel: _cancelAirpayWait,
+            ),
           ),
         ],
       ),

@@ -44,6 +44,7 @@ import '../../core/providers/user_provider.dart';
 import '../../core/security/app_lifecycle_observer.dart';
 import '../../core/security/secure_logger.dart';
 import '../../shared/widgets/app_toast.dart';
+import 'airpay_payment_handler.dart';
 import 'controller/saving_controller.dart';
 import 'hdfc_payment_handler.dart';
 import 'razorpay_payment_handler.dart';
@@ -231,6 +232,19 @@ class PaymentHandler {
     }
 
     // ── STEP 2: Route to the correct payment gateway ────────────────────────
+    if (context.mounted && AirpayPaymentHandler.handles(purchase)) {
+      // Airpay first: its response carries no SDK fields, so the payload
+      // checks below would otherwise send it to Cashfree.
+      SecureLogger.d('[PaymentHandler] Routing to Airpay gateway...');
+      AirpayPaymentHandler(ref: ref, context: context).launchPayment(
+        purchase: purchase,
+        confirmedAmountInr: confirmedAmount,
+        paymentMethod: paymentMethod,
+        onLoadingStart: _onLoadingStart,
+        onLoadingEnd: _onLoadingEnd,
+      );
+      return;
+    }
     if (context.mounted) {
       final gwRaw = purchase.paymentGateway.toLowerCase().trim();
 

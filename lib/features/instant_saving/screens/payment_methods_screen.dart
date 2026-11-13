@@ -21,6 +21,7 @@ import 'package:startgold/features/market/models/market_rates.dart';
 import 'package:startgold/shared/widgets/app_toast.dart';
 import 'package:startgold/shared/widgets/numeric_styled_text.dart';
 import '../../../core/security/secure_logger.dart';
+import '../airpay_payment_handler.dart';
 import '../hdfc_payment_handler.dart';
 import '../razorpay_payment_handler.dart';
 
@@ -288,6 +289,23 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
   void _routePayment(
       PurchaseInitiateResponse purchase, double confirmedAmount) {
     _confirmedAmountInr = confirmedAmount;
+
+    // Airpay first: its response carries no SDK fields, so the payload
+    // checks below would otherwise send it to Cashfree.
+    if (AirpayPaymentHandler.handles(purchase)) {
+      AirpayPaymentHandler(ref: ref, context: context).launchPayment(
+        purchase: purchase,
+        confirmedAmountInr: confirmedAmount,
+        paymentMethod: _selectedMethodId,
+        onLoadingStart: () {
+          if (mounted) setState(() => _isLoading = true);
+        },
+        onLoadingEnd: () {
+          if (mounted) setState(() => _isLoading = false);
+        },
+      );
+      return;
+    }
 
     final gwRaw = purchase.paymentGateway.toLowerCase().trim();
     final isRazorpayPayload = (purchase.keyId != null && purchase.keyId!.isNotEmpty) ||

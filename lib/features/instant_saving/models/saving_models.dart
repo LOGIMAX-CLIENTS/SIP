@@ -121,8 +121,8 @@ class PurchaseInitiateResponse {
   final String? weight;
   final String? ratePerGram;
   // ── Gateway routing ──────────────────────────────────────────────────────
-  /// Which payment gateway the backend selected: "cashfree" or "hdfc".
-  /// Defaults to "cashfree" for backward compatibility.
+  /// Which payment gateway the backend selected: "cashfree", "hdfc",
+  /// "razorpay" or "airpay". Defaults to "cashfree" for backward compatibility.
   final String paymentGateway;
   // ── HDFC / Juspay HyperSDK fields ────────────────────────────────────────
   /// Full Juspay sdkPayload JSON returned by backend after calling
@@ -134,6 +134,12 @@ class PurchaseInitiateResponse {
   // ── Razorpay fields ──────────────────────────────────────────────────────
   final String? rzOrderId;
   final String? keyId;
+  // ── Airpay fields ────────────────────────────────────────────────────────
+  /// Page of ours that opens Airpay's payment page (loaded in a WebView).
+  final String? checkoutUrl;
+  /// Airpay sends the browser back here; the WebView closes on any URL
+  /// that starts with it.
+  final String? returnUrl;
   // ── Error & Diagnostic fields ────────────────────────────────────────────
   final String? pgError;
   final bool isMock;
@@ -153,6 +159,8 @@ class PurchaseInitiateResponse {
     this.hdfcEnvironment,
     this.rzOrderId,
     this.keyId,
+    this.checkoutUrl,
+    this.returnUrl,
     this.pgError,
     this.isMock = false,
   });
@@ -186,6 +194,8 @@ class PurchaseInitiateResponse {
       hdfcEnvironment: json['hdfc_environment']?.toString(),
       rzOrderId: json['rz_order_id']?.toString() ?? rawSessionId,
       keyId: rawKeyId,
+      checkoutUrl: json['checkout_url']?.toString(),
+      returnUrl: json['return_url']?.toString(),
       pgError: json['pg_error']?.toString(),
       isMock: json['is_mock'] == true ||
           (rawSessionId != null && rawSessionId.startsWith('MOCK_')),
