@@ -323,7 +323,7 @@ class _TransactionHistoryScreenState
     // Type chip
     if (_filter.type != null && _filter.type!.isNotEmpty) {
       chips.add(_buildActiveChip(
-        label: _capitalise(_filter.type!),
+        label: _typeChipLabel(_filter.type!),
         icon: Icons.swap_horiz_rounded,
         color: _green,
         onRemove: () => _removeChip('type'),
@@ -866,6 +866,19 @@ class _TransactionHistoryScreenState
   // ── Helpers ────────────────────────────────────────────────────────
   String _capitalise(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+  /// Label for the active "type" filter chip — the raw `sip` type is shown
+  /// to customers as "Autopay".
+  String _typeChipLabel(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'sip':
+        return 'Autopay';
+      case 'purchase':
+        return 'Instant';
+      default:
+        return _capitalise(raw);
+    }
+  }
 
   /// Resolves a status's display color from the backend-driven
   /// [statusOptions] (`transactions/filter-options`), falling back to
