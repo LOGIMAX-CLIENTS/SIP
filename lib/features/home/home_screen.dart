@@ -459,10 +459,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── 1. Invest Smart, Earn Big ──
+              // ── 1. Smart Save, Big Earn ──
               ...() {
                 final invest = dashboard.investSection ??
-                    InvestSection(title: 'Save Smart, Earn Big', blocks: []);
+                    InvestSection(title: 'Smart Save, Big Earn', blocks: []);
                 return [
                   Padding(
                     padding: EdgeInsets.fromLTRB(20.w, 24.h, 20.w, 0),
